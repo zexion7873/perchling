@@ -1,0 +1,14 @@
+{
+  "name": "perchling",
+  "displayName": "Perchling",
+  "version": "0.1.0",
+  "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. 200KB Swift binary, zero dependencies, no Electron.",
+  "author": {
+    "name": "Kevin Lin",
+    "url": "https://github.com/zexion7873"
+  },
+  "homepage": "https://github.com/zexion7873/perchling",
+  "repository": "https://github.com/zexion7873/perchling",
+  "license": "MIT",
+  "keywords": ["pet", "desktop-pet", "mascot", "status", "overlay", "macos"]
+}
