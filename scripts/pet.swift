@@ -95,11 +95,25 @@ let base = buildBase()
 
 final class PetView: NSView {
     var mood: Mood = .idle
-    var moodAge: TimeInterval = 0
     var tick: Int = 0
     var hopUntil: Int = -1
+    private var gazeY = 0
 
     override var isFlipped: Bool { true }
+
+    // Pupils drift toward the cursor (idle/waiting only) — the feature OpenAI
+    // built for Codex pets and left Statsig-gated off.
+    private func gaze() -> (Int, Int) {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return (0, 0) }
+        guard let w = window else { return (0, 0) }
+        let m = NSEvent.mouseLocation
+        let dx = m.x - w.frame.midX
+        let dy = m.y - w.frame.midY
+        let gx = dx < -30 ? -1 : (dx > 30 ? 1 : 0)
+        // Screen coords are y-up, the grid is y-down: cursor above → pupils up.
+        let gy = dy > 80 ? -1 : (dy < -40 ? 1 : 0)
+        return (gx, gy)
+    }
 
     private func put(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
         palette[ink]!.setFill()
@@ -113,10 +127,10 @@ final class PetView: NSView {
     private func drawEyes(_ off: Int, _ dx: Int) {
         switch mood {
         case .waiting:
-            put(.eye, 10 + dx, 10, 13 + dx, 12, off)
-            put(.eye, 18 + dx, 10, 21 + dx, 12, off)
-            put(.glyph, 10 + dx, 10, 10 + dx, 10, off)
-            put(.glyph, 18 + dx, 10, 18 + dx, 10, off)
+            put(.eye, 10 + dx, 10 + gazeY, 13 + dx, 12 + gazeY, off)
+            put(.eye, 18 + dx, 10 + gazeY, 21 + dx, 12 + gazeY, off)
+            put(.glyph, 10 + dx, 10 + gazeY, 10 + dx, 10 + gazeY, off)
+            put(.glyph, 18 + dx, 10 + gazeY, 18 + dx, 10 + gazeY, off)
         case .done:
             put(.eye, 11, 11, 12, 11, off); put(.eye, 10, 12, 13, 12, off)
             put(.eye, 19, 11, 20, 11, off); put(.eye, 18, 12, 21, 12, off)
@@ -129,12 +143,16 @@ final class PetView: NSView {
             put(.eye, 18 + dx, 11, 21 + dx, 11, off)
             put(.eye, 18 + dx, 12, 20 + dx, 12, off)
         case .idle:
-            if tick % 84 < 3 {
+            // Never freeze on the blink frame: with Reduce Motion the tick
+            // stays put, and eyes-shut is a terrible static pose.
+            if tick % 84 < 3 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 put(.eye, 10, 12, 13, 12, off)
                 put(.eye, 18, 12, 21, 12, off)
             } else {
-                put(.eye, 10, 11, 13, 11, off); put(.eye, 11, 12, 13, 12, off)
-                put(.eye, 18, 11, 21, 11, off); put(.eye, 18, 12, 20, 12, off)
+                put(.eye, 10 + dx, 11 + gazeY, 13 + dx, 11 + gazeY, off)
+                put(.eye, 11 + dx, 12 + gazeY, 13 + dx, 12 + gazeY, off)
+                put(.eye, 18 + dx, 11 + gazeY, 21 + dx, 11 + gazeY, off)
+                put(.eye, 18 + dx, 12 + gazeY, 20 + dx, 12 + gazeY, off)
             }
         }
     }
@@ -153,13 +171,18 @@ final class PetView: NSView {
             off = 2 + (tick / 4) % 2
             dx = ((tick / 10) % 4 == 1) ? -1 : (((tick / 10) % 4 == 3) ? 1 : 0)
         case .waiting:
-            dx = (tick % 30 < 2) ? 1 : 0
+            let g = gaze()
+            dx = ((tick % 30 < 2) ? 1 : 0) + g.0
+            gazeY = g.1
         case .done:
             off = tick < hopUntil ? (2 - ((tick / 3) % 2) * 2) : 2 + (tick / 12) % 2
         case .error:
             off = 3
         case .idle:
             off = 2 + (tick / 9) % 2
+            let g = gaze()
+            dx = g.0
+            gazeY = g.1
         }
 
         for y in 0..<GH {
@@ -215,14 +238,33 @@ final class PetView: NSView {
         winAt = nil
     }
 
+    var onTuck: (() -> Void)?
+    var onDisable: (() -> Void)?
+
+    @objc private func tuckAction() { onTuck?() }
+    @objc private func disableAction() { onDisable?() }
+
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
+        let tuck = NSMenuItem(title: "Tuck away (wakes when needed)", action: #selector(tuckAction), keyEquivalent: "")
+        tuck.target = self
+        menu.addItem(tuck)
+        let disable = NSMenuItem(title: "Disable (pet.sh enable to undo)", action: #selector(disableAction), keyEquivalent: "")
+        disable.target = self
+        menu.addItem(disable)
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit perchling", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 }
 
 let claudeBundleID = "com.anthropic.claudefordesktop"
+
+// Attention-priority fold across sessions: one session's "running" must not
+// stomp another's "waiting". Per-mood TTLs expire stale news (a SIGKILL'd
+// session can't leave the pet bouncing forever).
+let moodRank: [Mood: Int] = [.idle: 0, .running: 1, .done: 2, .error: 3, .waiting: 4]
+let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 12, .error: 3600, .waiting: 3600]
 
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
 
@@ -296,15 +338,19 @@ final class Controller: NSObject, NSWindowDelegate {
     let view: PetView
     let bubble: NSWindow
     let bubbleView: BubbleView
+    let root: URL
     let stateURL: URL
     let sessionsURL: URL
     let sayURL: URL
-    var lastStamp: Date?
     var lastSayStamp: Date?
     var emptySince: Date?
     var homeApp: NSRunningApplication?
+    var firstFold = true
+    var tucked = false
+    var lastInputMoods: [String: Mood] = [:]
 
     init(root: URL) {
+        self.root = root
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
         sayURL = root.appendingPathComponent("say")
@@ -352,6 +398,26 @@ final class Controller: NSObject, NSWindowDelegate {
         // else whatever was frontmost at launch (terminal-CLI users).
         homeApp = Controller.resolveHomeApp()
         view.onTap = { [weak self] in self?.focusHome() }
+        view.onTuck = { [weak self] in self?.setTucked(true) }
+        view.onDisable = { [weak self] in self?.disableAndQuit() }
+    }
+
+    func setTucked(_ t: Bool) {
+        tucked = t
+        if t {
+            window.removeChildWindow(bubble)
+            bubble.orderOut(nil)
+            window.orderOut(nil)
+        } else {
+            window.orderFrontRegardless()
+            window.addChildWindow(bubble, ordered: .above)
+            repositionBubble()
+        }
+    }
+
+    func disableAndQuit() {
+        FileManager.default.createFile(atPath: root.appendingPathComponent("disabled").path, contents: nil)
+        NSApp.terminate(nil)
     }
 
     func repositionBubble() {
@@ -421,23 +487,50 @@ final class Controller: NSObject, NSWindowDelegate {
         bubbleView.prompt = s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func pollState() {
+    // Inputs: every live session file (mood as content) plus the plain state
+    // file (manual override / single-session fast path). Each input decays to
+    // idle past its mood's TTL; the highest-priority survivor is DISPLAYED.
+    // Reminders instead key off each input's own transitions — a fold maximum
+    // can't represent per-session events, and one session resting at waiting
+    // must not swallow another session's "finished" notification.
+    func pollMoods() -> (display: Mood, entered: Set<Mood>) {
         let fm = FileManager.default
-        guard let attrs = try? fm.attributesOfItem(atPath: stateURL.path),
-              let stamp = attrs[.modificationDate] as? Date else { return }
-        if stamp == lastStamp { return }
-        // First poll adopts whatever state was left on disk — reminding about
-        // stale pre-launch news would be noise.
-        let firstPoll = lastStamp == nil
-        lastStamp = stamp
-        let raw = (try? String(contentsOf: stateURL, encoding: .utf8)) ?? "idle"
-        let next = Mood.parse(raw)
-        if next != view.mood {
-            view.mood = next
-            if next == .done { view.hopUntil = view.tick + 12 }
-            if !firstPoll { maybeRemind(next) }
+        let now = Date()
+        var inputs: [(String, Mood, Date)] = []
+        if let attrs = try? fm.attributesOfItem(atPath: stateURL.path),
+           let stamp = attrs[.modificationDate] as? Date,
+           let raw = try? String(contentsOf: stateURL, encoding: .utf8) {
+            inputs.append(("state", Mood.parse(raw), stamp))
         }
-        view.moodAge = 0
+        let cutoff = now.addingTimeInterval(-3600)
+        let items = (try? fm.contentsOfDirectory(at: sessionsURL,
+                                                 includingPropertiesForKeys: [.contentModificationDateKey],
+                                                 options: [.skipsHiddenFiles])) ?? []
+        for url in items {
+            guard let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                  stamp > cutoff else { continue }
+            let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            inputs.append((url.lastPathComponent, Mood.parse(raw), stamp))
+        }
+        var display = Mood.idle
+        var current: [String: Mood] = [:]
+        var entered: Set<Mood> = []
+        for (key, m, stamp) in inputs {
+            var ttl = moodTTL[m] ?? 0
+            // The state file has no owner to clean it up on session end, so it
+            // gets a short leash: enough for manual puppeteering, too short to
+            // haunt the fold as a dead session's ghost.
+            if key == "state" { ttl = min(ttl, 300) }
+            let effective = now.timeIntervalSince(stamp) > ttl ? Mood.idle : m
+            current[key] = effective
+            if moodRank[effective]! > moodRank[display]! { display = effective }
+            let prev = lastInputMoods[key] ?? .idle
+            if effective != prev, effective == .waiting || effective == .done || effective == .error {
+                entered.insert(effective)
+            }
+        }
+        lastInputMoods = current
+        return (display, entered)
     }
 
     func pollSessions() -> Bool {
@@ -452,14 +545,40 @@ final class Controller: NSObject, NSWindowDelegate {
     }
 
     func run() {
+        var clock = 0
         Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [self] _ in
-            view.tick += 1
-            view.moodAge += 1.0 / 20.0
-            if view.tick % 8 == 0 { pollState(); pollSay() }
-            if view.mood == .done && view.moodAge > 12 { view.mood = .idle }
+            clock += 1
+            // Reduce Motion freezes the animation clock (static pose), never
+            // the polling clock — liveness and mood changes must keep working.
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { view.tick += 1 }
+            if clock % 8 == 0 {
+                // Manual un-tuck: a tucked pet has no window to right-click,
+                // so `pet.sh wake` drops a flag file for us to find.
+                let wakeURL = root.appendingPathComponent("wake")
+                if FileManager.default.fileExists(atPath: wakeURL.path) {
+                    try? FileManager.default.removeItem(at: wakeURL)
+                    if tucked { setTucked(false) }
+                }
+                let (next, entered) = pollMoods()
+                if next != view.mood {
+                    view.mood = next
+                    if next == .done { view.hopUntil = view.tick + 12 }
+                }
+                // Reminders and tuck-wake follow per-input events, not the
+                // (possibly masked) display transition.
+                if !firstFold, let alert = entered.max(by: { moodRank[$0]! < moodRank[$1]! }) {
+                    maybeRemind(alert)
+                    if tucked && (alert == .waiting || alert == .error) { setTucked(false) }
+                }
+                firstFold = false
+                pollSay()
+                // A prompt snippet from hours ago is noise, not context.
+                if let s = lastSayStamp, Date().timeIntervalSince(s) > 3600,
+                   !bubbleView.prompt.isEmpty { bubbleView.prompt = "" }
+            }
             bubbleView.mood = view.mood
             bubbleView.needsDisplay = true
-            if view.tick % 100 == 0 {
+            if clock % 100 == 0 {
                 if pollSessions() {
                     emptySince = nil
                 } else {

@@ -40,7 +40,7 @@ On other platforms the plugin stays silently inactive.
 | State | Trigger | Perchling |
 |---|---|---|
 | running | you submit a prompt / tools execute | bounces quickly, glances left and right |
-| waiting | permission prompt, idle prompt, agent needs input | stops and stares at you, twitching |
+| waiting | permission prompt, agent needs input | stops and stares at you, twitching |
 | done | turn or agent completed | hops happily, then settles |
 | error | API failure ended the turn | droops |
 | idle | nothing happening | breathes slowly, blinks |
@@ -50,6 +50,12 @@ latest prompt plus what it's doing (thinking… / waiting for you… / done!).
 The bubble vanishes when things go idle, and it never steals clicks — it's a
 click-through overlay.
 
+Its eyes follow your cursor. With several sessions running, it shows the most
+attention-worthy state across all of them (waiting > error > done > running) —
+one session's chatter can't drown out another one that needs you — and stale
+moods expire on their own, so a killed session can't leave it bouncing
+forever. It honors the system Reduce Motion setting.
+
 Click the pet to jump back to Claude — the Claude desktop app if it's
 running, otherwise the app that was frontmost when the pet launched. When
 you're in another app, waiting / done / error each post a macOS notification
@@ -57,17 +63,19 @@ with a chirp; when you're already looking at Claude it stays quiet. macOS
 attributes these notifications to "Script Editor" — allow them when the
 first one asks, or they're silently dropped.
 
-Drag it anywhere — the position sticks. Right-click to quit. It exits by
-itself ~30s after your last Claude Code session ends, and comes back with the
-next one.
+Drag it anywhere — the position sticks. Right-click for Tuck away (hides
+until something needs you — or `scripts/pet.sh wake`), Disable (stays off
+until `scripts/pet.sh enable`), or Quit. It exits by itself ~30s after your
+last Claude Code session ends, and comes back with the next one.
 
 ## How it works
 
-Hooks write a single word to `~/.claude/perchling/state`; the app polls the
-file's mtime at 20fps and animates accordingly. Session liveness is a
-refcount: each session touches a file in `~/.claude/perchling/sessions/`,
-re-stamped on every prompt, removed on session end. No IPC, no daemon
-framework, no network.
+Hooks write each session's mood into `~/.claude/perchling/sessions/<id>`
+(plus the last event to `~/.claude/perchling/state` for manual control); the
+app polls at 20fps and folds live sessions by attention priority with
+per-mood expiry. The same files are the liveness refcount: re-stamped on
+every prompt, removed on session end. No IPC, no daemon framework, no
+network.
 
 ## Manual controls
 
@@ -76,6 +84,9 @@ framework, no network.
 scripts/pet.sh status   # binary / process / state / session count
 scripts/pet.sh stop     # remove all refcounts and kill the pet
 scripts/pet.sh build    # force rebuild
+scripts/pet.sh disable  # keep it off across sessions
+scripts/pet.sh enable   # bring it back
+scripts/pet.sh wake     # un-tuck a tucked pet
 echo -n waiting > ~/.claude/perchling/state   # puppeteer it yourself
 ```
 

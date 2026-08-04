@@ -60,6 +60,9 @@ From the installed plugin directory:
 scripts/pet.sh status   # binary / process / state / session count
 scripts/pet.sh stop     # remove refcounts and kill the pet
 scripts/pet.sh build    # force rebuild
+scripts/pet.sh disable  # keep it off across sessions
+scripts/pet.sh enable   # bring it back
+scripts/pet.sh wake     # un-tuck a tucked pet
 ```
 
 Uninstall: `claude plugin uninstall perchling@perchling`, then
