@@ -78,6 +78,12 @@ your prompt while it works, then a snippet of Claude's reply once the turn
 ends. The status words follow your system language. It's a click-through
 overlay, so it never steals a click, and it vanishes when things go idle.
 
+A small disc perches on the pet's shoulder while there is anything to say.
+Click it to fold the bubble away or bring it back — the choice sticks across
+restarts. When something happened while you were looking elsewhere, the disc
+turns into a count of how much you missed; coming back to Claude, or opening
+the bubble, clears it.
+
 ### 🔔 When you've looked away
 
 **waiting**, **done** and **error** each post a macOS notification with a
