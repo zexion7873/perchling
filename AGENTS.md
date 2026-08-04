@@ -95,8 +95,12 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   owner file, and owes both a removal.
 - **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
   the pause between one session ending and the next starting — a resume, a
-  `/clear`, a new window. A session retired by a dead owner skips it, because
-  nothing can arrive to fill that gap.
+  `/clear`, a new window. Both ways of losing every session skip it: refcounts
+  orphaned by an owner that died, and an empty directory whose last known
+  owners are all gone. The ordinary quit takes the second path, not the first
+  — `SessionEnd` really does fire on ⌘Q and removes the refcounts properly, so
+  a pet that only handles orphans still sits there for the full 30 seconds
+  after the app is gone.
 
 ## Commands
 
