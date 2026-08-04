@@ -34,9 +34,23 @@ have the user launch `claude` once first, then retry.
 claude plugin list | grep -i perchling
 ```
 
-Nothing to launch or configure: the pet builds itself (~2 seconds, one-time)
-and appears when the user's next Claude Code session starts. After that first
+Nothing to configure: the pet builds itself (~2 seconds, one-time) and
+appears when the user's next Claude Code session starts. After that first
 session, the build succeeded if `~/.claude/perchling/bin/perchling` exists.
+
+## 4. Launch it now (recommended)
+
+Hooks only register at session start, so after a mid-session install the pet
+would first appear at the user's *next* session. Don't make them wait — launch
+it immediately:
+
+```bash
+bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | head -1)" up manual
+```
+
+This builds (first run) and starts the pet right away; it perches at the
+bottom-right of the screen. The `manual` liveness stamp expires after ~1 hour,
+after which real Claude Code sessions keep the pet alive via their own hooks.
 
 ## Control & uninstall
 
