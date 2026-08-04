@@ -82,6 +82,15 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   per mood. Cursor-following pupils, blinking, and any tick-driven animation are
   renderer-only and cannot be expressed in `pet.json`; anything new in that
   family widens the gap between the built-in pet and custom ones.
+- **Not every wait announces itself.** `waiting` comes from two unrelated
+  places: the `Notification` event, whose matcher is a regex over the
+  notification type (`permission_prompt` also catches
+  `worker_permission_prompt`), and a `PreToolUse` matcher on the tools that
+  block on a human — asking a question and presenting a plan. Those emit no
+  notification at all, and were measured sitting at `running` for the entire
+  79 seconds a question was on screen. A new blocking affordance needs its own
+  trigger; nothing generic covers it. Nothing has to clear it: the next tool
+  batch writes `running` on its own.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
