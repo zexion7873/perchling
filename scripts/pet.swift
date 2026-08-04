@@ -557,6 +557,59 @@ let moodRank: [Mood: Int] = [.idle: 0, .running: 1, .done: 2, .error: 3, .waitin
 let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .waiting: 3600]
 
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
+let CHIP: CGFloat = 26
+
+// One control with two jobs: the count of what happened while you were not
+// looking, and the handle that folds the bubble away. It gets its own window
+// because `ignoresMouseEvents` is per-window — hanging a button off the bubble
+// would cost the whole 260-point rect the click-through that is the point of
+// a bubble you can leave on screen.
+final class ChipView: NSView {
+    var count = 0
+    var collapsed = false
+    var onTap: (() -> Void)?
+
+    override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseUp(with event: NSEvent) { onTap?() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+        let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4))
+        (count > 0 ? palette[.body]! : palette[.glyph]!).setFill()
+        disc.fill()
+        palette[.outline]!.setStroke()
+        disc.lineWidth = 2.5
+        disc.stroke()
+        if count > 0 {
+            // Two glyphs is the whole budget at this size; past nine the exact
+            // number stops being the point anyway.
+            let s = count > 9 ? "9+" : "\(count)"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
+                // Dark on the warm disc: at 26 points, cream on body colour
+                // turns to mush and the count is the one thing to read.
+                .foregroundColor: palette[.outline]!,
+            ]
+            let sz = (s as NSString).size(withAttributes: attrs)
+            (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
+        } else {
+            // The chevron points where the bubble is going, not where it is.
+            let mid = CHIP / 2, w: CGFloat = 4.5, h: CGFloat = 2.5
+            let apex = collapsed ? mid - h : mid + h, base = collapsed ? mid + h : mid - h
+            let p = NSBezierPath()
+            p.move(to: NSPoint(x: mid - w, y: base))
+            p.line(to: NSPoint(x: mid, y: apex))
+            p.line(to: NSPoint(x: mid + w, y: base))
+            palette[.screen]!.setStroke()
+            p.lineWidth = 2.5
+            p.lineCapStyle = .round
+            p.lineJoinStyle = .round
+            p.stroke()
+        }
+    }
+}
 
 final class BubbleView: NSView {
     var mood: Mood = .idle
@@ -650,6 +703,8 @@ final class Controller: NSObject, NSWindowDelegate {
     let view: PetView
     let bubble: NSWindow
     let bubbleView: BubbleView
+    let chip: NSWindow
+    let chipView: ChipView
     let root: URL
     let stateURL: URL
     let sessionsURL: URL
@@ -663,6 +718,9 @@ final class Controller: NSObject, NSWindowDelegate {
     var firstFold = true
     var tucked = false
     var lastOwners: Set<pid_t> = []
+    var unread = 0
+    var collapsed = UserDefaults.standard.bool(forKey: "bubbleCollapsed")
+    var lastChip: (Bool, Int, Bool)?
     var lastInputMoods: [String: Mood] = [:]
 
     init(root: URL) {
@@ -676,6 +734,10 @@ final class Controller: NSObject, NSWindowDelegate {
         bubble = NSWindow(contentRect: NSRect(origin: .zero, size: bubSize),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         bubbleView = BubbleView(frame: NSRect(origin: .zero, size: bubSize))
+        let chipSize = NSSize(width: CHIP, height: CHIP)
+        chip = NSWindow(contentRect: NSRect(origin: .zero, size: chipSize),
+                        styleMask: [.borderless], backing: .buffered, defer: false)
+        chipView = ChipView(frame: NSRect(origin: .zero, size: chipSize))
         let size = canvasSize(GW, GH, SCALE)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
@@ -708,10 +770,21 @@ final class Controller: NSObject, NSWindowDelegate {
         window.addChildWindow(bubble, ordered: .above)
         repositionBubble()
 
+        // The chip is the one piece of chrome that has to take a click, so it
+        // is the one window that does not ignore mouse events.
+        chip.isOpaque = false
+        chip.backgroundColor = .clear
+        chip.hasShadow = false
+        chip.level = .floating
+        chip.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        chip.contentView = chipView
+        window.addChildWindow(chip, ordered: .above)
+
         // "Home" is where a tap sends the user: Claude desktop when present,
         // else whatever was frontmost at launch (terminal-CLI users).
         homeApp = Controller.resolveHomeApp()
         view.onTap = { [weak self] in self?.focusHome() }
+        chipView.onTap = { [weak self] in self?.toggleBubble() }
         view.onTuck = { [weak self] in self?.setTucked(true) }
         view.onDisable = { [weak self] in self?.disableAndQuit() }
 
@@ -725,6 +798,7 @@ final class Controller: NSObject, NSWindowDelegate {
             repositionBubble()
         }
         window.orderFrontRegardless()
+        applyChrome()
     }
 
     // pet.json IS the active pet: present and valid → custom sprite; broken
@@ -768,9 +842,8 @@ final class Controller: NSObject, NSWindowDelegate {
             window.orderOut(nil)
         } else {
             window.orderFrontRegardless()
-            window.addChildWindow(bubble, ordered: .above)
-            repositionBubble()
         }
+        applyChrome()
     }
 
     func disableAndQuit() {
@@ -785,6 +858,49 @@ final class Controller: NSObject, NSWindowDelegate {
         bubbleView.tailCenter = pf.midX - x
         bubbleView.needsDisplay = true
         bubble.setFrameOrigin(NSPoint(x: x, y: pf.maxY + 2))
+        // Perched on the pet's top-right corner, mostly outside the art and
+        // entirely below the bubble — the two never draw over each other.
+        var cx = pf.maxX - 10, cy = pf.maxY - CHIP
+        if let s = window.screen ?? NSScreen.main {
+            cx = min(cx, s.visibleFrame.maxX - CHIP)
+            cy = min(cy, s.visibleFrame.maxY - CHIP)
+        }
+        chip.setFrameOrigin(NSPoint(x: cx, y: cy))
+    }
+
+    // The chip earns its place only when it has something to say or something
+    // to fold: a count you have not seen, or a bubble that is actually drawn.
+    // An idle pet keeps the desktop clean.
+    func applyChrome() {
+        let wanted = !tucked && (unread > 0 || view.mood != .idle)
+        let state = (wanted, unread, collapsed)
+        guard lastChip == nil || lastChip! != state else { return }
+        lastChip = state
+        chipView.count = unread
+        chipView.collapsed = collapsed
+        chipView.needsDisplay = true
+        if wanted { chip.orderFrontRegardless() } else { chip.orderOut(nil) }
+        if tucked || collapsed {
+            bubble.orderOut(nil)
+        } else {
+            window.addChildWindow(bubble, ordered: .above)
+            repositionBubble()
+        }
+    }
+
+    func toggleBubble() {
+        collapsed.toggle()
+        UserDefaults.standard.set(collapsed, forKey: "bubbleCollapsed")
+        // Opening it is the act of reading it.
+        if !collapsed { unread = 0 }
+        applyChrome()
+    }
+
+    // "Not looking" is the same judgement the away-notification makes, and the
+    // unread count has to agree with it or the two tell different stories.
+    var userIsLooking: Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication else { return false }
+        return front.bundleIdentifier == homeApp?.bundleIdentifier || front.bundleIdentifier == claudeBundleID
     }
 
     static func resolveHomeApp() -> NSRunningApplication? {
@@ -819,9 +935,10 @@ final class Controller: NSObject, NSWindowDelegate {
         guard let msg = messages[mood] else { return }
         // Quiet when the user is already looking at the home app — or at
         // Claude desktop, even one opened after we resolved home.
-        if let front = NSWorkspace.shared.frontmostApplication,
-           front.bundleIdentifier == homeApp?.bundleIdentifier
-           || front.bundleIdentifier == claudeBundleID { return }
+        guard !userIsLooking else { return }
+        // Same event, two ways of surviving your absence: one notification you
+        // may miss, one count that waits on the pet until you come back.
+        unread += 1
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", "display notification \"\(msg)\" with title \"Perchling\" sound name \"Glass\""]
@@ -970,6 +1087,10 @@ final class Controller: NSObject, NSWindowDelegate {
                     if tucked && (alert == .waiting || alert == .error) { setTucked(false) }
                 }
                 firstFold = false
+                // Coming back to Claude is reading the news, whether or not
+                // the bubble was ever opened.
+                if unread > 0 && userIsLooking { unread = 0 }
+                applyChrome()
                 pollPet()
                 pollSay()
                 // A prompt snippet from hours ago is noise, not context.

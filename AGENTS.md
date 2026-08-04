@@ -72,6 +72,12 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `deadline = tick + n` must be armed only when motion is allowed, or `tick`
   never reaches it and the state sticks forever. Liveness and mood changes must
   keep working while frozen.
+- **Only the chip takes clicks.** `ignoresMouseEvents` is per-window, so a
+  button hung off the bubble would cost the whole 260-point rect the
+  click-through that lets it sit over other windows. Anything tappable that
+  belongs to the bubble needs its own window, the way the chip does — and the
+  chip is placed to clear the bubble's rect entirely, so neither draws over
+  the other.
 - **A manifest carries pixels, not behavior.** Custom pets get one static frame
   per mood. Cursor-following pupils, blinking, and any tick-driven animation are
   renderer-only and cannot be expressed in `pet.json`; anything new in that
