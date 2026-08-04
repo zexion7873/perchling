@@ -487,15 +487,32 @@ final class BubbleView: NSView {
 
     override var isFlipped: Bool { true }
 
-    private func statusText() -> String {
-        switch mood {
-        case .running: return "thinking…"
-        case .waiting: return "waiting for you…"
-        case .done:    return "done!"
-        case .error:   return "oops — error"
-        case .idle:    return ""
+    // Four words of UI, so the table is inline rather than a .lproj bundle a
+    // single-file build cannot carry. Only languages whose wording I can vouch
+    // for are listed — a wrong translation is worse than English.
+    private static let status: [Mood: String] = {
+        let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
+                                  .done: "done!", .error: "oops — error"]
+        let tables: [String: [Mood: String]] = [
+            "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
+            "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
+            "ja": [.running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
+        ]
+        // Region-only Chinese tags carry no script subtag, so map them by hand
+        // rather than letting a bare "zh" prefix decide the script.
+        func key(_ lang: String) -> String? {
+            if lang.hasPrefix("ja") { return "ja" }
+            guard lang.hasPrefix("zh") else { return nil }
+            if ["zh-Hant", "zh-TW", "zh-HK", "zh-MO"].contains(where: lang.hasPrefix) { return "zh-Hant" }
+            return "zh-Hans"
         }
-    }
+        for lang in Locale.preferredLanguages {
+            if let k = key(lang), let t = tables[k] { return t }
+        }
+        return en
+    }()
+
+    private func statusText() -> String { BubbleView.status[mood] ?? "" }
 
     private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
         var t = s
