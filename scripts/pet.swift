@@ -550,7 +550,11 @@ let claudeBundleID = "com.anthropic.claudefordesktop"
 // stomp another's "waiting". Per-mood TTLs expire stale news (a SIGKILL'd
 // session can't leave the pet bouncing forever).
 let moodRank: [Mood: Int] = [.idle: 0, .running: 1, .done: 2, .error: 3, .waiting: 4]
-let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 12, .error: 3600, .waiting: 3600]
+// `done` outlives the moment it announces because the bubble carries the reply
+// and stops drawing the instant the mood decays — a window you can look away
+// from is the whole point. It stays short enough that a finished session does
+// not sit on top of the attention fold, which it outranks, for minutes.
+let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .waiting: 3600]
 
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
 
@@ -649,6 +653,7 @@ final class Controller: NSObject, NSWindowDelegate {
     let root: URL
     let stateURL: URL
     let sessionsURL: URL
+    let ownersURL: URL
     let sayURL: URL
     let petURL: URL
     var lastSayStamp: Date?
@@ -663,6 +668,7 @@ final class Controller: NSObject, NSWindowDelegate {
         self.root = root
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
+        ownersURL = root.appendingPathComponent("owners")
         sayURL = root.appendingPathComponent("say")
         petURL = root.appendingPathComponent("pet.json")
         let bubSize = NSSize(width: BUB_W, height: BUB_H)
@@ -864,7 +870,11 @@ final class Controller: NSObject, NSWindowDelegate {
                                                  includingPropertiesForKeys: [.contentModificationDateKey],
                                                  options: [.skipsHiddenFiles])) ?? []
         for url in items {
-            guard let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+            // A dead owner's last mood is not news: without this a killed app
+            // leaves "waiting for you" on the pet's face for the rest of the
+            // TTL, in front of whoever is still working elsewhere.
+            guard ownerAlive(url.lastPathComponent),
+                  let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                   stamp > cutoff else { continue }
             let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             inputs.append((url.lastPathComponent, Mood.parse(raw), stamp))
@@ -890,15 +900,33 @@ final class Controller: NSObject, NSWindowDelegate {
         return (display, entered)
     }
 
-    func pollSessions() -> Bool {
+    // A session's owner is the outermost process it hangs off: the desktop app
+    // for a session started there, the terminal for one started from a shell.
+    // Killing that process fires no SessionEnd, so the refcount would stand
+    // until it went stale an hour later; asking whether the owner still exists
+    // retires it in a single poll. A session with no owner file — one that
+    // predates the mechanism, or a process tree pet.sh could not walk — falls
+    // back to staleness rather than being declared dead on missing evidence.
+    func ownerAlive(_ sid: String) -> Bool {
+        guard let raw = try? String(contentsOf: ownersURL.appendingPathComponent(sid), encoding: .utf8),
+              let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return true }
+        return kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    // `orphaned` separates the two ways of having no live session: refcounts
+    // that were removed, and refcounts still sitting there with nobody left to
+    // remove them.
+    func pollSessions() -> (live: Bool, orphaned: Bool) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)
         let items = (try? fm.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        let live = items.filter { url in
+        var live = false, orphaned = false
+        for url in items {
+            guard ownerAlive(url.lastPathComponent) else { orphaned = true; continue }
             let d = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            return (d ?? .distantPast) > cutoff
+            if (d ?? .distantPast) > cutoff { live = true }
         }
-        return !live.isEmpty
+        return (live, orphaned)
     }
 
     func run() {
@@ -933,17 +961,22 @@ final class Controller: NSObject, NSWindowDelegate {
                 // A prompt snippet from hours ago is noise, not context.
                 if let s = lastSayStamp, Date().timeIntervalSince(s) > 3600,
                    !bubbleView.prompt.isEmpty { bubbleView.prompt = "" }
-            }
-            bubbleView.mood = view.mood
-            bubbleView.needsDisplay = true
-            if clock % 100 == 0 {
-                if pollSessions() {
+                // The grace period rides out the gap between one session
+                // ending and the next starting — a resume, a /clear, a new
+                // window. An owner that has died cannot produce a next
+                // session, so waiting on that is waiting for nothing.
+                let sessions = pollSessions()
+                if sessions.live {
                     emptySince = nil
+                } else if sessions.orphaned {
+                    NSApp.terminate(nil)
                 } else {
                     if emptySince == nil { emptySince = Date() }
                     if Date().timeIntervalSince(emptySince!) > 30 { NSApp.terminate(nil) }
                 }
             }
+            bubbleView.mood = view.mood
+            bubbleView.needsDisplay = true
             view.needsDisplay = true
         }
     }

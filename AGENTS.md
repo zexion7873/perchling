@@ -82,7 +82,21 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
 - **Session files are both mood and refcount.** Writing one re-stamps liveness;
-  never `touch` one, because that resurrects a stale mood with a full TTL.
+  never `touch` one, because that resurrects a stale mood with a full TTL. The
+  `manual` entry is a bridge for launches with no session behind them, retired
+  by the first real session or by the last `SessionEnd` — it is not a session
+  and must not outlive them.
+- **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
+  pid of the outermost process the session hangs off — Claude desktop, or the
+  terminal that ran `claude`. A dead owner retires the session on the next
+  poll, which is what makes a force-quit (where no `SessionEnd` ever fires)
+  survivable. A missing owner file means unknown, never dead: it falls back to
+  the one-hour staleness window. Whatever writes a session file owes it an
+  owner file, and owes both a removal.
+- **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
+  the pause between one session ending and the next starting — a resume, a
+  `/clear`, a new window. A session retired by a dead owner skips it, because
+  nothing can arrive to fill that gap.
 
 ## Commands
 
