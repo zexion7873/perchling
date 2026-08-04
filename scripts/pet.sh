@@ -37,6 +37,11 @@ cmd_up() {
   # session's mood now, and touching a stale waiting/error would resurrect it
   # with a full TTL on session resume.
   printf idle > "$ROOT/.up.$$" 2>/dev/null && mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
+  # "manual" is a bridge for launches with no session behind them (enable,
+  # wake, an unparseable payload). A real session supersedes it, and nothing
+  # else ever deletes it — left alone it holds an idle pet up for the whole
+  # staleness hour after the last session ends.
+  [ "$sid" = manual ] || rm -f "$SESSIONS/manual"
   # (Re)build when missing or when a plugin update shipped newer source.
   if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
     pkill -f "$BIN" 2>/dev/null
@@ -50,6 +55,9 @@ cmd_down() {
   sid="${1:-}"
   [ -n "$sid" ] || sid="$(read_session_id)"
   [ -n "$sid" ] && rm -f "$SESSIONS/$sid"
+  # A bridge left over from an enable/wake that happened while sessions were
+  # live: on its own it is not a reason for the pet to exist.
+  [ "$(ls -A "$SESSIONS" 2>/dev/null)" = manual ] && rm -f "$SESSIONS/manual"
   exit 0
 }
 
