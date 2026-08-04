@@ -1,6 +1,6 @@
 # Working on perchling
 
-A Claude Code plugin: one Swift file compiled to a ~200KB accessory-app
+A Claude Code plugin: one Swift file compiled to a ~280KB accessory-app
 overlay, driven by hook scripts that write mood files. No package manager, no
 test framework, no dependencies. `README.md` covers what it does for a user —
 this file covers what will waste your time if you assume it.
@@ -51,9 +51,11 @@ Verify without launching:
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
   overwrites the global file unconditionally, so it reads last-writer-wins and
-  any second live session stomps it; the renderer is what folds `sessions/*` by
-  priority. For anything keyed to a prompt appearing on screen, get the ground
-  truth from the macOS unified log rather than asking the user — query
+  any second live session stomps it. The renderer reads it, but only as one
+  more input folded by priority alongside every `sessions/*` entry — and with
+  its own shorter TTL — so it is a fine puppet string and a bad measurement.
+  For anything keyed to a prompt appearing on screen, get the ground truth
+  from the macOS unified log rather than asking the user — query
   `NotificationCenter` for bundle `com.anthropic.claudefordesktop` and read the
   `NotificationRecord` request id, which timestamps when the banner appeared
   and when it cleared. Use `/usr/bin/log`; the bare name is a zsh builtin and

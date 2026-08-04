@@ -10,7 +10,7 @@ needs you.**
 
 [![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
-[![Binary](https://img.shields.io/badge/binary-~200KB-brightgreen?style=flat)](#-how-it-works)
+[![Binary](https://img.shields.io/badge/binary-~280KB-brightgreen?style=flat)](#-how-it-works)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 [![GitHub stars](https://img.shields.io/github/stars/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/commits)
@@ -46,7 +46,7 @@ From inside a Claude Code session:
 ```
 
 The pet appears on your next session and builds itself from source on first
-launch — about two seconds, once.
+launch — about four seconds, once.
 
 > [!IMPORTANT]
 > **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
@@ -75,8 +75,9 @@ until something needs you), **Disable**, or **Quit**.
 
 A pixel bubble above its head shows what it's doing over a line of context:
 your prompt while it works, then a snippet of Claude's reply once the turn
-ends. The status words follow your system language. It's a click-through
-overlay, so it never steals a click, and it vanishes when things go idle.
+ends. The status words are translated for Chinese and Japanese systems and read
+English everywhere else. It's a click-through overlay, so it never steals a
+click, and it vanishes when things go idle.
 
 A small disc perches on the pet's shoulder while there is anything to say.
 Click it to fold the bubble away or bring it back — the choice sticks across
@@ -174,13 +175,20 @@ protocol: no IPC, no daemon framework, and no network traffic at runtime.
 
 ## 🎛️ Controls
 
+The control script lives inside the installed plugin, and that path changes on
+every update — resolve it once:
+
 ```bash
-scripts/pet.sh status    # binary / process / state / session count
-scripts/pet.sh build     # force a rebuild
-scripts/pet.sh stop      # drop refcounts and kill the pet
-scripts/pet.sh disable   # keep it off across sessions
-scripts/pet.sh enable    # bring it back
-scripts/pet.sh wake      # un-tuck a tucked pet
+pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" -type f -path '*perchling*/scripts/pet.sh' | head -1)
+```
+
+```bash
+bash "$pet" status    # binary / process / state / session count
+bash "$pet" build     # force a rebuild
+bash "$pet" stop      # drop refcounts and kill the pet
+bash "$pet" disable   # keep it off across sessions
+bash "$pet" enable    # bring it back
+bash "$pet" wake      # un-tuck a tucked pet
 ```
 
 ```bash
