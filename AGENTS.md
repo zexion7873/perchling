@@ -82,7 +82,14 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
 - **Session files are both mood and refcount.** Writing one re-stamps liveness;
-  never `touch` one, because that resurrects a stale mood with a full TTL.
+  never `touch` one, because that resurrects a stale mood with a full TTL. The
+  `manual` entry is a bridge for launches with no session behind them, retired
+  by the first real session or by the last `SessionEnd` — it is not a session
+  and must not outlive them.
+- **Liveness has two windows.** A refcount goes stale after an hour — or after
+  five minutes once the desktop app has been seen running and then disappears,
+  because a force-quit fires no `SessionEnd`. A pet that has never seen the app
+  is a terminal-only setup and keeps the full hour.
 
 ## Commands
 
