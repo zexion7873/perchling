@@ -657,6 +657,7 @@ final class Controller: NSObject, NSWindowDelegate {
     var homeApp: NSRunningApplication?
     var firstFold = true
     var tucked = false
+    var sawClaudeApp = false
     var lastInputMoods: [String: Mood] = [:]
 
     init(root: URL) {
@@ -892,7 +893,15 @@ final class Controller: NSObject, NSWindowDelegate {
 
     func pollSessions() -> Bool {
         let fm = FileManager.default
-        let cutoff = Date().addingTimeInterval(-3600)
+        // A force-quit desktop app never fires SessionEnd, so its refcounts
+        // would hold an idle pet up for the whole staleness hour. Once the app
+        // has been seen, its disappearance shortens the window: a terminal
+        // session anyone is actually using re-stamps on every prompt and tool
+        // batch, so it outlives the shorter window on its own. A pet that has
+        // never seen the app — a terminal-only setup — keeps the full hour.
+        let appRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: claudeBundleID).isEmpty
+        if appRunning { sawClaudeApp = true }
+        let cutoff = Date().addingTimeInterval(sawClaudeApp && !appRunning ? -300 : -3600)
         let items = (try? fm.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         let live = items.filter { url in
             let d = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
