@@ -662,6 +662,7 @@ final class Controller: NSObject, NSWindowDelegate {
     var homeApp: NSRunningApplication?
     var firstFold = true
     var tucked = false
+    var lastOwners: Set<pid_t> = []
     var lastInputMoods: [String: Mood] = [:]
 
     init(root: URL) {
@@ -907,26 +908,39 @@ final class Controller: NSObject, NSWindowDelegate {
     // retires it in a single poll. A session with no owner file — one that
     // predates the mechanism, or a process tree pet.sh could not walk — falls
     // back to staleness rather than being declared dead on missing evidence.
-    func ownerAlive(_ sid: String) -> Bool {
-        guard let raw = try? String(contentsOf: ownersURL.appendingPathComponent(sid), encoding: .utf8),
-              let pid = pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return true }
-        return kill(pid, 0) == 0 || errno == EPERM
+    func ownerPid(_ sid: String) -> pid_t? {
+        guard let raw = try? String(contentsOf: ownersURL.appendingPathComponent(sid), encoding: .utf8) else { return nil }
+        return pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    // `orphaned` separates the two ways of having no live session: refcounts
-    // that were removed, and refcounts still sitting there with nobody left to
-    // remove them.
-    func pollSessions() -> (live: Bool, orphaned: Bool) {
+    func alive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
+
+    // A session with no owner file is unknown, never dead.
+    func ownerAlive(_ sid: String) -> Bool { ownerPid(sid).map(alive) ?? true }
+
+    // `retired` is the difference between having nothing to report and having
+    // nobody left to report it — refcounts orphaned by an owner that died, or
+    // an empty directory that the last owners emptied on their way out.
+    func pollSessions() -> (live: Bool, retired: Bool) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)
         let items = (try? fm.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        var live = false, orphaned = false
+        var live = false, retired = false
+        var owners: Set<pid_t> = []
         for url in items {
-            guard ownerAlive(url.lastPathComponent) else { orphaned = true; continue }
+            if let pid = ownerPid(url.lastPathComponent) {
+                guard alive(pid) else { retired = true; continue }
+                owners.insert(pid)
+            }
             let d = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             if (d ?? .distantPast) > cutoff { live = true }
         }
-        return (live, orphaned)
+        if !owners.isEmpty { lastOwners = owners }
+        // A clean quit takes its refcounts with it, so the directory empties
+        // exactly the way a session restart empties it. What tells them apart
+        // is whether anyone who could start the next session is still running.
+        if !live, !lastOwners.isEmpty, !lastOwners.contains(where: alive) { retired = true }
+        return (live, retired)
     }
 
     func run() {
@@ -963,12 +977,12 @@ final class Controller: NSObject, NSWindowDelegate {
                    !bubbleView.prompt.isEmpty { bubbleView.prompt = "" }
                 // The grace period rides out the gap between one session
                 // ending and the next starting — a resume, a /clear, a new
-                // window. An owner that has died cannot produce a next
-                // session, so waiting on that is waiting for nothing.
+                // window. Nothing can arrive to fill that gap once every owner
+                // is gone, so waiting on it is waiting for nothing.
                 let sessions = pollSessions()
                 if sessions.live {
                     emptySince = nil
-                } else if sessions.orphaned {
+                } else if sessions.retired {
                     NSApp.terminate(nil)
                 } else {
                     if emptySince == nil { emptySince = Date() }
