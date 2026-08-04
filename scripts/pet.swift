@@ -236,12 +236,13 @@ let base = buildBase()
 // draw calls so --export emits exactly the art the app renders.
 // Coordinates stay in the original 32x33 design space; cell() expands them and
 // the dx/gy offsets arrive already in final cells.
+func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
+       _ ox: Int = 0, _ oy: Int = 0) -> (Ink, Int, Int, Int, Int) {
+    let c = cell(x0, y0, x1, y1)
+    return (ink, c.0 + ox, c.1 + oy, c.2 + ox, c.3 + oy)
+}
+
 func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ blinking: Bool) -> [(Ink, Int, Int, Int, Int)] {
-    func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
-           _ ox: Int = 0, _ oy: Int = 0) -> (Ink, Int, Int, Int, Int) {
-        let c = cell(x0, y0, x1, y1)
-        return (ink, c.0 + ox, c.1 + oy, c.2 + ox, c.3 + oy)
-    }
     switch mood {
     case .waiting:
         return [r(.eye, 10, 10, 13, 12, dx, gy), r(.eye, 18, 10, 21, 12, dx, gy),
@@ -266,15 +267,37 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ blinking: Bool) -> [(Ink, In
     }
 }
 
-func chromeRects(_ cursorOn: Bool) -> [(Ink, Int, Int, Int, Int)] {
-    func r(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Ink, Int, Int, Int, Int) {
-        let c = cell(x0, y0, x1, y1)
-        return (.glyph, c.0, c.1, c.2, c.3)
-    }
-    var out = [r(11, 22, 12, 22), r(12, 23, 13, 23), r(13, 24, 14, 24),
-               r(12, 25, 13, 25), r(11, 26, 12, 26)]
-    if cursorOn { out.append(r(16, 26, 20, 26)) }
+// The prompt chevron plus `cursorCells` of underscore after it (0...5). A
+// steady 5 is the plain cursor the pet has always drawn; growing it a cell at
+// a time is what reads as typing.
+func chromeRects(_ cursorCells: Int) -> [(Ink, Int, Int, Int, Int)] {
+    var out = [r(.glyph, 11, 22, 12, 22), r(.glyph, 12, 23, 13, 23), r(.glyph, 13, 24, 14, 24),
+               r(.glyph, 12, 25, 13, 25), r(.glyph, 11, 26, 12, 26)]
+    let n = min(max(cursorCells, 0), 5)
+    if n > 0 { out.append(r(.glyph, 16, 26, 15 + n, 26)) }
     return out
+}
+
+// Startle: both eyes blown wide, overriding whatever the mood was drawing.
+func startledRects() -> [(Ink, Int, Int, Int, Int)] {
+    [r(.eye, 9, 9, 13, 13), r(.eye, 18, 9, 22, 13),
+     r(.screen, 11, 11, 12, 12), r(.screen, 19, 11, 20, 12)]
+}
+
+// A tear wells under the left eye and falls clear of the chin, then pauses.
+func tearRects(_ tick: Int) -> [(Ink, Int, Int, Int, Int)] {
+    let phase = tick % 54
+    guard phase >= 12 else { return [] }
+    let y = 13 + min(4, (phase - 12) / 7)
+    return [r(.glyph, 11, y, 11, y + 1)]
+}
+
+// Twinkles either side of the crown, alternating so something is always
+// catching the light without both sides flashing in lockstep.
+func sparkleRects(_ tick: Int) -> [(Ink, Int, Int, Int, Int)] {
+    (tick / 6) % 2 == 0
+        ? [r(.glyph, 3, 2, 3, 2), r(.glyph, 2, 3, 4, 3), r(.glyph, 3, 4, 3, 4)]
+        : [r(.glyph, 28, 2, 28, 2), r(.glyph, 27, 3, 29, 3), r(.glyph, 28, 4, 28, 4)]
 }
 
 // Snapshot the built-in pet as a manifest, so the default is a starting point
@@ -295,7 +318,7 @@ func exportBuiltin() -> String {
     var moods: [String: [String]] = [:]
     for mood in [Mood.idle, .running, .waiting, .done, .error] {
         var grid = base
-        for (ink, x0, y0, x1, y1) in eyeRects(mood, 0, 0, false) + chromeRects(true) {
+        for (ink, x0, y0, x1, y1) in eyeRects(mood, 0, 0, false) + chromeRects(5) {
             for y in y0...y1 where y >= 0 && y < GH {
                 for x in x0...x1 where x >= 0 && x < GW { grid[y][x] = ink }
             }
@@ -318,9 +341,35 @@ final class PetView: NSView {
     var custom: CustomPet?
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
+    var startledUntil = -1
     private var gazeY = 0
 
     override var isFlipped: Bool { true }
+
+    var motionOK: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    // Reduce Motion freezes `tick`, so a deadline can never be reached once it
+    // is on. Guarding only where the deadline is armed covers Reduce Motion
+    // being on already, but not being switched on mid-flight — that leaves
+    // `tick` parked below the deadline forever and the pose stuck for the life
+    // of the process. Both ends have to check.
+    var startled: Bool { custom == nil && motionOK && tick < startledUntil }
+
+    // Hovering the pet startles it. The tracking area is rebuilt on resize
+    // because installing a custom pet changes the window's bounds.
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if motionOK { startledUntil = tick + 16 }
+    }
 
     // Pupils drift toward the cursor (idle/waiting only) — the feature OpenAI
     // built for Codex pets and left Statsig-gated off.
@@ -377,13 +426,16 @@ final class PetView: NSView {
             dx = (tick % 30 < 2) ? 1 : 0
             if custom == nil { let g = gaze(); dx += g.0; gy = g.1 }
         case .done:
-            off = tick < hopUntil ? (2 - ((tick / 3) % 2) * 2) : 2 + (tick / 12) % 2
+            off = 2 + (tick / 12) % 2
         case .error:
             off = 3
         case .idle:
             off = 2 + (tick / 9) % 2
             if custom == nil { let g = gaze(); dx = g.0; gy = g.1 }
         }
+        // The hop outranks the mood's resting bob, and now fires on a tap in
+        // any mood rather than only on the switch into done.
+        if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
         off *= u
         dx *= u
         gazeY = gy * u
@@ -407,16 +459,33 @@ final class PetView: NSView {
                 if ink != .none { put(ink, x, y, x, y, off) }
             }
         }
-        drawEyes(off, dx)
-
-        let cursorOn: Bool
-        switch mood {
-        case .running: cursorOn = (tick / 3) % 2 == 0
-        case .waiting: cursorOn = (tick / 6) % 2 == 0
-        case .done, .error: cursorOn = true
-        case .idle: cursorOn = (tick / 11) % 2 == 0
+        if startled {
+            for (ink, x0, y0, x1, y1) in startledRects() { put(ink, x0, y0, x1, y1, off) }
+        } else {
+            drawEyes(off, dx)
         }
-        for (ink, x0, y0, x1, y1) in chromeRects(cursorOn) { put(ink, x0, y0, x1, y1, off) }
+
+        // running types a line out a cell at a time; every other mood keeps the
+        // plain cursor it has always had, blinking at its own rate.
+        let cursorCells: Int
+        switch mood {
+        // A frozen clock must land on a good pose, and phase 0 of the typing
+        // cycle is an empty prompt line — the one frame that reads as broken.
+        case .running: cursorCells = motionOK ? min(5, (tick / 3) % 7) : 5
+        case .waiting: cursorCells = (tick / 6) % 2 == 0 ? 5 : 0
+        case .done, .error: cursorCells = 5
+        case .idle: cursorCells = (tick / 11) % 2 == 0 ? 5 : 0
+        }
+        for (ink, x0, y0, x1, y1) in chromeRects(cursorCells) { put(ink, x0, y0, x1, y1, off) }
+
+        // A droplet frozen mid-fall reads as a rendering fault, so the tear is
+        // the one extra that sits out Reduce Motion entirely.
+        if mood == .error && motionOK && !startled {
+            for (ink, x0, y0, x1, y1) in tearRects(tick) { put(ink, x0, y0, x1, y1, off) }
+        }
+        if mood == .done {
+            for (ink, x0, y0, x1, y1) in sparkleRects(tick) { put(ink, x0, y0, x1, y1, off) }
+        }
     }
 
     // Manual drag: window-background dragging would swallow the mouseUp we
@@ -445,7 +514,12 @@ final class PetView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if !dragged { onTap?() }
+        if !dragged {
+            // Hop first so the poke registers even though focus is about to
+            // leave for the home app.
+            if motionOK { hopUntil = tick + 12 }
+            onTap?()
+        }
         pressAt = nil
         winAt = nil
     }
@@ -487,15 +561,34 @@ final class BubbleView: NSView {
 
     override var isFlipped: Bool { true }
 
-    private func statusText() -> String {
-        switch mood {
-        case .running: return "thinking…"
-        case .waiting: return "waiting for you…"
-        case .done:    return "done!"
-        case .error:   return "oops — error"
-        case .idle:    return ""
+    // Four words of UI, so the table is inline rather than a .lproj bundle a
+    // single-file build cannot carry. Only languages whose wording I can vouch
+    // for are listed — a wrong translation is worse than English.
+    private static let status: [Mood: String] = {
+        let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
+                                  .done: "done!", .error: "oops — error"]
+        let tables: [String: [Mood: String]] = [
+            "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
+            "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
+            "ja": [.running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
+        ]
+        // Region-only Chinese tags carry no script subtag, so map them by hand
+        // rather than letting a bare "zh" prefix decide the script.
+        func key(_ lang: String) -> String? {
+            if lang.hasPrefix("ja") { return "ja" }
+            guard lang.hasPrefix("zh") else { return nil }
+            if ["zh-Hant", "zh-TW", "zh-HK", "zh-MO"].contains(where: lang.hasPrefix) { return "zh-Hant" }
+            return "zh-Hans"
         }
-    }
+        // Only the primary language decides. Scanning the whole list would let
+        // a Chinese entry further down override an English-first system —
+        // "I don't have your language" means fall back, not keep hunting.
+        guard let first = Locale.preferredLanguages.first,
+              let k = key(first), let t = tables[k] else { return en }
+        return t
+    }()
+
+    private func statusText() -> String { BubbleView.status[mood] ?? "" }
 
     private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
         var t = s
@@ -742,7 +835,11 @@ final class Controller: NSObject, NSWindowDelegate {
         lastSayStamp = stamp
         let data = (try? Data(contentsOf: sayURL)) ?? Data()
         var s = String(decoding: data, as: UTF8.self)
+        // The snippet is lifted verbatim out of JSON, so it still carries the
+        // escapes: newlines become spaces, and a quoted phrase should read as
+        // a quoted phrase rather than a backslash storm.
         s = s.replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\t", with: " ")
+        s = s.replacingOccurrences(of: "\\\"", with: "\"")
         s = String(String.UnicodeScalarView(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }))
         bubbleView.prompt = s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -822,7 +919,7 @@ final class Controller: NSObject, NSWindowDelegate {
                 let (next, entered) = pollMoods()
                 if next != view.mood {
                     view.mood = next
-                    if next == .done { view.hopUntil = view.tick + 12 }
+                    if next == .done && view.motionOK { view.hopUntil = view.tick + 12 }
                 }
                 // Reminders and tuck-wake follow per-input events, not the
                 // (possibly masked) display transition.
