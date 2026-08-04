@@ -1,7 +1,7 @@
 {
   "name": "perchling",
   "displayName": "Perchling",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. 200KB Swift binary, zero dependencies, no Electron.",
   "author": {
     "name": "Kevin Lin",
