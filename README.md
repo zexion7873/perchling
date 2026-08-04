@@ -39,25 +39,28 @@ On other platforms the plugin stays silently inactive.
 
 | State | Trigger | Perchling |
 |---|---|---|
-| running | you submit a prompt / tools execute | bounces quickly, glances left and right |
+| running | you submit a prompt / tools execute | bounces quickly, glances around, types a line out on its belly |
 | waiting | permission prompt, agent needs input | stops and stares at you, twitching |
-| done | turn or agent completed | hops happily, then settles |
-| error | API failure ended the turn | droops |
+| done | turn or agent completed | hops happily under a twinkle, then settles |
+| error | API failure ended the turn | droops, and a tear rolls off its chin |
 | idle | nothing happening | breathes slowly, blinks |
 
-While it works, a pixel speech bubble above its head shows a snippet of your
-latest prompt plus what it's doing (thinking… / waiting for you… / done!).
-The bubble vanishes when things go idle, and it never steals clicks — it's a
-click-through overlay.
+A pixel speech bubble above its head shows what it's doing (thinking… /
+waiting for you… / done!) over a line of context: your prompt while it works,
+then a snippet of Claude's reply once the turn ends. The status words follow
+your system language. The bubble vanishes when things go idle, and it never
+steals clicks — it's a click-through overlay.
 
-Its eyes follow your cursor. With several sessions running, it shows the most
+Hover the pet and it startles. Its eyes follow your cursor. With several
+sessions running, it shows the most
 attention-worthy state across all of them (waiting > error > done > running) —
 one session's chatter can't drown out another one that needs you — and stale
 moods expire on their own, so a killed session can't leave it bouncing
 forever. It honors the system Reduce Motion setting.
 
-Click the pet to jump back to Claude — the Claude desktop app if it's
-running, otherwise the app that was frontmost when the pet launched. When
+Click the pet and it hops, then jumps you back to Claude — the Claude desktop
+app if it's running, otherwise the app that was frontmost when the pet
+launched. When
 you're in another app, waiting / done / error each post a macOS notification
 with a chirp; when you're already looking at Claude it stays quiet. macOS
 attributes these notifications to "Script Editor" — allow them when the
