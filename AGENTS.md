@@ -86,10 +86,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `manual` entry is a bridge for launches with no session behind them, retired
   by the first real session or by the last `SessionEnd` — it is not a session
   and must not outlive them.
-- **Liveness has two windows.** A refcount goes stale after an hour — or after
-  five minutes once the desktop app has been seen running and then disappears,
-  because a force-quit fires no `SessionEnd`. A pet that has never seen the app
-  is a terminal-only setup and keeps the full hour.
+- **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
+  pid of the outermost process the session hangs off — Claude desktop, or the
+  terminal that ran `claude`. A dead owner retires the session on the next
+  poll, which is what makes a force-quit (where no `SessionEnd` ever fires)
+  survivable. A missing owner file means unknown, never dead: it falls back to
+  the one-hour staleness window. Whatever writes a session file owes it an
+  owner file, and owes both a removal.
+- **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
+  the pause between one session ending and the next starting — a resume, a
+  `/clear`, a new window. A session retired by a dead owner skips it, because
+  nothing can arrive to fill that gap.
 
 ## Commands
 
