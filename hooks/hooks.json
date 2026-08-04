@@ -33,6 +33,18 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion|ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/state.sh\" waiting",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolBatch": [
       {
         "hooks": [
