@@ -49,6 +49,15 @@ Verify without launching:
   `draw()`, so what you see is what ships.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
+- **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
+  overwrites the global file unconditionally, so it reads last-writer-wins and
+  any second live session stomps it; the renderer is what folds `sessions/*` by
+  priority. For anything keyed to a prompt appearing on screen, get the ground
+  truth from the macOS unified log rather than asking the user — query
+  `NotificationCenter` for bundle `com.anthropic.claudefordesktop` and read the
+  `NotificationRecord` request id, which timestamps when the banner appeared
+  and when it cleared. Use `/usr/bin/log`; the bare name is a zsh builtin and
+  silently does something else.
 
 `screencapture` needs Screen Recording permission that a shell spawned by
 Claude Code generally lacks, and the desktop-control tools cannot target
@@ -82,15 +91,24 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   per mood. Cursor-following pupils, blinking, and any tick-driven animation are
   renderer-only and cannot be expressed in `pet.json`; anything new in that
   family widens the gap between the built-in pet and custom ones.
-- **Not every wait announces itself.** `waiting` comes from two unrelated
-  places: the `Notification` event, whose matcher is a regex over the
-  notification type (`permission_prompt` also catches
+- **Not every wait announces itself, and not every announcement reaches the
+  plugin.** `waiting` has two triggers: the `Notification` event, whose matcher
+  is a regex over the notification type (`permission_prompt` also catches
   `worker_permission_prompt`), and a `PreToolUse` matcher on the tools that
-  block on a human — asking a question and presenting a plan. Those emit no
-  notification at all, and were measured sitting at `running` for the entire
-  79 seconds a question was on screen. A new blocking affordance needs its own
-  trigger; nothing generic covers it. Nothing has to clear it: the next tool
-  batch writes `running` on its own.
+  block on a human — asking a question and presenting a plan. **In the Claude
+  Code desktop app only the second one ever fires.** The app posts a macOS
+  banner with a `permission-<uuid>` request id for every blocking prompt
+  whatever the tool, and an `idle-<session>` one for the waiting-on-you nudge;
+  across nine such banners the `Notification` hook wrote nothing, not even for
+  a permission window held open 220 seconds. `waiting` tracked the `PreToolUse`
+  tool list exactly. The terminal CLI does dispatch the event. The user-facing
+  banner and the plugin-facing hook event are separate mechanisms — seeing the
+  banner says nothing about the hook, which is the easy way to get this
+  backwards. `PreToolUse` cannot cover the gap either: it runs before the
+  permission check, so it cannot tell a call that will prompt from one that
+  will just run. A new blocking affordance needs its own trigger; nothing
+  generic covers it. Nothing has to clear it: the next tool batch writes
+  `running` on its own.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
