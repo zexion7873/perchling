@@ -59,7 +59,7 @@ launch — about two seconds, once.
 |   | State | Trigger | What you see |
 |:-:|-------|---------|--------------|
 | ⌨️ | **running** | you submit a prompt, tools execute | bounces, glances around, types a line out on its belly |
-| 👀 | **waiting** | permission prompt, agent needs input | stops and stares straight at you, twitching |
+| 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, twitching |
 | 🎉 | **done** | turn or agent completed | hops under a twinkle, then settles |
 | 😢 | **error** | an API failure ended the turn | droops, and a tear rolls off its chin |
 | 💤 | **idle** | nothing happening | breathes slowly, blinks |
