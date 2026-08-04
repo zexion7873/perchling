@@ -1,8 +1,30 @@
 import AppKit
 
-let GW = 32, GH = 33
-let SCALE: CGFloat = 4
-let CANVAS_H = 36
+// The built-in pet is drawn from primitives, not a fixed bitmap, so its
+// resolution is a knob: RES multiplies every grid coordinate while the
+// silhouette stays put. RES 3 at 1 point per cell renders the same creature
+// at 96x99 points with nine times the detail of the original 32x33 at 4.
+let RES = 3
+let GW = 32 * RES, GH = 33 * RES
+let SCALE: CGFloat = 1
+
+// Bounce and twitch are physical: roughly four points of travel regardless of
+// how big a pet's cells are. Expressed in cells so the sprite grid stays the
+// only coordinate system, and the canvas reserves three of those below the
+// art for the motion to happen in.
+func bounceUnit(_ scale: CGFloat) -> Int { max(1, Int((4.0 / scale).rounded())) }
+func headroom(_ scale: CGFloat) -> Int { 3 * bounceUnit(scale) }
+// The twitch moves a custom pet's whole sprite sideways, so the canvas needs
+// a margin on both sides or the leading column falls outside the view and the
+// pet reads as sliced rather than shifted.
+func sidePad(_ scale: CGFloat) -> Int { bounceUnit(scale) }
+func canvasSize(_ w: Int, _ h: Int, _ scale: CGFloat) -> NSSize {
+    NSSize(width: CGFloat(w + 2 * sidePad(scale)) * scale,
+           height: CGFloat(h + headroom(scale)) * scale)
+}
+// Shading band thickness. A proportional band (2 * RES) would just reproduce
+// the old chunky ramp; a third of that is what buys the finer gradient.
+let BAND = RES
 
 func blank() -> [[Int]] { Array(repeating: Array(repeating: 0, count: GW), count: GH) }
 
@@ -32,9 +54,21 @@ func spike(_ cx: Int, _ y0: Int, _ h: Int) -> [[Int]] {
 
 func leg(_ x0: Int) -> [[Int]] {
     var t = blank()
-    box(&t, x0, 30, x0 + 3, 32)
-    t[32][x0] = 0; t[32][x0 + 3] = 0
+    let w = 4 * RES - 1
+    box(&t, x0, 30 * RES, x0 + w, GH - 1)
+    for i in 0..<RES {
+        for j in 0..<RES {
+            t[GH - 1 - i][x0 + j] = 0
+            t[GH - 1 - i][x0 + w - j] = 0
+        }
+    }
     return t
+}
+
+// A rect written in the original 32x33 design space, expanded to cover the
+// full RES x RES block each source cell now occupies.
+func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
+    (x0 * RES, y0 * RES, (x1 + 1) * RES - 1, (y1 + 1) * RES - 1)
 }
 
 enum Ink: UInt8 { case none, outline, shade, body, light, screen, eye, glyph }
@@ -51,10 +85,14 @@ let palette: [Ink: NSColor] = [
 
 func buildBase() -> [[Ink]] {
     var mass = blank()
+    let R = RES
     let parts = [
-        rrect(3, 5, 28, 17, 3), spike(7, 2, 3), spike(24, 2, 3), spike(15, 0, 5),
-        rrect(8, 18, 23, 29, 2), rrect(2, 21, 9, 25, 1), rrect(22, 21, 29, 25, 1),
-        leg(10), leg(18),
+        rrect(3 * R, 5 * R, 29 * R - 1, 18 * R - 1, 3 * R),
+        spike(7 * R, 2 * R, 3 * R), spike(24 * R, 2 * R, 3 * R), spike(15 * R, 0, 5 * R),
+        rrect(8 * R, 18 * R, 24 * R - 1, 30 * R - 1, 2 * R),
+        rrect(2 * R, 21 * R, 10 * R - 1, 26 * R - 1, 1 * R),
+        rrect(22 * R, 21 * R, 30 * R - 1, 26 * R - 1, 1 * R),
+        leg(10 * R), leg(18 * R),
     ]
     for p in parts {
         for y in 0..<GH { for x in 0..<GW where p[y][x] == 1 { mass[y][x] = 1 } }
@@ -69,16 +107,16 @@ func buildBase() -> [[Ink]] {
         for x in 0..<GW where mass[y][x] == 1 {
             if !solid(y - 1, x) || !solid(y + 1, x) || !solid(y, x - 1) || !solid(y, x + 1) {
                 out[y][x] = .outline
-            } else if !solid(y - 2, x) || !solid(y, x - 2) {
+            } else if !solid(y - BAND, x) || !solid(y, x - BAND) {
                 out[y][x] = .light
-            } else if !solid(y + 2, x) || !solid(y, x + 2) {
+            } else if !solid(y + BAND, x) || !solid(y, x + BAND) {
                 out[y][x] = .shade
             } else {
                 out[y][x] = .body
             }
         }
     }
-    let sc = rrect(7, 8, 24, 16, 2)
+    let sc = rrect(7 * RES, 8 * RES, 25 * RES - 1, 17 * RES - 1, 2 * RES)
     for y in 0..<GH { for x in 0..<GW where sc[y][x] == 1 { out[y][x] = .screen } }
     return out
 }
@@ -91,12 +129,195 @@ enum Mood: String {
     }
 }
 
+// A custom pet replaces the whole sprite: one pixel grid per mood, colors
+// from a per-manifest palette. "0" or "." is transparent; anything else must
+// be a palette key. All moods share one canvas size; missing moods fall back
+// to idle. Authored by hand or by the bundled draw-pet skill — no imagegen,
+// no network; sharing a pet is sharing one JSON file.
+struct PetError: Error, CustomStringConvertible {
+    let description: String
+    init(_ m: String) { description = m }
+}
+
+struct CustomPet {
+    let name: String
+    let width: Int
+    let height: Int
+    let scale: CGFloat
+    let frames: [Mood: [[NSColor?]]]
+
+    func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
+}
+
+func parseHex(_ s: String) -> NSColor? {
+    guard s.hasPrefix("#") else { return nil }
+    var h = String(s.dropFirst())
+    if h.count == 3 { h = h.map { "\($0)\($0)" }.joined() }
+    // The digit check is not redundant: UInt32(_:radix:) accepts a leading
+    // "+", so "#+12345" would otherwise pass the length guard and silently
+    // parse as #012345.
+    guard h.count == 6, h.allSatisfy(\.isHexDigit), let v = UInt32(h, radix: 16) else { return nil }
+    return NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255,
+                   green: CGFloat((v >> 8) & 0xff) / 255,
+                   blue: CGFloat(v & 0xff) / 255, alpha: 1)
+}
+
+func loadCustomPet(_ url: URL) throws -> CustomPet {
+    guard let data = try? Data(contentsOf: url) else { throw PetError("cannot read \(url.path)") }
+    let top: [String: Any]
+    do {
+        guard let d = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw PetError("top level must be a JSON object")
+        }
+        top = d
+    } catch let e as PetError {
+        throw e
+    } catch {
+        throw PetError("bad JSON: \((error as NSError).userInfo[NSDebugDescriptionErrorKey] ?? error.localizedDescription)")
+    }
+    guard let palRaw = top["palette"] as? [String: String] else {
+        throw PetError("\"palette\" must map single-character keys to \"#RRGGBB\" colors")
+    }
+    var pal: [Character: NSColor] = [:]
+    for (k, v) in palRaw {
+        guard k.count == 1, let ch = k.first, ch != "0", ch != "." else {
+            throw PetError("palette key \"\(k)\" must be one character other than \"0\"/\".\" (those mean transparent)")
+        }
+        guard let c = parseHex(v) else { throw PetError("palette \"\(k)\": \"\(v)\" is not #RGB/#RRGGBB") }
+        pal[ch] = c
+    }
+    guard let moodsRaw = top["moods"] as? [String: [String]], !moodsRaw.isEmpty else {
+        throw PetError("\"moods\" must map mood names to arrays of row strings")
+    }
+    var frames: [Mood: [[NSColor?]]] = [:]
+    var dims = (w: 0, h: 0)
+    for (key, rows) in moodsRaw {
+        guard let mood = Mood(rawValue: key) else {
+            throw PetError("unknown mood \"\(key)\" (idle, running, waiting, done, error)")
+        }
+        let w = rows.first?.count ?? 0
+        guard (8...128).contains(w), (8...128).contains(rows.count) else {
+            throw PetError("\(key): size \(w)x\(rows.count) out of range 8...128")
+        }
+        if dims == (0, 0) { dims = (w, rows.count) }
+        guard dims == (w, rows.count) else {
+            throw PetError("\(key): size \(w)x\(rows.count) differs from \(dims.w)x\(dims.h) — all moods share one canvas")
+        }
+        var grid: [[NSColor?]] = []
+        for (y, row) in rows.enumerated() {
+            guard row.count == w else { throw PetError("\(key) row \(y): length \(row.count) != \(w)") }
+            var line: [NSColor?] = []
+            for ch in row {
+                if ch == "0" || ch == "." { line.append(nil) }
+                else if let c = pal[ch] { line.append(c) }
+                else { throw PetError("\(key) row \(y): \"\(ch)\" is not in the palette") }
+            }
+            grid.append(line)
+        }
+        frames[mood] = grid
+    }
+    guard frames[.idle] != nil else { throw PetError("moods.idle is required") }
+    // Finer-grained pets: a big grid at scale 2 beats a small grid at 4 —
+    // same footprint on screen, four times the detail.
+    var scale = 4
+    if let s = top["scale"] {
+        guard let n = s as? Int, (1...4).contains(n) else {
+            throw PetError("\"scale\" must be an integer 1...4 (screen points per pixel)")
+        }
+        scale = n
+    }
+    return CustomPet(name: (top["name"] as? String) ?? "custom",
+                     width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames)
+}
+
 let base = buildBase()
+
+// The rects the built-in pet stamps over `base`. Kept as data rather than
+// draw calls so --export emits exactly the art the app renders.
+// Coordinates stay in the original 32x33 design space; cell() expands them and
+// the dx/gy offsets arrive already in final cells.
+func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ blinking: Bool) -> [(Ink, Int, Int, Int, Int)] {
+    func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
+           _ ox: Int = 0, _ oy: Int = 0) -> (Ink, Int, Int, Int, Int) {
+        let c = cell(x0, y0, x1, y1)
+        return (ink, c.0 + ox, c.1 + oy, c.2 + ox, c.3 + oy)
+    }
+    switch mood {
+    case .waiting:
+        return [r(.eye, 10, 10, 13, 12, dx, gy), r(.eye, 18, 10, 21, 12, dx, gy),
+                r(.glyph, 10, 10, 10, 10, dx, gy), r(.glyph, 18, 10, 18, 10, dx, gy)]
+    case .done:
+        return [r(.eye, 11, 11, 12, 11), r(.eye, 10, 12, 13, 12),
+                r(.eye, 19, 11, 20, 11), r(.eye, 18, 12, 21, 12)]
+    case .error:
+        return [r(.eye, 10, 11, 11, 11), r(.eye, 12, 12, 13, 12),
+                r(.eye, 20, 11, 21, 11), r(.eye, 18, 12, 19, 12)]
+    case .running:
+        return [r(.eye, 10, 11, 13, 11, dx), r(.eye, 11, 12, 13, 12, dx),
+                r(.eye, 18, 11, 21, 11, dx), r(.eye, 18, 12, 20, 12, dx)]
+    case .idle:
+        // Never freeze on the blink frame: with Reduce Motion the tick stays
+        // put, and eyes-shut is a terrible static pose.
+        if blinking {
+            return [r(.eye, 10, 12, 13, 12), r(.eye, 18, 12, 21, 12)]
+        }
+        return [r(.eye, 10, 11, 13, 11, dx, gy), r(.eye, 11, 12, 13, 12, dx, gy),
+                r(.eye, 18, 11, 21, 11, dx, gy), r(.eye, 18, 12, 20, 12, dx, gy)]
+    }
+}
+
+func chromeRects(_ cursorOn: Bool) -> [(Ink, Int, Int, Int, Int)] {
+    func r(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Ink, Int, Int, Int, Int) {
+        let c = cell(x0, y0, x1, y1)
+        return (.glyph, c.0, c.1, c.2, c.3)
+    }
+    var out = [r(11, 22, 12, 22), r(12, 23, 13, 23), r(13, 24, 14, 24),
+               r(12, 25, 13, 25), r(11, 26, 12, 26)]
+    if cursorOn { out.append(r(16, 26, 20, 26)) }
+    return out
+}
+
+// Snapshot the built-in pet as a manifest, so the default is a starting point
+// for a custom pet instead of something you can only redraw from scratch.
+// A manifest carries pixels, not behavior: the snapshot loses the
+// cursor-following pupils, the idle blink and the blinking terminal cursor,
+// and because it has no eye coordinates the sideways twitch that moves only
+// these eyes becomes a whole-body shift.
+func exportBuiltin() -> String {
+    let key: [Ink: Character] = [.outline: "o", .shade: "s", .body: "b", .light: "l",
+                                 .screen: "c", .eye: "e", .glyph: "g"]
+    func hex(_ c: NSColor) -> String {
+        String(format: "#%02x%02x%02x",
+               Int((c.redComponent * 255).rounded()),
+               Int((c.greenComponent * 255).rounded()),
+               Int((c.blueComponent * 255).rounded()))
+    }
+    var moods: [String: [String]] = [:]
+    for mood in [Mood.idle, .running, .waiting, .done, .error] {
+        var grid = base
+        for (ink, x0, y0, x1, y1) in eyeRects(mood, 0, 0, false) + chromeRects(true) {
+            for y in y0...y1 where y >= 0 && y < GH {
+                for x in x0...x1 where x >= 0 && x < GW { grid[y][x] = ink }
+            }
+        }
+        moods[mood.rawValue] = grid.map { String($0.map { $0 == .none ? "." : key[$0]! }) }
+    }
+    var pal: [String: String] = [:]
+    for (ink, ch) in key { pal[String(ch)] = hex(palette[ink]!) }
+    let doc: [String: Any] = ["name": "perchling", "scale": Int(SCALE),
+                              "palette": pal, "moods": moods]
+    let data = try! JSONSerialization.data(withJSONObject: doc,
+                                           options: [.prettyPrinted, .sortedKeys])
+    return String(decoding: data, as: UTF8.self)
+}
 
 final class PetView: NSView {
     var mood: Mood = .idle
     var tick: Int = 0
     var hopUntil: Int = -1
+    var custom: CustomPet?
+    var scale: CGFloat = SCALE
+    var xpad = sidePad(SCALE)
     private var gazeY = 0
 
     override var isFlipped: Bool { true }
@@ -115,45 +336,25 @@ final class PetView: NSView {
         return (gx, gy)
     }
 
-    private func put(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
-        palette[ink]!.setFill()
-        let r = NSRect(x: CGFloat(x0) * SCALE,
-                       y: CGFloat(y0 + off) * SCALE,
-                       width: CGFloat(x1 - x0 + 1) * SCALE,
-                       height: CGFloat(y1 - y0 + 1) * SCALE)
+    // Every draw goes through here, so the side margin is applied once rather
+    // than at each of the base / eyes / chrome / custom call sites.
+    private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
+        color.setFill()
+        let r = NSRect(x: CGFloat(x0 + xpad) * scale,
+                       y: CGFloat(y0 + off) * scale,
+                       width: CGFloat(x1 - x0 + 1) * scale,
+                       height: CGFloat(y1 - y0 + 1) * scale)
         r.fill()
     }
 
+    private func put(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
+        fill(palette[ink]!, x0, y0, x1, y1, off)
+    }
+
     private func drawEyes(_ off: Int, _ dx: Int) {
-        switch mood {
-        case .waiting:
-            put(.eye, 10 + dx, 10 + gazeY, 13 + dx, 12 + gazeY, off)
-            put(.eye, 18 + dx, 10 + gazeY, 21 + dx, 12 + gazeY, off)
-            put(.glyph, 10 + dx, 10 + gazeY, 10 + dx, 10 + gazeY, off)
-            put(.glyph, 18 + dx, 10 + gazeY, 18 + dx, 10 + gazeY, off)
-        case .done:
-            put(.eye, 11, 11, 12, 11, off); put(.eye, 10, 12, 13, 12, off)
-            put(.eye, 19, 11, 20, 11, off); put(.eye, 18, 12, 21, 12, off)
-        case .error:
-            put(.eye, 10, 11, 11, 11, off); put(.eye, 12, 12, 13, 12, off)
-            put(.eye, 20, 11, 21, 11, off); put(.eye, 18, 12, 19, 12, off)
-        case .running:
-            put(.eye, 10 + dx, 11, 13 + dx, 11, off)
-            put(.eye, 11 + dx, 12, 13 + dx, 12, off)
-            put(.eye, 18 + dx, 11, 21 + dx, 11, off)
-            put(.eye, 18 + dx, 12, 20 + dx, 12, off)
-        case .idle:
-            // Never freeze on the blink frame: with Reduce Motion the tick
-            // stays put, and eyes-shut is a terrible static pose.
-            if tick % 84 < 3 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                put(.eye, 10, 12, 13, 12, off)
-                put(.eye, 18, 12, 21, 12, off)
-            } else {
-                put(.eye, 10 + dx, 11 + gazeY, 13 + dx, 11 + gazeY, off)
-                put(.eye, 11 + dx, 12 + gazeY, 13 + dx, 12 + gazeY, off)
-                put(.eye, 18 + dx, 11 + gazeY, 21 + dx, 11 + gazeY, off)
-                put(.eye, 18 + dx, 12 + gazeY, 20 + dx, 12 + gazeY, off)
-            }
+        let blinking = tick % 84 < 3 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        for (ink, x0, y0, x1, y1) in eyeRects(mood, dx, gazeY, blinking) {
+            put(ink, x0, y0, x1, y1, off)
         }
     }
 
@@ -164,25 +365,40 @@ final class PetView: NSView {
         ctx.shouldAntialias = false
         ctx.imageInterpolation = .none
 
+        let u = bounceUnit(custom?.scale ?? SCALE)
         var off = 2
         var dx = 0
+        var gy = 0
         switch mood {
         case .running:
             off = 2 + (tick / 4) % 2
             dx = ((tick / 10) % 4 == 1) ? -1 : (((tick / 10) % 4 == 3) ? 1 : 0)
         case .waiting:
-            let g = gaze()
-            dx = ((tick % 30 < 2) ? 1 : 0) + g.0
-            gazeY = g.1
+            dx = (tick % 30 < 2) ? 1 : 0
+            if custom == nil { let g = gaze(); dx += g.0; gy = g.1 }
         case .done:
             off = tick < hopUntil ? (2 - ((tick / 3) % 2) * 2) : 2 + (tick / 12) % 2
         case .error:
             off = 3
         case .idle:
             off = 2 + (tick / 9) % 2
-            let g = gaze()
-            dx = g.0
-            gazeY = g.1
+            if custom == nil { let g = gaze(); dx = g.0; gy = g.1 }
+        }
+        off *= u
+        dx *= u
+        gazeY = gy * u
+
+        // Custom pets swap the whole sprite per mood; bounce (off) and twitch
+        // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
+        // the manifest knows nothing about eye coordinates.
+        if let pet = custom {
+            let grid = pet.frame(for: mood)
+            for y in 0..<pet.height {
+                for x in 0..<pet.width {
+                    if let c = grid[y][x] { fill(c, x + dx, y, x + dx, y, off) }
+                }
+            }
+            return
         }
 
         for y in 0..<GH {
@@ -193,10 +409,6 @@ final class PetView: NSView {
         }
         drawEyes(off, dx)
 
-        put(.glyph, 11, 22, 12, 22, off); put(.glyph, 12, 23, 13, 23, off)
-        put(.glyph, 13, 24, 14, 24, off); put(.glyph, 12, 25, 13, 25, off)
-        put(.glyph, 11, 26, 12, 26, off)
-
         let cursorOn: Bool
         switch mood {
         case .running: cursorOn = (tick / 3) % 2 == 0
@@ -204,7 +416,7 @@ final class PetView: NSView {
         case .done, .error: cursorOn = true
         case .idle: cursorOn = (tick / 11) % 2 == 0
         }
-        if cursorOn { put(.glyph, 16, 26, 20, 26, off) }
+        for (ink, x0, y0, x1, y1) in chromeRects(cursorOn) { put(ink, x0, y0, x1, y1, off) }
     }
 
     // Manual drag: window-background dragging would swallow the mouseUp we
@@ -271,6 +483,7 @@ let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
 final class BubbleView: NSView {
     var mood: Mood = .idle
     var prompt: String = ""
+    var tailCenter: CGFloat = BUB_W - 64
 
     override var isFlipped: Bool { true }
 
@@ -300,10 +513,12 @@ final class BubbleView: NSView {
 
         let bg = palette[.glyph]!, line = palette[.outline]!, textColor = palette[.screen]!
 
-        // Tail steps first so the body sits on top of them; pet is right-aligned
-        // under the bubble, so the tail points at its head.
-        let steps = [NSRect(x: 190, y: BUB_BODY - 2, width: 22, height: 12),
-                     NSRect(x: 196, y: BUB_BODY + 8, width: 12, height: 9)]
+        // Tail steps first so the body sits on top of them. tailCenter tracks
+        // the pet's midline — a fixed inset from the bubble's right edge only
+        // aims at the head for one particular pet width.
+        let c = min(max(tailCenter, 26), BUB_W - 26)
+        let steps = [NSRect(x: c - 11, y: BUB_BODY - 2, width: 22, height: 12),
+                     NSRect(x: c - 5, y: BUB_BODY + 8, width: 12, height: 9)]
         for s in steps { line.setFill(); s.insetBy(dx: -3, dy: 0).fill() }
         for s in steps { bg.setFill(); s.fill() }
 
@@ -342,7 +557,9 @@ final class Controller: NSObject, NSWindowDelegate {
     let stateURL: URL
     let sessionsURL: URL
     let sayURL: URL
+    let petURL: URL
     var lastSayStamp: Date?
+    var lastPetStamp: Date?
     var emptySince: Date?
     var homeApp: NSRunningApplication?
     var firstFold = true
@@ -354,11 +571,12 @@ final class Controller: NSObject, NSWindowDelegate {
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
         sayURL = root.appendingPathComponent("say")
+        petURL = root.appendingPathComponent("pet.json")
         let bubSize = NSSize(width: BUB_W, height: BUB_H)
         bubble = NSWindow(contentRect: NSRect(origin: .zero, size: bubSize),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         bubbleView = BubbleView(frame: NSRect(origin: .zero, size: bubSize))
-        let size = NSSize(width: CGFloat(GW) * SCALE, height: CGFloat(CANVAS_H) * SCALE)
+        let size = canvasSize(GW, GH, SCALE)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         view = PetView(frame: NSRect(origin: .zero, size: size))
@@ -376,11 +594,7 @@ final class Controller: NSObject, NSWindowDelegate {
         let d = UserDefaults.standard
         if d.object(forKey: "petX") != nil {
             window.setFrameOrigin(NSPoint(x: d.double(forKey: "petX"), y: d.double(forKey: "petY")))
-        } else if let screen = NSScreen.main {
-            let f = screen.visibleFrame
-            window.setFrameOrigin(NSPoint(x: f.maxX - size.width - 24, y: f.minY + 24))
         }
-        window.orderFrontRegardless()
 
         // Speech bubble rides along as a click-through child window — growing
         // the pet window instead would leave an invisible click-eating strip.
@@ -400,6 +614,50 @@ final class Controller: NSObject, NSWindowDelegate {
         view.onTap = { [weak self] in self?.focusHome() }
         view.onTuck = { [weak self] in self?.setTucked(true) }
         view.onDisable = { [weak self] in self?.disableAndQuit() }
+
+        // Load the pet before the first placement: the corner gap has to be
+        // measured against the window the custom pet ends up needing, not the
+        // built-in size the window was constructed with.
+        pollPet()
+        if d.object(forKey: "petX") == nil, let screen = NSScreen.main {
+            let f = screen.visibleFrame
+            window.setFrameOrigin(NSPoint(x: f.maxX - window.frame.width - 24, y: f.minY + 24))
+            repositionBubble()
+        }
+        window.orderFrontRegardless()
+    }
+
+    // pet.json IS the active pet: present and valid → custom sprite; broken
+    // or missing → built-in perchling. Falling back on a bad parse (instead
+    // of keeping the last good pet) makes authoring mistakes visible the
+    // moment the file lands, which is what the live edit loop needs.
+    func pollPet() {
+        // Stat the resolved path: a dotfiles setup symlinks pet.json, and
+        // neither attributesOfItem nor URL resource values follow a trailing
+        // symlink — they report the link's own mtime, which never changes
+        // when the target is edited.
+        let resolved = petURL.resolvingSymlinksInPath()
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: resolved.path))?[.modificationDate] as? Date
+        guard stamp != lastPetStamp else { return }
+        lastPetStamp = stamp
+        let pet = stamp == nil ? nil : (try? loadCustomPet(resolved))
+        view.custom = pet
+        view.scale = pet?.scale ?? SCALE
+        let s = pet?.scale ?? SCALE
+        view.xpad = sidePad(s)
+        let size = canvasSize(pet?.width ?? GW, pet?.height ?? GH, s)
+        if window.frame.size != size {
+            // setContentSize pins the bottom-left corner, so a wider pet grows
+            // off the right edge — where this thing lives by default.
+            window.setContentSize(size)
+            if let screen = window.screen ?? NSScreen.main {
+                let vf = screen.visibleFrame, f = window.frame
+                let x = min(max(f.minX, vf.minX), vf.maxX - f.width)
+                let y = min(max(f.minY, vf.minY), vf.maxY - f.height)
+                if x != f.minX || y != f.minY { window.setFrameOrigin(NSPoint(x: x, y: y)) }
+            }
+            repositionBubble()
+        }
     }
 
     func setTucked(_ t: Bool) {
@@ -424,6 +682,8 @@ final class Controller: NSObject, NSWindowDelegate {
         let pf = window.frame
         var x = pf.maxX - BUB_W
         if let s = window.screen ?? NSScreen.main { x = max(x, s.visibleFrame.minX + 4) }
+        bubbleView.tailCenter = pf.midX - x
+        bubbleView.needsDisplay = true
         bubble.setFrameOrigin(NSPoint(x: x, y: pf.maxY + 2))
     }
 
@@ -571,6 +831,7 @@ final class Controller: NSObject, NSWindowDelegate {
                     if tucked && (alert == .waiting || alert == .error) { setTucked(false) }
                 }
                 firstFold = false
+                pollPet()
                 pollSay()
                 // A prompt snippet from hours ago is noise, not context.
                 if let s = lastSayStamp, Date().timeIntervalSince(s) > 3600,
@@ -603,6 +864,41 @@ if let p = env["PERCHLING_HOME"] {
 }
 try? FileManager.default.createDirectory(at: root.appendingPathComponent("sessions"),
                                          withIntermediateDirectories: true)
+
+// CLI validation for the authoring loop: same parser as the runtime, so an
+// "OK" here means the overlay will actually render the manifest. Anything
+// unrecognized must NOT fall through to the overlay — a mistyped flag that
+// silently launches a second pet and blocks forever is indistinguishable
+// from a hung command, and the pet outlives the terminal that spawned it.
+let argv = CommandLine.arguments
+if argv.count >= 2 {
+    switch argv[1] {
+    case "--export":
+        print(exportBuiltin())
+        exit(0)
+    case "--validate":
+        let target = argv.count >= 3 ? URL(fileURLWithPath: argv[2]) : root.appendingPathComponent("pet.json")
+        do {
+            let pet = try loadCustomPet(target)
+            let moods = pet.frames.keys.map { $0.rawValue }.sorted().joined(separator: ", ")
+            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)]")
+            exit(0)
+        } catch {
+            FileHandle.standardError.write(Data("invalid pet manifest: \(error)\n".utf8))
+            exit(1)
+        }
+    default:
+        FileHandle.standardError.write(Data("""
+            perchling — desktop pet overlay for Claude Code
+            usage: perchling                     run the overlay
+                   perchling --validate [path]   check a pet manifest (default: <home>/pet.json)
+                   perchling --export            print the built-in pet as a manifest
+            unknown argument: \(argv[1])
+
+            """.utf8))
+        exit(2)
+    }
+}
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)

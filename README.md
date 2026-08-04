@@ -68,6 +68,40 @@ until something needs you — or `scripts/pet.sh wake`), Disable (stays off
 until `scripts/pet.sh enable`), or Quit. It exits by itself ~30s after your
 last Claude Code session ends, and comes back with the next one.
 
+## Custom pets
+
+Don't like the default creature? Ask Claude to draw you a new one:
+
+```
+draw me a cat pet
+```
+
+The bundled `draw-pet` skill has Claude design a `pet.json` — a small
+manifest of palette colors plus one pixel grid per mood — validate it, and
+install it to `~/.claude/perchling/pet.json`. The pet transforms live within
+a second: no rebuild, no restart, no image files. Delete the file to get the
+default creature back.
+
+Pets are shareable — a pet is one JSON file. Two worked examples ship in
+[examples/](examples/): a leafy slime and the built-in pet itself; the format
+is documented in [skills/draw-pet/SKILL.md](skills/draw-pet/SKILL.md).
+
+Pixel size is up to the pet: a small grid at `"scale": 4` gives the chunky
+retro look, while a grid twice as wide at `"scale": 2` covers about the same
+corner of the screen with four times the detail.
+
+To remix the default creature instead of drawing from scratch, snapshot it:
+
+```bash
+~/.claude/perchling/bin/perchling --export > mypet.json
+```
+
+A manifest carries pixels, not behavior, so the snapshot drops the default's
+cursor-following pupils, idle blink, and blinking terminal cursor, and its
+sideways twitch moves the whole body rather than just the eyes. (If that
+command hangs and writes an empty file, the binary predates the feature — run
+`scripts/pet.sh build` first.)
+
 ## How it works
 
 Hooks write each session's mood into `~/.claude/perchling/sessions/<id>`
