@@ -550,7 +550,11 @@ let claudeBundleID = "com.anthropic.claudefordesktop"
 // stomp another's "waiting". Per-mood TTLs expire stale news (a SIGKILL'd
 // session can't leave the pet bouncing forever).
 let moodRank: [Mood: Int] = [.idle: 0, .running: 1, .done: 2, .error: 3, .waiting: 4]
-let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 12, .error: 3600, .waiting: 3600]
+// `done` outlives the moment it announces because the bubble carries the reply
+// and stops drawing the instant the mood decays — a window you can look away
+// from is the whole point. It stays short enough that a finished session does
+// not sit on top of the attention fold, which it outranks, for minutes.
+let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .waiting: 3600]
 
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
 
