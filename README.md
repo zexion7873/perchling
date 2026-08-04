@@ -10,6 +10,16 @@ plugin in one command.
 
 ## Install
 
+### For AI agents
+
+Fetch and follow
+`https://raw.githubusercontent.com/zexion7873/perchling/main/llms-install.md`
+([llms-install.md](llms-install.md) in-repo).
+
+### For humans
+
+From inside a Claude Code session:
+
 ```
 /plugin marketplace add zexion7873/perchling
 /plugin install perchling@perchling
