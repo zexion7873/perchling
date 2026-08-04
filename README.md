@@ -24,6 +24,20 @@ driven straight off Claude Code hook events.
 
 ## 🚀 Install
 
+### 🤖 Hand it to your agent
+
+Paste this and walk away:
+
+```text
+Fetch and follow https://raw.githubusercontent.com/zexion7873/perchling/main/llms-install.md
+```
+
+It runs the preflight, installs from the CLI, and launches the pet on the spot
+instead of leaving you to wait for your next session. Recipe in
+[llms-install.md](llms-install.md).
+
+### 🧑 Or type it yourself
+
 From inside a Claude Code session:
 
 ```text
@@ -37,11 +51,6 @@ launch — about two seconds, once.
 > [!IMPORTANT]
 > **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
 > On every other platform the plugin stays silently inactive rather than erroring.
-
-> [!TIP]
-> **Installing via an agent?** Point it at [llms-install.md](llms-install.md) —
-> it covers the CLI equivalents, the preflight check, and how to launch the pet
-> immediately instead of waiting for the next session.
 
 ---
 
