@@ -347,9 +347,12 @@ final class PetView: NSView {
     override var isFlipped: Bool { true }
 
     var motionOK: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    // Reduce Motion freezes `tick`, so a deadline set while it is on would
-    // never be reached again — these are armed only when motion is allowed.
-    var startled: Bool { custom == nil && tick < startledUntil }
+    // Reduce Motion freezes `tick`, so a deadline can never be reached once it
+    // is on. Guarding only where the deadline is armed covers Reduce Motion
+    // being on already, but not being switched on mid-flight — that leaves
+    // `tick` parked below the deadline forever and the pose stuck for the life
+    // of the process. Both ends have to check.
+    var startled: Bool { custom == nil && motionOK && tick < startledUntil }
 
     // Hovering the pet startles it. The tracking area is rebuilt on resize
     // because installing a custom pet changes the window's bounds.
@@ -466,7 +469,9 @@ final class PetView: NSView {
         // plain cursor it has always had, blinking at its own rate.
         let cursorCells: Int
         switch mood {
-        case .running: cursorCells = min(5, (tick / 3) % 7)
+        // A frozen clock must land on a good pose, and phase 0 of the typing
+        // cycle is an empty prompt line — the one frame that reads as broken.
+        case .running: cursorCells = motionOK ? min(5, (tick / 3) % 7) : 5
         case .waiting: cursorCells = (tick / 6) % 2 == 0 ? 5 : 0
         case .done, .error: cursorCells = 5
         case .idle: cursorCells = (tick / 11) % 2 == 0 ? 5 : 0
@@ -575,10 +580,12 @@ final class BubbleView: NSView {
             if ["zh-Hant", "zh-TW", "zh-HK", "zh-MO"].contains(where: lang.hasPrefix) { return "zh-Hant" }
             return "zh-Hans"
         }
-        for lang in Locale.preferredLanguages {
-            if let k = key(lang), let t = tables[k] { return t }
-        }
-        return en
+        // Only the primary language decides. Scanning the whole list would let
+        // a Chinese entry further down override an English-first system —
+        // "I don't have your language" means fall back, not keep hunting.
+        guard let first = Locale.preferredLanguages.first,
+              let k = key(first), let t = tables[k] else { return en }
+        return t
     }()
 
     private func statusText() -> String { BubbleView.status[mood] ?? "" }
@@ -828,7 +835,11 @@ final class Controller: NSObject, NSWindowDelegate {
         lastSayStamp = stamp
         let data = (try? Data(contentsOf: sayURL)) ?? Data()
         var s = String(decoding: data, as: UTF8.self)
+        // The snippet is lifted verbatim out of JSON, so it still carries the
+        // escapes: newlines become spaces, and a quoted phrase should read as
+        // a quoted phrase rather than a backslash storm.
         s = s.replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\t", with: " ")
+        s = s.replacingOccurrences(of: "\\\"", with: "\"")
         s = String(String.UnicodeScalarView(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }))
         bubbleView.prompt = s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
