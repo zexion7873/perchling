@@ -12,9 +12,13 @@ plugin in one command.
 
 ### For AI agents
 
-Fetch and follow
-`https://raw.githubusercontent.com/zexion7873/perchling/main/llms-install.md`
-([llms-install.md](llms-install.md) in-repo).
+Paste this to your agent:
+
+```text
+Fetch and follow https://raw.githubusercontent.com/zexion7873/perchling/main/llms-install.md
+```
+
+([llms-install.md](llms-install.md) in-repo.)
 
 ### For humans
 
@@ -40,6 +44,18 @@ On other platforms the plugin stays silently inactive.
 | done | turn or agent completed | hops happily, then settles |
 | error | API failure ended the turn | droops |
 | idle | nothing happening | breathes slowly, blinks |
+
+While it works, a pixel speech bubble above its head shows a snippet of your
+latest prompt plus what it's doing (thinking… / waiting for you… / done!).
+The bubble vanishes when things go idle, and it never steals clicks — it's a
+click-through overlay.
+
+Click the pet to jump back to Claude — the Claude desktop app if it's
+running, otherwise the app that was frontmost when the pet launched. When
+you're in another app, waiting / done / error each post a macOS notification
+with a chirp; when you're already looking at Claude it stays quiet. macOS
+attributes these notifications to "Script Editor" — allow them when the
+first one asks, or they're silently dropped.
 
 Drag it anywhere — the position sticks. Right-click to quit. It exits by
 itself ~30s after your last Claude Code session ends, and comes back with the

@@ -184,6 +184,37 @@ final class PetView: NSView {
         if cursorOn { put(.glyph, 16, 26, 20, 26, off) }
     }
 
+    // Manual drag: window-background dragging would swallow the mouseUp we
+    // need to tell a click ("jump back to Claude") from a drag ("move me").
+    var onTap: (() -> Void)?
+    private var pressAt: NSPoint?
+    private var winAt: NSPoint?
+    private var dragged = false
+
+    // Deliver the activating click too — an accessory app is inactive at
+    // nearly every interaction, and without this AppKit eats the first
+    // mouseDown as an activation click (two-click taps, dead cold drags).
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        pressAt = NSEvent.mouseLocation
+        winAt = window?.frame.origin
+        dragged = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let p0 = pressAt, let w0 = winAt, let w = window else { return }
+        let p = NSEvent.mouseLocation
+        if abs(p.x - p0.x) + abs(p.y - p0.y) > 2 { dragged = true }
+        w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !dragged { onTap?() }
+        pressAt = nil
+        winAt = nil
+    }
+
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
         menu.addItem(withTitle: "Quit perchling", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
@@ -191,17 +222,96 @@ final class PetView: NSView {
     }
 }
 
+let claudeBundleID = "com.anthropic.claudefordesktop"
+
+let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
+
+final class BubbleView: NSView {
+    var mood: Mood = .idle
+    var prompt: String = ""
+
+    override var isFlipped: Bool { true }
+
+    private func statusText() -> String {
+        switch mood {
+        case .running: return "thinking…"
+        case .waiting: return "waiting for you…"
+        case .done:    return "done!"
+        case .error:   return "oops — error"
+        case .idle:    return ""
+        }
+    }
+
+    private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
+        var t = s
+        if (t as NSString).size(withAttributes: attrs).width <= maxW { return t }
+        while !t.isEmpty && ("\(t)…" as NSString).size(withAttributes: attrs).width > maxW {
+            t = String(t.dropLast())
+        }
+        return "\(t)…"
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+        guard mood != .idle else { return }
+
+        let bg = palette[.glyph]!, line = palette[.outline]!, textColor = palette[.screen]!
+
+        // Tail steps first so the body sits on top of them; pet is right-aligned
+        // under the bubble, so the tail points at its head.
+        let steps = [NSRect(x: 190, y: BUB_BODY - 2, width: 22, height: 12),
+                     NSRect(x: 196, y: BUB_BODY + 8, width: 12, height: 9)]
+        for s in steps { line.setFill(); s.insetBy(dx: -3, dy: 0).fill() }
+        for s in steps { bg.setFill(); s.fill() }
+
+        let body = NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
+                                xRadius: 7, yRadius: 7)
+        bg.setFill(); body.fill()
+        line.setStroke(); body.lineWidth = 3; body.stroke()
+
+        let promptAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: textColor,
+        ]
+        let statusAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+            .foregroundColor: textColor.withAlphaComponent(0.72),
+        ]
+        let maxW = BUB_W - 32
+        if prompt.isEmpty {
+            (truncate(statusText(), statusAttrs, maxW) as NSString)
+                .draw(at: NSPoint(x: 16, y: 19), withAttributes: statusAttrs)
+        } else {
+            (truncate(prompt, promptAttrs, maxW) as NSString)
+                .draw(at: NSPoint(x: 16, y: 9), withAttributes: promptAttrs)
+            (truncate(statusText(), statusAttrs, maxW) as NSString)
+                .draw(at: NSPoint(x: 16, y: 28), withAttributes: statusAttrs)
+        }
+    }
+}
+
 final class Controller: NSObject, NSWindowDelegate {
     let window: NSWindow
     let view: PetView
+    let bubble: NSWindow
+    let bubbleView: BubbleView
     let stateURL: URL
     let sessionsURL: URL
+    let sayURL: URL
     var lastStamp: Date?
+    var lastSayStamp: Date?
     var emptySince: Date?
+    var homeApp: NSRunningApplication?
 
     init(root: URL) {
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
+        sayURL = root.appendingPathComponent("say")
+        let bubSize = NSSize(width: BUB_W, height: BUB_H)
+        bubble = NSWindow(contentRect: NSRect(origin: .zero, size: bubSize),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+        bubbleView = BubbleView(frame: NSRect(origin: .zero, size: bubSize))
         let size = NSSize(width: CGFloat(GW) * SCALE, height: CGFloat(CANVAS_H) * SCALE)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
@@ -213,7 +323,6 @@ final class Controller: NSObject, NSWindowDelegate {
         window.hasShadow = false
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        window.isMovableByWindowBackground = true
         window.contentView = view
         window.delegate = self
         window.ignoresMouseEvents = false
@@ -226,11 +335,90 @@ final class Controller: NSObject, NSWindowDelegate {
             window.setFrameOrigin(NSPoint(x: f.maxX - size.width - 24, y: f.minY + 24))
         }
         window.orderFrontRegardless()
+
+        // Speech bubble rides along as a click-through child window — growing
+        // the pet window instead would leave an invisible click-eating strip.
+        bubble.isOpaque = false
+        bubble.backgroundColor = .clear
+        bubble.hasShadow = false
+        bubble.level = .floating
+        bubble.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        bubble.ignoresMouseEvents = true
+        bubble.contentView = bubbleView
+        window.addChildWindow(bubble, ordered: .above)
+        repositionBubble()
+
+        // "Home" is where a tap sends the user: Claude desktop when present,
+        // else whatever was frontmost at launch (terminal-CLI users).
+        homeApp = Controller.resolveHomeApp()
+        view.onTap = { [weak self] in self?.focusHome() }
+    }
+
+    func repositionBubble() {
+        let pf = window.frame
+        var x = pf.maxX - BUB_W
+        if let s = window.screen ?? NSScreen.main { x = max(x, s.visibleFrame.minX + 4) }
+        bubble.setFrameOrigin(NSPoint(x: x, y: pf.maxY + 2))
+    }
+
+    static func resolveHomeApp() -> NSRunningApplication? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: claudeBundleID).first
+            ?? NSWorkspace.shared.frontmostApplication
+    }
+
+    func focusHome() {
+        if homeApp == nil || homeApp?.isTerminated == true {
+            // Never re-resolve from frontmost-at-tap — that's whatever the user
+            // is in right now, or perchling itself, and it would be cached
+            // forever. Claude first, else a relaunched instance of the old home.
+            let oldID = homeApp?.bundleIdentifier
+            homeApp = NSRunningApplication.runningApplications(withBundleIdentifier: claudeBundleID).first
+                ?? oldID.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
+        }
+        guard let target = homeApp else { return }
+        if #available(macOS 14.0, *) {
+            NSApp.yieldActivation(to: target)
+            target.activate()
+        } else {
+            target.activate(options: [.activateIgnoringOtherApps])
+        }
+    }
+
+    func maybeRemind(_ mood: Mood) {
+        let messages: [Mood: String] = [
+            .waiting: "Claude Code needs your input",
+            .done: "Claude Code finished",
+            .error: "Claude Code hit an error",
+        ]
+        guard let msg = messages[mood] else { return }
+        // Quiet when the user is already looking at the home app — or at
+        // Claude desktop, even one opened after we resolved home.
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier == homeApp?.bundleIdentifier
+           || front.bundleIdentifier == claudeBundleID { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", "display notification \"\(msg)\" with title \"Perchling\" sound name \"Glass\""]
+        p.terminationHandler = { _ in }   // keeps p alive until exit so the child is reaped
+        try? p.run()
     }
 
     func windowDidMove(_ notification: Notification) {
         UserDefaults.standard.set(Double(window.frame.origin.x), forKey: "petX")
         UserDefaults.standard.set(Double(window.frame.origin.y), forKey: "petY")
+        repositionBubble()
+    }
+
+    func pollSay() {
+        let fm = FileManager.default
+        guard let attrs = try? fm.attributesOfItem(atPath: sayURL.path),
+              let stamp = attrs[.modificationDate] as? Date, stamp != lastSayStamp else { return }
+        lastSayStamp = stamp
+        let data = (try? Data(contentsOf: sayURL)) ?? Data()
+        var s = String(decoding: data, as: UTF8.self)
+        s = s.replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\t", with: " ")
+        s = String(String.UnicodeScalarView(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }))
+        bubbleView.prompt = s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func pollState() {
@@ -238,12 +426,16 @@ final class Controller: NSObject, NSWindowDelegate {
         guard let attrs = try? fm.attributesOfItem(atPath: stateURL.path),
               let stamp = attrs[.modificationDate] as? Date else { return }
         if stamp == lastStamp { return }
+        // First poll adopts whatever state was left on disk — reminding about
+        // stale pre-launch news would be noise.
+        let firstPoll = lastStamp == nil
         lastStamp = stamp
         let raw = (try? String(contentsOf: stateURL, encoding: .utf8)) ?? "idle"
         let next = Mood.parse(raw)
         if next != view.mood {
             view.mood = next
             if next == .done { view.hopUntil = view.tick + 12 }
+            if !firstPoll { maybeRemind(next) }
         }
         view.moodAge = 0
     }
@@ -263,8 +455,10 @@ final class Controller: NSObject, NSWindowDelegate {
         Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [self] _ in
             view.tick += 1
             view.moodAge += 1.0 / 20.0
-            if view.tick % 8 == 0 { pollState() }
+            if view.tick % 8 == 0 { pollState(); pollSay() }
             if view.mood == .done && view.moodAge > 12 { view.mood = .idle }
+            bubbleView.mood = view.mood
+            bubbleView.needsDisplay = true
             if view.tick % 100 == 0 {
                 if pollSessions() {
                     emptySince = nil
