@@ -1,145 +1,198 @@
-# Perchling
+<div align="center">
 
-A tiny pixel creature that perches on the corner of your screen and reacts to
-what Claude Code is doing — so you can look away from the terminal and still
-know when it needs you.
+# 🐣 Perchling
 
-No Electron. No WebSocket server. No log scraping. A single ~200KB native
-Swift binary, driven directly by Claude Code hook events, installed as a
-plugin in one command.
+<img src="docs/moods.gif" width="560" alt="The perchling pet in its five moods — idle, running, waiting, done and error — each animating.">
 
-## Install
+**A tiny pixel creature that perches on the corner of your screen and reacts to
+Claude Code — so you can look away from the terminal and still know when it
+needs you.**
 
-### For AI agents
+[![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
+[![Binary](https://img.shields.io/badge/binary-~200KB-brightgreen?style=flat)](#-how-it-works)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
+[![GitHub stars](https://img.shields.io/github/stars/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/commits)
 
-Paste this to your agent:
+No Electron. No WebSocket server. No log scraping. One native Swift binary,
+driven straight off Claude Code hook events.
 
-```text
-Fetch and follow https://raw.githubusercontent.com/zexion7873/perchling/main/llms-install.md
-```
+</div>
 
-([llms-install.md](llms-install.md) in-repo.)
+---
 
-### For humans
+## 🚀 Install
 
 From inside a Claude Code session:
 
-```
+```text
 /plugin marketplace add zexion7873/perchling
 /plugin install perchling@perchling
 ```
 
-The pet appears on your next session. It builds itself from source on first
-launch (~2 seconds, one-time).
+The pet appears on your next session and builds itself from source on first
+launch — about two seconds, once.
 
-**Requirements**: macOS + Xcode Command Line Tools (`xcode-select --install`).
-On other platforms the plugin stays silently inactive.
+> [!IMPORTANT]
+> **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
+> On every other platform the plugin stays silently inactive rather than erroring.
 
-## What it does
+> [!TIP]
+> **Installing via an agent?** Point it at [llms-install.md](llms-install.md) —
+> it covers the CLI equivalents, the preflight check, and how to launch the pet
+> immediately instead of waiting for the next session.
 
-| State | Trigger | Perchling |
-|---|---|---|
-| running | you submit a prompt / tools execute | bounces quickly, glances around, types a line out on its belly |
-| waiting | permission prompt, agent needs input | stops and stares at you, twitching |
-| done | turn or agent completed | hops happily under a twinkle, then settles |
-| error | API failure ended the turn | droops, and a tear rolls off its chin |
-| idle | nothing happening | breathes slowly, blinks |
+---
 
-A pixel speech bubble above its head shows what it's doing (thinking… /
-waiting for you… / done!) over a line of context: your prompt while it works,
-then a snippet of Claude's reply once the turn ends. The status words follow
-your system language. The bubble vanishes when things go idle, and it never
-steals clicks — it's a click-through overlay.
+## 🎭 What it does
 
-Hover the pet and it startles. Its eyes follow your cursor. With several
-sessions running, it shows the most
-attention-worthy state across all of them (waiting > error > done > running) —
-one session's chatter can't drown out another one that needs you — and stale
-moods expire on their own, so a killed session can't leave it bouncing
-forever. It honors the system Reduce Motion setting.
+|   | State | Trigger | What you see |
+|:-:|-------|---------|--------------|
+| ⌨️ | **running** | you submit a prompt, tools execute | bounces, glances around, types a line out on its belly |
+| 👀 | **waiting** | permission prompt, agent needs input | stops and stares straight at you, twitching |
+| 🎉 | **done** | turn or agent completed | hops under a twinkle, then settles |
+| 😢 | **error** | an API failure ended the turn | droops, and a tear rolls off its chin |
+| 💤 | **idle** | nothing happening | breathes slowly, blinks |
 
-Click the pet and it hops, then jumps you back to Claude — the Claude desktop
-app if it's running, otherwise the app that was frontmost when the pet
-launched. When
-you're in another app, waiting / done / error each post a macOS notification
-with a chirp; when you're already looking at Claude it stays quiet. macOS
-attributes these notifications to "Script Editor" — allow them when the
-first one asks, or they're silently dropped.
+Its eyes follow your cursor. Hover it and it startles. Click it and it hops,
+then throws you back to Claude — the desktop app if that's running, otherwise
+whatever was frontmost when the pet launched.
 
-Drag it anywhere — the position sticks. Right-click for Tuck away (hides
-until something needs you — or `scripts/pet.sh wake`), Disable (stays off
-until `scripts/pet.sh enable`), or Quit. It exits by itself ~30s after your
-last Claude Code session ends, and comes back with the next one.
+Drag it anywhere; the position sticks. Right-click for **Tuck away** (hides
+until something needs you), **Disable**, or **Quit**.
 
-## Custom pets
+### 💬 The speech bubble
 
-Don't like the default creature? Ask Claude to draw you a new one:
+A pixel bubble above its head shows what it's doing over a line of context:
+your prompt while it works, then a snippet of Claude's reply once the turn
+ends. The status words follow your system language. It's a click-through
+overlay, so it never steals a click, and it vanishes when things go idle.
 
-```
+### 🔔 When you've looked away
+
+**waiting**, **done** and **error** each post a macOS notification with a
+chirp — but only while you're in another app. Look at Claude and it shuts up.
+
+> [!NOTE]
+> macOS attributes these notifications to "Script Editor". Allow them when the
+> first one asks, or they're dropped silently.
+
+### 🗂️ With several sessions open
+
+It shows the most attention-worthy state across all of them — **waiting >
+error > done > running** — so one chatty session can't drown out another that
+actually needs you. Stale moods expire on their own, so a session killed
+mid-flight can't leave the pet bouncing forever. It honours the system Reduce
+Motion setting throughout.
+
+---
+
+## 🎨 Custom pets
+
+Don't like the creature? Ask Claude for a different one:
+
+```text
 draw me a cat pet
 ```
 
-The bundled `draw-pet` skill has Claude design a `pet.json` — a small
-manifest of palette colors plus one pixel grid per mood — validate it, and
-install it to `~/.claude/perchling/pet.json`. The pet transforms live within
-a second: no rebuild, no restart, no image files. Delete the file to get the
-default creature back.
+The bundled `draw-pet` skill has Claude design a **`pet.json`** — a palette
+plus one pixel grid per mood — validate it, and install it. The pet transforms
+live within a second. No rebuild, no restart, no image files.
 
-Pets are shareable — a pet is one JSON file. Two worked examples ship in
-[examples/](examples/): a leafy slime and the built-in pet itself; the format
-is documented in [skills/draw-pet/SKILL.md](skills/draw-pet/SKILL.md).
+```json
+{
+  "name": "sprout",
+  "scale": 2,
+  "palette": { "b": "#61b56b", "o": "#244a2e", "k": "#1d3524" },
+  "moods": { "idle": ["..bbbb..", ".bobbob.", ".bbkkbb.", "..bbbb.."] }
+}
+```
 
-Pixel size is up to the pet: a small grid at `"scale": 4` gives the chunky
-retro look, while a grid twice as wide at `"scale": 2` covers about the same
-corner of the screen with four times the detail.
+A pet is one JSON file, so sharing one is sending one file. Two worked examples
+ship in [`examples/`](examples/): a leafy slime, and the built-in creature
+itself. The format lives in
+[`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
 
-To remix the default creature instead of drawing from scratch, snapshot it:
+> [!TIP]
+> `scale` is the sharpness dial. A small grid at `"scale": 4` gives the chunky
+> retro look; a grid twice as wide at `"scale": 2` fills about the same corner
+> of your screen with four times the detail.
+
+Remix the default instead of starting from a blank grid:
 
 ```bash
 ~/.claude/perchling/bin/perchling --export > mypet.json
 ```
 
-A manifest carries pixels, not behavior, so the snapshot drops the default's
-cursor-following pupils, idle blink, and blinking terminal cursor, and its
-sideways twitch moves the whole body rather than just the eyes. (If that
-command hangs and writes an empty file, the binary predates the feature — run
-`scripts/pet.sh build` first.)
+Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
+live.
 
-## How it works
+> [!WARNING]
+> A manifest carries pixels, not behaviour. An exported pet loses the default's
+> cursor-following pupils, its blink and its blinking terminal cursor, and its
+> sideways twitch moves the whole body rather than just the eyes.
 
-Hooks write each session's mood into `~/.claude/perchling/sessions/<id>`
-(plus the last event to `~/.claude/perchling/state` for manual control); the
-app polls at 20fps and folds live sessions by attention priority with
-per-mood expiry. The same files are the liveness refcount: re-stamped on
-every prompt, removed on session end. No IPC, no daemon framework, no
-network.
+---
 
-## Manual controls
+## 🔧 How it works
+
+```mermaid
+flowchart LR
+    Hooks["Claude Code hooks<br/>prompt · notification · stop"]
+    Files[("sessions/&lt;id&gt;<br/>one file per live session")]
+    Fold["attention fold<br/>waiting &gt; error &gt; done &gt; running"]
+    Pet["🐣 the overlay"]
+    Exit["exits ~30s later"]
+
+    Hooks -->|"state.sh writes a mood"| Files
+    Files -->|"polled at 20 fps"| Fold
+    Fold --> Pet
+    Files -.->|"last file removed"| Exit
+```
+
+Each session's mood is a file, and the same file is the liveness refcount —
+re-stamped on every prompt, removed when the session ends. That's the whole
+protocol: no IPC, no daemon framework, and no network traffic at runtime.
+
+---
+
+## 🎛️ Controls
 
 ```bash
-# from the plugin directory
-scripts/pet.sh status   # binary / process / state / session count
-scripts/pet.sh stop     # remove all refcounts and kill the pet
-scripts/pet.sh build    # force rebuild
-scripts/pet.sh disable  # keep it off across sessions
-scripts/pet.sh enable   # bring it back
-scripts/pet.sh wake     # un-tuck a tucked pet
+scripts/pet.sh status    # binary / process / state / session count
+scripts/pet.sh build     # force a rebuild
+scripts/pet.sh stop      # drop refcounts and kill the pet
+scripts/pet.sh disable   # keep it off across sessions
+scripts/pet.sh enable    # bring it back
+scripts/pet.sh wake      # un-tuck a tucked pet
+```
+
+```bash
 echo -n waiting > ~/.claude/perchling/state   # puppeteer it yourself
 ```
 
-## Uninstall
+---
 
-```
+## 🧹 Uninstall
+
+```text
 /plugin uninstall perchling@perchling
 ```
 
-Then `rm -rf ~/.claude/perchling` to remove the binary and state.
+Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
 
-## Disclaimer
+---
 
-Unofficial community project. Not affiliated with, endorsed by, or sponsored
-by Anthropic or OpenAI. All pixel art is original.
+## ⚖️ Disclaimer
 
-## License
+Unofficial community project. Not affiliated with, endorsed by, or sponsored by
+Anthropic or OpenAI.
 
-MIT
+All pixel art here is original, and the built-in creature is not a drawing at
+all — it is composed at runtime from rounded rectangles and spikes, with its
+shading derived from neighbouring pixels. The source code *is* the source art.
+
+## 📄 License
+
+[MIT](LICENSE)
