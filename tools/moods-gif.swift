@@ -19,6 +19,16 @@ let START = 30        // tick 0 is inside the idle blink, and a blinking idle
 let DELAY = 6         // hundredths; the overlay ticks at 1/20s
 let CELL_PAD = 4      // per side, so five 104pt canvases land on 560
 
+// Six cells in one row: the five moods, then hover. Hover is a sixth reaction
+// rather than a second row of the first five — startle overrides the eyes
+// whatever the mood underneath is, so five hovered pets would be five copies
+// of one pose. It rides on idle because that is the baseline the other five
+// are read against.
+let CELLS: [(mood: Mood, startled: Bool)] = [
+    (.idle, false), (.running, false), (.waiting, false),
+    (.done, false), (.error, false), (.idle, true),
+]
+
 // MARK: - GIF89a
 
 struct BitWriter {
@@ -139,22 +149,21 @@ if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
     exit(1)
 }
 
-let moods: [Mood] = [.idle, .running, .waiting, .done, .error]
 let inks: [Ink] = [.outline, .shade, .body, .light, .screen, .eye, .glyph]
 
 let canvas = canvasSize(GW, GH, SCALE)
 let cw = Int(canvas.width), chh = Int(canvas.height)
 let cellW = cw + 2 * CELL_PAD
-let W = cellW * moods.count, H = chh
+let W = cellW * CELLS.count, H = chh
 
 // No window on purpose. Pupils drift toward the cursor, and gaze() gives up and
 // returns neutral when the view has no window — so a windowless view is the one
 // arrangement that cannot bake whatever the mouse was doing into committed art.
 // Attaching one and centring it on the pointer looks equivalent but is not: the
 // pointer can move during the render.
-let views = moods.map { m -> PetView in
+let views = CELLS.map { cell -> PetView in
     let v = PetView(frame: NSRect(origin: .zero, size: canvas))
-    v.mood = m
+    v.mood = cell.mood
     return v
 }
 
@@ -183,6 +192,9 @@ for step in 0..<FRAMES {
     ctx.setShouldAntialias(false)
     for (i, v) in views.enumerated() {
         v.tick = tick
+        // `startled` is `tick < startledUntil`, so one past the tick holds the
+        // pose for every frame without ever expiring mid-loop.
+        v.startledUntil = CELLS[i].startled ? tick + 1 : -1
         v.needsDisplay = true
         let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
         v.cacheDisplay(in: v.bounds, to: rep)
