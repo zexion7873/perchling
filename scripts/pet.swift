@@ -612,9 +612,14 @@ final class ChipView: NSView {
 }
 
 final class BubbleView: NSView {
-    var mood: Mood = .idle
-    var prompt: String = ""
-    var tailCenter: CGFloat = BUB_W - 64
+    // draw() is a pure function of these three and nothing else — no tick, no
+    // clock, no cursor, and a palette that never varies — so repainting on a
+    // real change is both necessary and sufficient. The poll loop used to mark
+    // the bubble dirty twenty times a second for content that changes a few
+    // times a turn, and text is the expensive thing on this canvas.
+    var mood: Mood = .idle { didSet { if mood != oldValue { needsDisplay = true } } }
+    var prompt: String = "" { didSet { if prompt != oldValue { needsDisplay = true } } }
+    var tailCenter: CGFloat = BUB_W - 64 { didSet { if tailCenter != oldValue { needsDisplay = true } } }
 
     override var isFlipped: Bool { true }
 
@@ -856,7 +861,6 @@ final class Controller: NSObject, NSWindowDelegate {
         var x = pf.maxX - BUB_W
         if let s = window.screen ?? NSScreen.main { x = max(x, s.visibleFrame.minX + 4) }
         bubbleView.tailCenter = pf.midX - x
-        bubbleView.needsDisplay = true
         bubble.setFrameOrigin(NSPoint(x: x, y: pf.maxY + 2))
         // Perched on the pet's top-right corner, mostly outside the art and
         // entirely below the bubble — the two never draw over each other.
@@ -1111,7 +1115,6 @@ final class Controller: NSObject, NSWindowDelegate {
                 }
             }
             bubbleView.mood = view.mood
-            bubbleView.needsDisplay = true
             view.needsDisplay = true
         }
     }
