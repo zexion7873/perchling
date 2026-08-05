@@ -44,9 +44,14 @@ Verify without launching:
   and assert on the bounds reported for the already-running pet.
 - **Rendered frames** — copy `pet.swift` to a scratch directory, cut everything
   from `let argv = CommandLine.arguments` onward, and append a harness that
-  puts a `PetView` in an offscreen `NSWindow` and calls
-  `cacheDisplay(in:to:)` per tick into a filmstrip PNG. This exercises the real
-  `draw()`, so what you see is what ships.
+  calls `cacheDisplay(in:to:)` on a `PetView` per tick into a filmstrip PNG.
+  This exercises the real `draw()`, so what you see is what ships.
+  `tools/moods-gif.swift` is a worked example of the same cut. Give the view no
+  window: `gaze()` returns neutral without one, whereas a view in a window aims
+  its pupils at wherever the mouse happens to be, which is how a render stops
+  being reproducible. Blit the cached `CGImage` with `interpolationQuality`
+  `.none` — going through `NSImage.draw` blends every pixel with its neighbour
+  and turns seven flat inks into a million.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
@@ -143,6 +148,7 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
+bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 ~/.claude/perchling/bin/perchling --validate examples/sprout.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
@@ -150,3 +156,11 @@ bash scripts/pet.sh stop      # drop refcounts and kill the pet
 There is no test suite. "Verified" means: it compiles, the examples still
 validate, `--export` still round-trips, malformed manifests are still rejected,
 and you have looked at a rendered frame.
+
+Changing the built-in's art leaves two generated artifacts behind, and both of
+them lie quietly rather than failing: `examples/perchling.json` *is* `--export`
+output, and `docs/moods.gif` is the README hero. Regenerate both in the same
+change. The GIF tool encodes its own output and decodes it back pixel-for-pixel
+before it will exit 0, so a green run really does mean the file is right — and
+two runs of it are byte-identical, so a diff on `docs/moods.gif` means the art
+moved.
