@@ -1,6 +1,6 @@
 # Working on perchling
 
-A Claude Code plugin: one Swift file compiled to a ~280KB accessory-app
+A Claude Code plugin: one Swift file compiled to an accessory-app
 overlay, driven by hook scripts that write mood files. No package manager, no
 test framework, no dependencies. `README.md` covers what it does for a user —
 this file covers what will waste your time if you assume it.

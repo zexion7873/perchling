@@ -2,7 +2,7 @@
   "name": "perchling",
   "displayName": "Perchling",
   "version": "0.6.1",
-  "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. 280KB Swift binary, zero dependencies, no Electron.",
+  "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. Swift binary under half a megabyte, zero dependencies, no Electron.",
   "author": {
     "name": "Kevin Lin",
     "url": "https://github.com/zexion7873"
