@@ -308,9 +308,19 @@ func chromeRects(_ cursorCells: Int) -> [(Ink, Int, Int, Int, Int)] {
 }
 
 // Startle: both eyes blown wide, overriding whatever the mood was drawing.
+// "Wide" is relative to the moods, so this has to be re-measured whenever they
+// move: at 5x5 it was three times the old 4x2 smudge, but once the moods grew
+// into the screen it had become narrower than every one of them and smaller
+// than `waiting` outright — hovering a waiting pet shrank its eyes. Seven cells
+// across leaves one of margin inside the 18x9 screen and two between the eyes,
+// which is as wide as the face physically goes, and the pupil shrinks rather
+// than grows because a pinprick in a large eye is what reads as startled.
 func startledRects() -> [(Ink, Int, Int, Int, Int)] {
-    [r(.eye, 9, 9, 13, 13), r(.eye, 18, 9, 22, 13),
-     r(.screen, 11, 11, 12, 12), r(.screen, 19, 11, 20, 12)]
+    [r(.eye, 10, 9, 12, 9), r(.eye, 9, 10, 13, 10), r(.eye, 8, 11, 14, 13),
+     r(.eye, 9, 14, 13, 14), r(.eye, 10, 15, 12, 15),
+     r(.eye, 19, 9, 21, 9), r(.eye, 18, 10, 22, 10), r(.eye, 17, 11, 23, 13),
+     r(.eye, 18, 14, 22, 14), r(.eye, 19, 15, 21, 15),
+     r(.screen, 10, 11, 12, 13), r(.screen, 19, 11, 21, 13)]
 }
 
 // A tear wells under the left eye and falls clear of the chin, then pauses.

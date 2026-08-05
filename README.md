@@ -2,7 +2,7 @@
 
 # 🐣 Perchling
 
-<img src="docs/moods.gif" width="560" alt="The perchling pet in its five moods — idle, running, waiting, done and error — each animating.">
+<img src="docs/moods.gif" width="672" alt="The perchling pet in its five moods — idle, running, waiting, done and error — each animating, followed by a sixth showing it startled, eyes blown wide, as the cursor hovers it.">
 
 **A tiny pixel creature that perches on the corner of your screen and reacts to
 Claude Code — so you can look away from the terminal and still know when it
