@@ -46,7 +46,7 @@ From inside a Claude Code session:
 ```
 
 The pet appears on your next session and builds itself from source on first
-launch — about four seconds, once.
+launch — a few seconds, once.
 
 > [!IMPORTANT]
 > **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
