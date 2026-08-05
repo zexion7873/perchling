@@ -89,10 +89,19 @@ func buildBase() -> [[Ink]] {
     let parts = [
         rrect(3 * R, 5 * R, 29 * R - 1, 18 * R - 1, 3 * R),
         spike(7 * R, 2 * R, 3 * R), spike(24 * R, 2 * R, 3 * R), spike(15 * R, 0, 5 * R),
-        rrect(8 * R, 18 * R, 24 * R - 1, 30 * R - 1, 2 * R),
-        rrect(2 * R, 21 * R, 10 * R - 1, 26 * R - 1, 1 * R),
-        rrect(22 * R, 21 * R, 30 * R - 1, 26 * R - 1, 1 * R),
-        leg(10 * R), leg(18 * R),
+        rrect(11 * R, 16 * R, 21 * R - 1, 23 * R - 1, 2 * R),
+        rrect(10 * R, 20 * R, 22 * R - 1, 30 * R - 1, 1 * R),
+        // Each arm welds to the body above and clears it by one design cell
+        // below, so the derived shading draws the seam. Consecutive rects must
+        // overlap by two design cells in x, or the rrect corner clips sever the
+        // weld and the arm floats free.
+        rrect(8 * R, 18 * R, 12 * R - 1, 22 * R - 1, 1 * R),
+        rrect(6 * R, 20 * R, 10 * R - 1, 24 * R - 1, 1 * R),
+        rrect(5 * R, 22 * R, 9 * R - 1, 28 * R - 1, 1 * R),
+        rrect(20 * R, 18 * R, 24 * R - 1, 22 * R - 1, 1 * R),
+        rrect(22 * R, 20 * R, 26 * R - 1, 24 * R - 1, 1 * R),
+        rrect(23 * R, 22 * R, 27 * R - 1, 28 * R - 1, 1 * R),
+        leg(11 * R), leg(17 * R),
     ]
     for p in parts {
         for y in 0..<GH { for x in 0..<GW where p[y][x] == 1 { mass[y][x] = 1 } }
@@ -242,28 +251,45 @@ func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
     return (ink, c.0 + ox, c.1 + oy, c.2 + ox, c.3 + oy)
 }
 
+// The mood is legible or it is not, and the eyes are where it has to happen:
+// the screen is 18x9 design cells and everything else on the face is fixed, so
+// a mood that only moves a 4x2 smudge inside it reads as the same picture five
+// times. Each shape below spans the 6x5 zone x9..14 / x17..22, y10..14 — the
+// size `startledRects` already proves the screen can hold — and the five are
+// chosen to differ in OUTLINE, not in area: oval, slit, wide-with-catchlight,
+// arch, droop. Gaze and the twitch shift these by one cell, which the zone's
+// one-cell margin inside the screen absorbs.
 func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ blinking: Bool) -> [(Ink, Int, Int, Int, Int)] {
     switch mood {
     case .waiting:
-        return [r(.eye, 10, 10, 13, 12, dx, gy), r(.eye, 18, 10, 21, 12, dx, gy),
-                r(.glyph, 10, 10, 10, 10, dx, gy), r(.glyph, 18, 10, 18, 10, dx, gy)]
+        // Widest of the five, plus a catchlight: the pet is looking AT you.
+        return [r(.eye, 10, 10, 13, 10, dx, gy), r(.eye, 9, 11, 14, 13, dx, gy),
+                r(.eye, 10, 14, 13, 14, dx, gy),
+                r(.eye, 18, 10, 21, 10, dx, gy), r(.eye, 17, 11, 22, 13, dx, gy),
+                r(.eye, 18, 14, 21, 14, dx, gy),
+                r(.glyph, 10, 11, 11, 12, dx, gy), r(.glyph, 18, 11, 19, 12, dx, gy)]
     case .done:
-        return [r(.eye, 11, 11, 12, 11), r(.eye, 10, 12, 13, 12),
-                r(.eye, 19, 11, 20, 11), r(.eye, 18, 12, 21, 12)]
+        // A content squint: thick across the top, ends dropping away.
+        return [r(.eye, 10, 11, 13, 11), r(.eye, 9, 12, 10, 12), r(.eye, 13, 12, 14, 12),
+                r(.eye, 18, 11, 21, 11), r(.eye, 17, 12, 18, 12), r(.eye, 21, 12, 22, 12)]
     case .error:
-        return [r(.eye, 10, 11, 11, 11), r(.eye, 12, 12, 13, 12),
-                r(.eye, 20, 11, 21, 11), r(.eye, 18, 12, 19, 12)]
+        // Inner corner high, outer corner low — the droop reads as upset even
+        // before the tear falls, and it is the only shape here with a diagonal.
+        return [r(.eye, 12, 11, 14, 11), r(.eye, 10, 12, 13, 12), r(.eye, 9, 13, 11, 13),
+                r(.eye, 17, 11, 19, 11), r(.eye, 18, 12, 21, 12), r(.eye, 20, 13, 22, 13)]
     case .running:
-        return [r(.eye, 10, 11, 13, 11, dx), r(.eye, 11, 12, 13, 12, dx),
-                r(.eye, 18, 11, 21, 11, dx), r(.eye, 18, 12, 20, 12, dx)]
+        // Narrowed to a slit and sitting low: concentrating, not blank.
+        return [r(.eye, 9, 12, 14, 13, dx), r(.eye, 17, 12, 22, 13, dx)]
     case .idle:
         // Never freeze on the blink frame: with Reduce Motion the tick stays
         // put, and eyes-shut is a terrible static pose.
         if blinking {
-            return [r(.eye, 10, 12, 13, 12), r(.eye, 18, 12, 21, 12)]
+            return [r(.eye, 9, 12, 14, 12), r(.eye, 17, 12, 22, 12)]
         }
-        return [r(.eye, 10, 11, 13, 11, dx, gy), r(.eye, 11, 12, 13, 12, dx, gy),
-                r(.eye, 18, 11, 21, 11, dx, gy), r(.eye, 18, 12, 20, 12, dx, gy)]
+        return [r(.eye, 10, 11, 13, 11, dx, gy), r(.eye, 9, 12, 14, 13, dx, gy),
+                r(.eye, 10, 14, 13, 14, dx, gy),
+                r(.eye, 18, 11, 21, 11, dx, gy), r(.eye, 17, 12, 22, 13, dx, gy),
+                r(.eye, 18, 14, 21, 14, dx, gy)]
     }
 }
 
@@ -271,10 +297,13 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ blinking: Bool) -> [(Ink, In
 // steady 5 is the plain cursor the pet has always drawn; growing it a cell at
 // a time is what reads as typing.
 func chromeRects(_ cursorCells: Int) -> [(Ink, Int, Int, Int, Int)] {
-    var out = [r(.glyph, 11, 22, 12, 22), r(.glyph, 12, 23, 13, 23), r(.glyph, 13, 24, 14, 24),
-               r(.glyph, 12, 25, 13, 25), r(.glyph, 11, 26, 12, 26)]
+    // The chevron starts one cell clear of the arm: the torso is 12 design
+    // cells wide and the arm's elbow reaches x10, so a chevron at x11 has no
+    // body colour between the two and the prompt reads as welded to the limb.
+    var out = [r(.glyph, 12, 22, 13, 22), r(.glyph, 13, 23, 14, 23), r(.glyph, 14, 24, 15, 24),
+               r(.glyph, 13, 25, 14, 25), r(.glyph, 12, 26, 13, 26)]
     let n = min(max(cursorCells, 0), 5)
-    if n > 0 { out.append(r(.glyph, 16, 26, 15 + n, 26)) }
+    if n > 0 { out.append(r(.glyph, 17, 26, 16 + n, 26)) }
     return out
 }
 
@@ -296,12 +325,15 @@ func tearRow(_ tick: Int) -> Int? {
 
 func tearRects(_ y: Int) -> [(Ink, Int, Int, Int, Int)] { [r(.glyph, 11, y, 11, y + 1)] }
 
-// Twinkles either side of the crown, alternating so something is always
-// catching the light without both sides flashing in lockstep.
+// Twinkles either side of the face, alternating so something is always
+// catching the light without both sides flashing in lockstep. They sit ON the
+// head rather than in the air beside it: a near-white glyph over transparent
+// pixels is invisible against a light desktop, and `done` is the one mood the
+// product exists to deliver — its signal cannot be background-dependent.
 func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
     left
-        ? [r(.glyph, 3, 2, 3, 2), r(.glyph, 2, 3, 4, 3), r(.glyph, 3, 4, 3, 4)]
-        : [r(.glyph, 28, 2, 28, 2), r(.glyph, 27, 3, 29, 3), r(.glyph, 28, 4, 28, 4)]
+        ? [r(.glyph, 5, 7, 5, 7), r(.glyph, 4, 8, 6, 8), r(.glyph, 5, 9, 5, 9)]
+        : [r(.glyph, 26, 7, 26, 7), r(.glyph, 25, 8, 27, 8), r(.glyph, 26, 9, 26, 9)]
 }
 
 // Snapshot the built-in pet as a manifest, so the default is a starting point
