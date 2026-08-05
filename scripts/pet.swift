@@ -424,6 +424,27 @@ final class PetView: NSView {
         let cursorCells: Int
         let tearRow: Int?
         let sparkleLeft: Bool
+        let spriteGen: Int
+    }
+
+    // Which creature, as opposed to how it is posed. Swapping pet.json changes
+    // `custom`, `scale` and `xpad` without moving a single other pose field,
+    // and under Reduce Motion in idle every other field is invariant for the
+    // life of the process — so a repaint decision watching the rest alone would
+    // draw the previous creature forever. All three are assigned in exactly one
+    // place, which is why one counter there is enough rather than merely likely.
+    var spriteGen = 0
+
+    private var lastPose: Pose?
+
+    // The repaint decision reads the value the paint reads. Nothing here
+    // re-derives an input, so the two cannot come to different conclusions
+    // about what the next frame would contain.
+    func repaintIfChanged() {
+        let p = pose()
+        guard p != lastPose else { return }
+        lastPose = p
+        needsDisplay = true
     }
 
     func pose() -> Pose {
@@ -470,7 +491,7 @@ final class PetView: NSView {
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
                     startled: st, blinking: tick % 84 < 3 && motionOK,
                     cursorCells: cursor, tearRow: tear,
-                    sparkleLeft: (tick / 6) % 2 == 0)
+                    sparkleLeft: (tick / 6) % 2 == 0, spriteGen: spriteGen)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -853,6 +874,7 @@ final class Controller: NSObject, NSWindowDelegate {
         view.scale = pet?.scale ?? SCALE
         let s = pet?.scale ?? SCALE
         view.xpad = sidePad(s)
+        view.spriteGen += 1
         let size = canvasSize(pet?.width ?? GW, pet?.height ?? GH, s)
         if window.frame.size != size {
             // setContentSize pins the bottom-left corner, so a wider pet grows
@@ -1144,7 +1166,7 @@ final class Controller: NSObject, NSWindowDelegate {
                 }
             }
             bubbleView.mood = view.mood
-            view.needsDisplay = true
+            view.repaintIfChanged()
         }
     }
 }
