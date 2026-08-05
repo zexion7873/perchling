@@ -325,12 +325,15 @@ func tearRow(_ tick: Int) -> Int? {
 
 func tearRects(_ y: Int) -> [(Ink, Int, Int, Int, Int)] { [r(.glyph, 11, y, 11, y + 1)] }
 
-// Twinkles either side of the crown, alternating so something is always
-// catching the light without both sides flashing in lockstep.
+// Twinkles either side of the face, alternating so something is always
+// catching the light without both sides flashing in lockstep. They sit ON the
+// head rather than in the air beside it: a near-white glyph over transparent
+// pixels is invisible against a light desktop, and `done` is the one mood the
+// product exists to deliver — its signal cannot be background-dependent.
 func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
     left
-        ? [r(.glyph, 3, 2, 3, 2), r(.glyph, 2, 3, 4, 3), r(.glyph, 3, 4, 3, 4)]
-        : [r(.glyph, 28, 2, 28, 2), r(.glyph, 27, 3, 29, 3), r(.glyph, 28, 4, 28, 4)]
+        ? [r(.glyph, 5, 7, 5, 7), r(.glyph, 4, 8, 6, 8), r(.glyph, 5, 9, 5, 9)]
+        : [r(.glyph, 26, 7, 26, 7), r(.glyph, 25, 8, 27, 8), r(.glyph, 26, 9, 26, 9)]
 }
 
 // Snapshot the built-in pet as a manifest, so the default is a starting point
