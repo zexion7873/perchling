@@ -285,17 +285,21 @@ func startledRects() -> [(Ink, Int, Int, Int, Int)] {
 }
 
 // A tear wells under the left eye and falls clear of the chin, then pauses.
-func tearRects(_ tick: Int) -> [(Ink, Int, Int, Int, Int)] {
+// The fall resolves to one of five rows, or to nothing during the pause. Taking
+// the row rather than the clock means two ticks that draw the same droplet are
+// the same value, which is what lets a pose be compared instead of re-derived.
+func tearRow(_ tick: Int) -> Int? {
     let phase = tick % 54
-    guard phase >= 12 else { return [] }
-    let y = 13 + min(4, (phase - 12) / 7)
-    return [r(.glyph, 11, y, 11, y + 1)]
+    guard phase >= 12 else { return nil }
+    return 13 + min(4, (phase - 12) / 7)
 }
+
+func tearRects(_ y: Int) -> [(Ink, Int, Int, Int, Int)] { [r(.glyph, 11, y, 11, y + 1)] }
 
 // Twinkles either side of the crown, alternating so something is always
 // catching the light without both sides flashing in lockstep.
-func sparkleRects(_ tick: Int) -> [(Ink, Int, Int, Int, Int)] {
-    (tick / 6) % 2 == 0
+func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
+    left
         ? [r(.glyph, 3, 2, 3, 2), r(.glyph, 2, 3, 4, 3), r(.glyph, 3, 4, 3, 4)]
         : [r(.glyph, 28, 2, 28, 2), r(.glyph, 27, 3, 29, 3), r(.glyph, 28, 4, 28, 4)]
 }
@@ -342,7 +346,6 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
-    private var gazeY = 0
 
     override var isFlipped: Bool { true }
 
@@ -400,20 +403,30 @@ final class PetView: NSView {
         fill(palette[ink]!, x0, y0, x1, y1, off)
     }
 
-    private func drawEyes(_ off: Int, _ dx: Int) {
-        let blinking = tick % 84 < 3 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        for (ink, x0, y0, x1, y1) in eyeRects(mood, dx, gazeY, blinking) {
-            put(ink, x0, y0, x1, y1, off)
+    private func drawEyes(_ p: Pose) {
+        for (ink, x0, y0, x1, y1) in eyeRects(p.mood, p.dx, p.gazeY, p.blinking) {
+            put(ink, x0, y0, x1, y1, p.off)
         }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.clear.setFill()
-        dirtyRect.fill()
-        guard let ctx = NSGraphicsContext.current else { return }
-        ctx.shouldAntialias = false
-        ctx.imageInterpolation = .none
+    // Everything draw() turns into pixels, resolved in one place. Every clock-
+    // driven value is reduced to the state it actually lands on, so two ticks
+    // that paint the same picture produce the same Pose. Anything that later
+    // wants to know whether a repaint is needed reads this rather than
+    // re-deriving the inputs, which is how the two would drift apart.
+    struct Pose: Equatable {
+        let mood: Mood
+        let off: Int
+        let dx: Int
+        let gazeY: Int
+        let startled: Bool
+        let blinking: Bool
+        let cursorCells: Int
+        let tearRow: Int?
+        let sparkleLeft: Bool
+    }
 
+    func pose() -> Pose {
         let u = bounceUnit(custom?.scale ?? SCALE)
         var off = 2
         var dx = 0
@@ -436,18 +449,47 @@ final class PetView: NSView {
         // The hop outranks the mood's resting bob, and now fires on a tap in
         // any mood rather than only on the switch into done.
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
-        off *= u
-        dx *= u
-        gazeY = gy * u
+
+        let st = startled
+        // running types a line out a cell at a time; every other mood keeps the
+        // plain cursor it has always had, blinking at its own rate.
+        let cursor: Int
+        switch mood {
+        // A frozen clock must land on a good pose, and phase 0 of the typing
+        // cycle is an empty prompt line — the one frame that reads as broken.
+        case .running: cursor = motionOK ? min(5, (tick / 3) % 7) : 5
+        case .waiting: cursor = (tick / 6) % 2 == 0 ? 5 : 0
+        case .done, .error: cursor = 5
+        case .idle: cursor = (tick / 11) % 2 == 0 ? 5 : 0
+        }
+
+        // A droplet frozen mid-fall reads as a rendering fault, so the tear is
+        // the one extra that sits out Reduce Motion entirely.
+        let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
+
+        return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
+                    startled: st, blinking: tick % 84 < 3 && motionOK,
+                    cursorCells: cursor, tearRow: tear,
+                    sparkleLeft: (tick / 6) % 2 == 0)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+        guard let ctx = NSGraphicsContext.current else { return }
+        ctx.shouldAntialias = false
+        ctx.imageInterpolation = .none
+
+        let p = pose()
 
         // Custom pets swap the whole sprite per mood; bounce (off) and twitch
         // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
         // the manifest knows nothing about eye coordinates.
         if let pet = custom {
-            let grid = pet.frame(for: mood)
+            let grid = pet.frame(for: p.mood)
             for y in 0..<pet.height {
                 for x in 0..<pet.width {
-                    if let c = grid[y][x] { fill(c, x + dx, y, x + dx, y, off) }
+                    if let c = grid[y][x] { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
                 }
             }
             return
@@ -456,35 +498,22 @@ final class PetView: NSView {
         for y in 0..<GH {
             for x in 0..<GW {
                 let ink = base[y][x]
-                if ink != .none { put(ink, x, y, x, y, off) }
+                if ink != .none { put(ink, x, y, x, y, p.off) }
             }
         }
-        if startled {
-            for (ink, x0, y0, x1, y1) in startledRects() { put(ink, x0, y0, x1, y1, off) }
+        if p.startled {
+            for (ink, x0, y0, x1, y1) in startledRects() { put(ink, x0, y0, x1, y1, p.off) }
         } else {
-            drawEyes(off, dx)
+            drawEyes(p)
         }
 
-        // running types a line out a cell at a time; every other mood keeps the
-        // plain cursor it has always had, blinking at its own rate.
-        let cursorCells: Int
-        switch mood {
-        // A frozen clock must land on a good pose, and phase 0 of the typing
-        // cycle is an empty prompt line — the one frame that reads as broken.
-        case .running: cursorCells = motionOK ? min(5, (tick / 3) % 7) : 5
-        case .waiting: cursorCells = (tick / 6) % 2 == 0 ? 5 : 0
-        case .done, .error: cursorCells = 5
-        case .idle: cursorCells = (tick / 11) % 2 == 0 ? 5 : 0
-        }
-        for (ink, x0, y0, x1, y1) in chromeRects(cursorCells) { put(ink, x0, y0, x1, y1, off) }
+        for (ink, x0, y0, x1, y1) in chromeRects(p.cursorCells) { put(ink, x0, y0, x1, y1, p.off) }
 
-        // A droplet frozen mid-fall reads as a rendering fault, so the tear is
-        // the one extra that sits out Reduce Motion entirely.
-        if mood == .error && motionOK && !startled {
-            for (ink, x0, y0, x1, y1) in tearRects(tick) { put(ink, x0, y0, x1, y1, off) }
+        if let y = p.tearRow {
+            for (ink, x0, y0, x1, y1) in tearRects(y) { put(ink, x0, y0, x1, y1, p.off) }
         }
-        if mood == .done {
-            for (ink, x0, y0, x1, y1) in sparkleRects(tick) { put(ink, x0, y0, x1, y1, off) }
+        if p.mood == .done {
+            for (ink, x0, y0, x1, y1) in sparkleRects(p.sparkleLeft) { put(ink, x0, y0, x1, y1, p.off) }
         }
     }
 
