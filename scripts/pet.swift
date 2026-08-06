@@ -83,30 +83,19 @@ let palette: [Ink: NSColor] = [
     .glyph:   NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1),
 ]
 
-func buildBase() -> [[Ink]] {
+func merge(_ parts: [[[Int]]]) -> [[Int]] {
     var mass = blank()
-    let R = RES
-    let parts = [
-        rrect(3 * R, 5 * R, 29 * R - 1, 18 * R - 1, 3 * R),
-        spike(7 * R, 2 * R, 3 * R), spike(24 * R, 2 * R, 3 * R), spike(15 * R, 0, 5 * R),
-        rrect(11 * R, 16 * R, 21 * R - 1, 23 * R - 1, 2 * R),
-        rrect(10 * R, 20 * R, 22 * R - 1, 30 * R - 1, 1 * R),
-        // Each arm welds to the body above and clears it by one design cell
-        // below, so the derived shading draws the seam. Consecutive rects must
-        // overlap by two design cells in x, or the rrect corner clips sever the
-        // weld and the arm floats free.
-        rrect(8 * R, 18 * R, 12 * R - 1, 22 * R - 1, 1 * R),
-        rrect(6 * R, 20 * R, 10 * R - 1, 24 * R - 1, 1 * R),
-        rrect(5 * R, 22 * R, 9 * R - 1, 28 * R - 1, 1 * R),
-        rrect(20 * R, 18 * R, 24 * R - 1, 22 * R - 1, 1 * R),
-        rrect(22 * R, 20 * R, 26 * R - 1, 24 * R - 1, 1 * R),
-        rrect(23 * R, 22 * R, 27 * R - 1, 28 * R - 1, 1 * R),
-        leg(11 * R), leg(17 * R),
-    ]
     for p in parts {
         for y in 0..<GH { for x in 0..<GW where p[y][x] == 1 { mass[y][x] = 1 } }
     }
+    return mass
+}
 
+// Outline wherever the mass ends, a light band down the top and left edges and
+// a shade band down the bottom and right. Every ink is derived from the mass
+// rather than painted, which is what lets a limb built separately from the body
+// come out shaded like the rest of it.
+func shade(_ mass: [[Int]]) -> [[Ink]] {
     func solid(_ y: Int, _ x: Int) -> Bool {
         y >= 0 && y < GH && x >= 0 && x < GW && mass[y][x] == 1
     }
@@ -125,6 +114,33 @@ func buildBase() -> [[Ink]] {
             }
         }
     }
+    return out
+}
+
+func buildBase(rightArm: Bool = true) -> [[Ink]] {
+    let R = RES
+    let parts = [
+        rrect(3 * R, 5 * R, 29 * R - 1, 18 * R - 1, 3 * R),
+        spike(7 * R, 2 * R, 3 * R), spike(24 * R, 2 * R, 3 * R), spike(15 * R, 0, 5 * R),
+        rrect(11 * R, 16 * R, 21 * R - 1, 23 * R - 1, 2 * R),
+        rrect(10 * R, 20 * R, 22 * R - 1, 30 * R - 1, 1 * R),
+        // Each arm welds to the body above and clears it by one design cell
+        // below, so the derived shading draws the seam. Consecutive rects must
+        // overlap by two design cells in x, or the rrect corner clips sever the
+        // weld and the arm floats free.
+        rrect(8 * R, 18 * R, 12 * R - 1, 22 * R - 1, 1 * R),
+        rrect(6 * R, 20 * R, 10 * R - 1, 24 * R - 1, 1 * R),
+        rrect(5 * R, 22 * R, 9 * R - 1, 28 * R - 1, 1 * R),
+        leg(11 * R), leg(17 * R),
+    ] + (rightArm ? [
+        // Left out when the wave replaces it. Union order does not matter — the
+        // parts are merged into one mask before anything is shaded.
+        rrect(20 * R, 18 * R, 24 * R - 1, 22 * R - 1, 1 * R),
+        rrect(22 * R, 20 * R, 26 * R - 1, 24 * R - 1, 1 * R),
+        rrect(23 * R, 22 * R, 27 * R - 1, 28 * R - 1, 1 * R),
+    ] : [])
+
+    var out = shade(merge(parts))
     let sc = rrect(7 * RES, 8 * RES, 25 * RES - 1, 17 * RES - 1, 2 * RES)
     for y in 0..<GH { for x in 0..<GW where sc[y][x] == 1 { out[y][x] = .screen } }
     return out
@@ -240,6 +256,34 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
 }
 
 let base = buildBase()
+
+// The wave is the only animation that moves a limb instead of stamping extra
+// pixels onto a finished sprite, so it cannot be a rect function the way the
+// tear and the twinkle are. The raised arm is built as its own mass and put
+// through the same shading, which gives it an outline of its own; unioning it
+// into the body the way the resting arm is would merge it into a head that
+// spans 26 of the grid's 32 columns and leave a lump instead of a limb.
+//
+// The elbow is fixed and only the forearm pivots, two design cells either way:
+// 6 points at RES 3, against a bounce that already reads at 4. There is nowhere
+// above the shoulder for the arm to go that is not head, so it crosses the face
+// rather than clearing it.
+func waveArm(_ dx: Int) -> [[Int]] {
+    merge([(20, 18, 23, 21), (22, 17, 25, 21), (24, 14, 27, 20), (24 + dx, 8, 27 + dx, 15)]
+        .map { s in
+            let c = cell(s.0, s.1, s.2, s.3)
+            return rrect(c.0, c.1, c.2, c.3, RES)
+        })
+}
+
+// One finished grid per swing, built once: the pose is a pure function of the
+// phase, so nothing here has to be recomputed per frame.
+let waveBase: [[[Ink]]] = [-2, 2].map { dx in
+    var g = buildBase(rightArm: false)
+    let arm = shade(waveArm(dx))
+    for y in 0..<GH { for x in 0..<GW where arm[y][x] != .none { g[y][x] = arm[y][x] } }
+    return g
+}
 
 // The rects the built-in pet stamps over `base`. Kept as data rather than
 // draw calls so --export emits exactly the art the app renders.
@@ -388,6 +432,7 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
+    var waveUntil = -1
 
     override var isFlipped: Bool { true }
 
@@ -398,6 +443,10 @@ final class PetView: NSView {
     // `tick` parked below the deadline forever and the pose stuck for the life
     // of the process. Both ends have to check.
     var startled: Bool { custom == nil && motionOK && tick < startledUntil }
+    // Same deadline shape, and built-in only for the same reason the overlays
+    // are: a manifest carries pixels, so a custom pet has no arm the renderer
+    // knows how to raise.
+    var waving: Bool { custom == nil && motionOK && tick < waveUntil }
 
     // Hovering the pet startles it. The tracking area is rebuilt on resize
     // because installing a custom pet changes the window's bounds.
@@ -466,6 +515,7 @@ final class PetView: NSView {
         let cursorCells: Int
         let tearRow: Int?
         let sparkleLeft: Bool
+        let wavePhase: Int?
         let spriteGen: Int
     }
 
@@ -530,10 +580,15 @@ final class PetView: NSView {
         // the one extra that sits out Reduce Motion entirely.
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
+        // Deliberately not the twinkle's /6: two extras sharing one clock stop
+        // reading as two things happening and start reading as one mechanism.
+        let wave = waving ? (tick / 5) % 2 : nil
+
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
                     startled: st, blinking: tick % 84 < 3 && motionOK,
                     cursorCells: cursor, tearRow: tear,
-                    sparkleLeft: (tick / 6) % 2 == 0, spriteGen: spriteGen)
+                    sparkleLeft: (tick / 6) % 2 == 0, wavePhase: wave,
+                    spriteGen: spriteGen)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -558,9 +613,10 @@ final class PetView: NSView {
             return
         }
 
+        let grid = p.wavePhase.map { waveBase[$0] } ?? base
         for y in 0..<GH {
             for x in 0..<GW {
-                let ink = base[y][x]
+                let ink = grid[y][x]
                 if ink != .none { put(ink, x, y, x, y, p.off) }
             }
         }
@@ -1175,7 +1231,13 @@ final class Controller: NSObject, NSWindowDelegate {
                 let (next, entered) = pollMoods()
                 if next != view.mood {
                     view.mood = next
-                    if next == .done && view.motionOK { view.hopUntil = view.tick + 12 }
+                    if next == .done && view.motionOK {
+                        view.hopUntil = view.tick + 12
+                        // done holds until the next prompt, so the wave is a
+                        // burst on arrival rather than a loop — three swings,
+                        // then the arm goes back down and stays there.
+                        view.waveUntil = view.tick + 30
+                    }
                 }
                 // Reminders and tuck-wake follow per-input events, not the
                 // (possibly masked) display transition.

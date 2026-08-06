@@ -60,7 +60,7 @@ launch — a few seconds, once.
 |:-:|-------|---------|--------------|
 | ⌨️ | **running** | you submit a prompt, tools execute | bounces, glances around, types a line out on its belly |
 | 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, twitching |
-| 🎉 | **done** | turn or agent completed | hops under a twinkle, then settles |
+| 🎉 | **done** | turn or agent completed | hops under a twinkle, waves, then settles |
 | 😢 | **error** | an API failure ended the turn | droops, and a tear rolls off its chin |
 | 💤 | **idle** | nothing happening | breathes slowly, blinks |
 
@@ -146,8 +146,8 @@ live.
 
 > [!WARNING]
 > A manifest carries pixels, not behaviour. An exported pet loses the default's
-> cursor-following pupils, its blink and its blinking terminal cursor, and its
-> sideways twitch moves the whole body rather than just the eyes.
+> cursor-following pupils, its blink, its blinking terminal cursor and its wave,
+> and its sideways twitch moves the whole body rather than just the eyes.
 
 ---
 
