@@ -76,6 +76,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   coordinate and `cell()` expands each source cell into a `RES × RES` block.
   Write new sprite coordinates in design space and pass them through `cell()`;
   hand-multiplying by `RES` at a call site is how the two spaces drift apart.
+- **A limb that leaves its resting place has to be overlaid, not unioned.** The
+  head spans 26 of the grid's 32 columns and reaches all the way down to the
+  shoulder, so there is nowhere above the shoulder for an arm to go that is not
+  head. `buildBase()` merges its parts into one mask and `shade()` then derives
+  every ink from neighbour tests over that mask, so an arm unioned in at head
+  height stops being an arm and becomes a lump on the side of the head. The wave
+  builds its arm as a separate mass, runs the same `shade()` over it and stamps
+  the result on top — that is what gives it an outline of its own and lets it
+  cross the face. `buildBase(rightArm: false)` drops the resting arm so the pet
+  does not end up with three. Its swing is deliberately not on the twinkle's
+  clock: two extras sharing one period read as one mechanism, not two.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
