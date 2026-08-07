@@ -314,6 +314,50 @@ func migrateLoosePet(root: URL) {
     }
 }
 
+// One row of the Pets menu, resolved before anything is drawn: whether the
+// manifest parses is decided here, not when the user clicks.
+struct PetChoice {
+    let name: String        // basename without .json, and what the menu shows
+    let url: URL            // the file this row acts on
+    let shipped: Bool       // still only in examples/, not yet copied into pets/
+    let active: Bool        // pet.json currently resolves to this file
+    let problem: String?    // why the manifest was rejected; nil when it loads
+}
+
+// User pets first, then shipped ones. Two rules are load-bearing:
+// `perchling.json` never appears — it IS the built-in, which already has its
+// own row — and a shipped pet whose name is already in pets/ is dropped,
+// because the pets/ copy is the file a pick would link to.
+func petChoices(root: URL, examples: URL?) -> [PetChoice] {
+    let fm = FileManager.default
+    let pet = root.appendingPathComponent("pet.json")
+    // fileExists traverses the link, so a dangling one reports false and
+    // nothing shows as active — which is exactly what a dangling link means.
+    let activePath = fm.fileExists(atPath: pet.path)
+        ? pet.resolvingSymlinksInPath().standardizedFileURL.path : nil
+
+    func scan(_ dir: URL, shipped: Bool) -> [PetChoice] {
+        let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "json" }.map { url -> PetChoice in
+            var problem: String?
+            do { _ = try loadCustomPet(url) }
+            catch let e as PetError { problem = e.description }
+            catch { problem = error.localizedDescription }
+            let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+            return PetChoice(name: url.deletingPathExtension().lastPathComponent,
+                             url: url, shipped: shipped,
+                             active: !shipped && resolved == activePath,
+                             problem: problem)
+        }.sorted { $0.name < $1.name }
+    }
+
+    let mine = scan(petsDir(root), shipped: false)
+    let taken = Set(mine.map(\.name))
+    let ship = (examples.map { scan($0, shipped: true) } ?? [])
+        .filter { $0.name != "perchling" && !taken.contains($0.name) }
+    return mine + ship
+}
+
 let base = buildBase()
 
 // The wave is the only animation that moves a limb instead of stamping extra
