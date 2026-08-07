@@ -4,18 +4,18 @@
 // hidden --gif flag — puts dev tooling on a CLI whose dispatch is already
 // load-bearing.
 //
-// GIF is an indexed format and the pet is seven flat colours, so the encode is
+// GIF is an indexed format and the pet is ten flat colours, so the encode is
 // lossless rather than merely acceptable. Every frame comes from PetView.draw()
 // through cacheDisplay, which is what makes this a picture of the pet that
 // ships instead of a second drawing of it.
 
 let FRAMES = 54       // one full tear cycle; anything shorter cuts a droplet
                       // off mid-fall at the loop seam
-let START = 30        // tick 0 is inside the idle blink, and a blinking idle
-                      // reads identically to running — a bad first frame for a
-                      // hero whose whole claim is that the moods differ. Every
-                      // animation here is periodic, so starting late rotates
-                      // the loop without breaking it.
+let START = 30        // ticks 0-15 are inside idle's open-eyed peek, and a
+                      // peeking idle reads identically to waiting — a bad first
+                      // frame for a hero whose whole claim is that the moods
+                      // differ. Every animation here is periodic, so starting
+                      // late rotates the loop without breaking it.
 let DELAY = 6         // hundredths; the overlay ticks at 1/20s
 let CELL_PAD = 4      // per side, so five 104pt canvases land on 560
 
@@ -108,18 +108,22 @@ func subBlocks(_ data: [UInt8]) -> [UInt8] {
 func u16(_ v: Int) -> [UInt8] { [UInt8(v & 0xff), UInt8((v >> 8) & 0xff)] }
 
 // Index 0 is transparent so the hero adapts to whatever background a README is
-// rendered on; the seven inks follow it in Ink's own order.
+// rendered on; the inks follow it in Ink's own order. The table's bit depth is
+// derived from what the render actually produced — a hardcoded size is exactly
+// the kind of value that survives an ink-count change and ships a torn file.
 func buildGIF(frames: [[UInt8]], width: Int, height: Int, table: [NSColor]) -> Data {
+    var bits = 2
+    while (1 << bits) < table.count + 1 { bits += 1 }
     var out: [UInt8] = Array("GIF89a".utf8)
     out += u16(width) + u16(height)
-    out += [0xF2, 0x00, 0x00]                       // GCT present, 8 entries
+    out += [UInt8(0xF0 | (bits - 1)), 0x00, 0x00]   // GCT present, 2^bits entries
     out += [0, 0, 0]                                // index 0: transparent
     for c in table {
         out += [UInt8((c.redComponent * 255).rounded()),
                 UInt8((c.greenComponent * 255).rounded()),
                 UInt8((c.blueComponent * 255).rounded())]
     }
-    out += Array(repeating: 0, count: (8 - 1 - table.count) * 3)
+    out += Array(repeating: 0, count: ((1 << bits) - 1 - table.count) * 3)
     out += [0x21, 0xFF, 0x0B] + Array("NETSCAPE2.0".utf8) + [0x03, 0x01, 0x00, 0x00, 0x00]
 
     for f in frames {
@@ -127,8 +131,8 @@ func buildGIF(frames: [[UInt8]], width: Int, height: Int, table: [NSColor]) -> D
         // keeps whatever the previous frame left there and the pet smears.
         out += [0x21, 0xF9, 0x04, 0x09] + u16(DELAY) + [0x00, 0x00]
         out += [0x2C] + u16(0) + u16(0) + u16(width) + u16(height) + [0x00]
-        out += [0x03]
-        out += subBlocks(lzwEncode(f, minCodeSize: 3))
+        out += [UInt8(bits)]
+        out += subBlocks(lzwEncode(f, minCodeSize: bits))
     }
     out += [0x3B]
     return Data(out)
@@ -149,7 +153,8 @@ if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
     exit(1)
 }
 
-let inks: [Ink] = [.outline, .shade, .body, .light, .screen, .eye, .glyph]
+let inks: [Ink] = [.outline, .shade, .body, .light, .casing, .screen, .scanline,
+                   .eye, .glyph, .blush]
 
 let canvas = canvasSize(GW, GH, SCALE)
 let cw = Int(canvas.width), chh = Int(canvas.height)
@@ -209,15 +214,16 @@ for step in 0..<FRAMES {
     rendered.append(Array(UnsafeBufferPointer(start: p, count: W * H * 4)))
 }
 
-// One entry per distinct opaque colour. More than seven means the renderer
-// antialiased something, and an indexed format would then be quantising real
-// art rather than storing it — worth failing over, not rounding away.
+// One entry per distinct opaque colour. More than the ink count means the
+// renderer antialiased something, and an indexed format would then be
+// quantising real art rather than storing it — worth failing over, not
+// rounding away.
 var indexOf: [UInt32: UInt8] = [:]
 var observed: [UInt32] = []
 for frame in rendered {
     for i in stride(from: 0, to: frame.count, by: 4) where frame[i + 3] >= 128 {
         let key = UInt32(frame[i]) << 16 | UInt32(frame[i + 1]) << 8 | UInt32(frame[i + 2])
-        if indexOf[key] == nil, observed.count < 7 {
+        if indexOf[key] == nil, observed.count < inks.count {
             observed.append(key)
             indexOf[key] = UInt8(observed.count)
         } else if indexOf[key] == nil {
