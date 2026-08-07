@@ -212,9 +212,9 @@ Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
 Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
 
-All pixel art here is original, and the built-in creature is not a drawing at
-all — it is composed at runtime from rounded rectangles and spikes, with its
-shading derived from neighbouring pixels. The source code *is* the source art.
+The built-in creature is not a drawing at all — it is composed at runtime from
+rounded rectangles and spikes, with its shading derived from neighbouring
+pixels. The source code *is* the source art.
 
 ## 📄 License
 
