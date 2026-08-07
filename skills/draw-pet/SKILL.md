@@ -101,6 +101,12 @@ Rules the loader enforces:
    貓咪 becomes `貓咪.json`:
    ```bash
    mkdir -p ~/.claude/perchling/pets
+   # A pet.json from before the library is a real file, not a link into pets/,
+   # and `ln -sf` would delete it. Perchling rescues one when it launches, but
+   # it may not have launched since the update — or at all.
+   if [ -f ~/.claude/perchling/pet.json ] && [ ! -L ~/.claude/perchling/pet.json ]; then
+     mv ~/.claude/perchling/pet.json ~/.claude/perchling/pets/previous-$(date +%s).json
+   fi
    mv /path/to/draft.json ~/.claude/perchling/pets/<slug>.json
    ln -sf pets/<slug>.json ~/.claude/perchling/pet.json
    ```

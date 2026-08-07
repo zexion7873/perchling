@@ -279,7 +279,12 @@ func petSlug(_ name: String) -> String {
 // other copy of, so it becomes the library's first entry instead. A symlink is
 // already correct; a missing file means the built-in, which is also correct.
 // Both are left alone.
-func migrateLoosePet(root: URL) {
+//
+// Returning normally is a promise that pet.json is no longer a loose regular
+// file, so a caller about to remove it can. Every way the rescue can fall short
+// throws instead — including the rollback below, which deliberately puts the
+// loose file back.
+func migrateLoosePet(root: URL) throws {
     let fm = FileManager.default
     let pet = root.appendingPathComponent("pet.json")
     // attributesOfItem does not traverse symlinks, so this reports the link
@@ -289,8 +294,7 @@ func migrateLoosePet(root: URL) {
     guard (attrs[.type] as? FileAttributeType) != .typeSymbolicLink else { return }
 
     let dir = petsDir(root)
-    guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil
-    else { return }
+    try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
     let slug = petSlug((try? loadCustomPet(pet))?.name ?? "current")
     var dest = dir.appendingPathComponent("\(slug).json")
@@ -299,7 +303,7 @@ func migrateLoosePet(root: URL) {
         dest = dir.appendingPathComponent("\(slug)-\(n).json")
         n += 1
     }
-    guard (try? fm.moveItem(at: pet, to: dest)) != nil else { return }
+    try fm.moveItem(at: pet, to: dest)
     // A relative link keeps working if the whole perchling directory moves.
     do {
         try fm.createSymbolicLink(atPath: pet.path,
@@ -311,6 +315,7 @@ func migrateLoosePet(root: URL) {
         // back so the next launch finds the original loose file again and
         // attempts the whole migration over.
         try? fm.moveItem(at: dest, to: pet)
+        throw error
     }
 }
 
@@ -358,6 +363,18 @@ func petChoices(root: URL, examples: URL?) -> [PetChoice] {
     return mine + ship
 }
 
+// Which menu row wears the checkmark — `nil` asks about the built-in row, the
+// same convention `onPickPet` uses. The tick means "this is the creature on
+// screen", which is not what the link names: a manifest that fails to load is
+// still `active` while the built-in is what renders, and a dotfiles pet.json
+// pointing outside pets/ renders a custom pet that has no row at all. Only the
+// renderer knows which of those happened, so it is asked, via the `custom` that
+// pollPet clears on every fallback.
+func petIsOnScreen(_ choice: PetChoice?, showingCustom: Bool) -> Bool {
+    guard let c = choice else { return !showingCustom }
+    return showingCustom && c.active && c.problem == nil
+}
+
 // A shipped pet is copied into the library before it is linked. The plugin
 // path carries a version number (.../perchling/0.8.0/examples/), so it is
 // replaced wholesale by the next update — a link into it would dangle.
@@ -370,22 +387,33 @@ func adoptShippedPet(_ src: URL, root: URL) throws -> URL {
     return dest
 }
 
+// The one place pet.json is removed. Its callers run from the menu, arbitrarily
+// long after launch migrated, and pet.json can have gone back to being a loose
+// regular file since: a migration that rolled itself back, a pets/ that only
+// became writable later, or a user following the old copy-it-into-place
+// instructions mid-session. That file may be their only copy of a pet, so it is
+// rescued into the library first and the removal abandoned if the rescue can't
+// finish — deleting what could not be saved is the whole bug.
+func clearPetLink(root: URL) throws {
+    try migrateLoosePet(root: root)
+    try? FileManager.default.removeItem(at: root.appendingPathComponent("pet.json"))
+}
+
 // Validate before linking. A manifest that does not parse would leave pollPet
 // with nil and the built-in on screen, which reads as the menu having done
 // nothing at all.
 func activatePet(_ target: URL, root: URL) throws {
     _ = try loadCustomPet(target)
-    let fm = FileManager.default
-    let pet = root.appendingPathComponent("pet.json")
-    try? fm.removeItem(at: pet)
-    try fm.createSymbolicLink(atPath: pet.path,
-                              withDestinationPath: "pets/\(target.lastPathComponent)")
+    try clearPetLink(root: root)
+    try FileManager.default.createSymbolicLink(
+        atPath: root.appendingPathComponent("pet.json").path,
+        withDestinationPath: "pets/\(target.lastPathComponent)")
 }
 
 // The built-in is the absence of a pet.json — the same thing the README has
 // always told people to do by hand.
-func useBuiltIn(root: URL) {
-    try? FileManager.default.removeItem(at: root.appendingPathComponent("pet.json"))
+func useBuiltIn(root: URL) throws {
+    try clearPetLink(root: root)
 }
 
 let base = buildBase()
@@ -826,6 +854,7 @@ final class PetView: NSView {
         let menu = NSMenu()
 
         let choices = petList?() ?? []
+        let showingCustom = custom != nil
         let pets = NSMenu()
         // Without this, AppKit's automatic validation re-enables the rows we
         // deliberately disabled for unparseable manifests.
@@ -833,7 +862,7 @@ final class PetView: NSView {
         let builtIn = NSMenuItem(title: "Built-in perchling",
                                  action: #selector(pickBuiltInAction), keyEquivalent: "")
         builtIn.target = self
-        builtIn.state = choices.contains { $0.active } ? .off : .on
+        builtIn.state = petIsOnScreen(nil, showingCustom: showingCustom) ? .on : .off
         pets.addItem(builtIn)
         for group in [choices.filter { !$0.shipped }, choices.filter { $0.shipped }]
         where !group.isEmpty {
@@ -843,7 +872,7 @@ final class PetView: NSView {
                                       action: #selector(pickPetAction(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = c
-                item.state = c.active ? .on : .off
+                item.state = petIsOnScreen(c, showingCustom: showingCustom) ? .on : .off
                 item.isEnabled = c.problem == nil
                 item.toolTip = c.problem
                 pets.addItem(item)
@@ -1058,8 +1087,10 @@ final class Controller: NSObject, NSWindowDelegate {
         sayURL = root.appendingPathComponent("say")
         petURL = root.appendingPathComponent("pet.json")
         // Before anything can link over it. A no-op on every install that has
-        // already been through it once.
-        migrateLoosePet(root: root)
+        // already been through it once. A rescue that cannot finish is not
+        // fatal here — the loose file is still where it was, and the menu
+        // refuses to remove one it could not rescue — so launch carries on.
+        try? migrateLoosePet(root: root)
         let bubSize = NSSize(width: BUB_W, height: BUB_H)
         bubble = NSWindow(contentRect: NSRect(origin: .zero, size: bubSize),
                           styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1126,7 +1157,7 @@ final class Controller: NSObject, NSWindowDelegate {
                     let target = c.shipped ? try adoptShippedPet(c.url, root: self.root) : c.url
                     try activatePet(target, root: self.root)
                 } else {
-                    useBuiltIn(root: self.root)
+                    try useBuiltIn(root: self.root)
                 }
             } catch {
                 NSSound.beep()
