@@ -149,8 +149,14 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
 enum Mood: String {
     case idle, running, waiting, done, error
 
+    // The session file's first line is the mood; an optional second line is
+    // that session's cwd, which the tray shows and the fold ignores. Reading
+    // line one keeps every file written before the label existed valid.
     static func parse(_ s: String) -> Mood {
-        Mood(rawValue: s.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .idle
+        // .first, not [0] — split on an empty file returns an empty array, and
+        // an empty session file is what a failed write leaves behind.
+        let head = s.split(separator: "\n").first ?? ""
+        return Mood(rawValue: head.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .idle
     }
 }
 
