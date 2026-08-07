@@ -358,6 +358,36 @@ func petChoices(root: URL, examples: URL?) -> [PetChoice] {
     return mine + ship
 }
 
+// A shipped pet is copied into the library before it is linked. The plugin
+// path carries a version number (.../perchling/0.8.0/examples/), so it is
+// replaced wholesale by the next update — a link into it would dangle.
+func adoptShippedPet(_ src: URL, root: URL) throws -> URL {
+    let fm = FileManager.default
+    let dir = petsDir(root)
+    try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    let dest = dir.appendingPathComponent(src.lastPathComponent)
+    if !fm.fileExists(atPath: dest.path) { try fm.copyItem(at: src, to: dest) }
+    return dest
+}
+
+// Validate before linking. A manifest that does not parse would leave pollPet
+// with nil and the built-in on screen, which reads as the menu having done
+// nothing at all.
+func activatePet(_ target: URL, root: URL) throws {
+    _ = try loadCustomPet(target)
+    let fm = FileManager.default
+    let pet = root.appendingPathComponent("pet.json")
+    try? fm.removeItem(at: pet)
+    try fm.createSymbolicLink(atPath: pet.path,
+                              withDestinationPath: "pets/\(target.lastPathComponent)")
+}
+
+// The built-in is the absence of a pet.json — the same thing the README has
+// always told people to do by hand.
+func useBuiltIn(root: URL) {
+    try? FileManager.default.removeItem(at: root.appendingPathComponent("pet.json"))
+}
+
 let base = buildBase()
 
 // The wave is the only animation that moves a limb instead of stamping extra
@@ -778,11 +808,52 @@ final class PetView: NSView {
     var onTuck: (() -> Void)?
     var onDisable: (() -> Void)?
 
+    // Named petList, not petChoices: the free function that computes it is
+    // already called petChoices, and a property shadowing it inside the
+    // Controller closure that assigns this is a needless fight.
+    var petList: (() -> [PetChoice])?
+    var onPickPet: ((PetChoice?) -> Void)?   // nil picks the built-in
+
     @objc private func tuckAction() { onTuck?() }
     @objc private func disableAction() { onDisable?() }
+    @objc private func pickBuiltInAction() { onPickPet?(nil) }
+    @objc private func pickPetAction(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? PetChoice else { return }
+        onPickPet?(choice)
+    }
 
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
+
+        let choices = petList?() ?? []
+        let pets = NSMenu()
+        // Without this, AppKit's automatic validation re-enables the rows we
+        // deliberately disabled for unparseable manifests.
+        pets.autoenablesItems = false
+        let builtIn = NSMenuItem(title: "Built-in perchling",
+                                 action: #selector(pickBuiltInAction), keyEquivalent: "")
+        builtIn.target = self
+        builtIn.state = choices.contains { $0.active } ? .off : .on
+        pets.addItem(builtIn)
+        for group in [choices.filter { !$0.shipped }, choices.filter { $0.shipped }]
+        where !group.isEmpty {
+            pets.addItem(.separator())
+            for c in group {
+                let item = NSMenuItem(title: c.shipped ? "\(c.name)  (shipped)" : c.name,
+                                      action: #selector(pickPetAction(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = c
+                item.state = c.active ? .on : .off
+                item.isEnabled = c.problem == nil
+                item.toolTip = c.problem
+                pets.addItem(item)
+            }
+        }
+        let petsItem = NSMenuItem(title: "Pets", action: nil, keyEquivalent: "")
+        petsItem.submenu = pets
+        menu.addItem(petsItem)
+        menu.addItem(.separator())
+
         let tuck = NSMenuItem(title: "Tuck away (wakes when needed)", action: #selector(tuckAction), keyEquivalent: "")
         tuck.target = self
         menu.addItem(tuck)
@@ -986,6 +1057,9 @@ final class Controller: NSObject, NSWindowDelegate {
         ownersURL = root.appendingPathComponent("owners")
         sayURL = root.appendingPathComponent("say")
         petURL = root.appendingPathComponent("pet.json")
+        // Before anything can link over it. A no-op on every install that has
+        // already been through it once.
+        migrateLoosePet(root: root)
         let bubSize = NSSize(width: BUB_W, height: BUB_H)
         bubble = NSWindow(contentRect: NSRect(origin: .zero, size: bubSize),
                           styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1043,6 +1117,27 @@ final class Controller: NSObject, NSWindowDelegate {
         chipView.onTap = { [weak self] in self?.toggleBubble() }
         view.onTuck = { [weak self] in self?.setTucked(true) }
         view.onDisable = { [weak self] in self?.disableAndQuit() }
+        view.petList = { [unowned self] in
+            petChoices(root: self.root, examples: examplesRoot)
+        }
+        view.onPickPet = { [unowned self] choice in
+            do {
+                if let c = choice {
+                    let target = c.shipped ? try adoptShippedPet(c.url, root: self.root) : c.url
+                    try activatePet(target, root: self.root)
+                } else {
+                    useBuiltIn(root: self.root)
+                }
+            } catch {
+                NSSound.beep()
+                return
+            }
+            // pollPet skips when the stamp is unchanged, and two pets can share
+            // an mtime. distantPast differs from both a real date and the nil a
+            // removed pet.json produces, so either outcome repaints.
+            self.lastPetStamp = Date.distantPast
+            self.pollPet()
+        }
 
         // Load the pet before the first placement: the corner gap has to be
         // measured against the window the custom pet ends up needing, not the
