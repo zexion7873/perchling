@@ -128,4 +128,15 @@ the user's project as the working directory:
 
 ## Revert
 
-`rm ~/.claude/perchling/pet.json` — the built-in perchling returns, live.
+The built-in perchling returns, live, the moment `pet.json` is gone. Retire it
+rather than delete it, for the same reason the install step does: a pre-library
+`pet.json` is the pet itself, not a link to one.
+
+```bash
+if [ -f ~/.claude/perchling/pet.json ] && [ ! -L ~/.claude/perchling/pet.json ]; then
+  mkdir -p ~/.claude/perchling/pets
+  mv ~/.claude/perchling/pet.json ~/.claude/perchling/pets/previous-$(date +%s).json
+else
+  rm -f ~/.claude/perchling/pet.json
+fi
+```
