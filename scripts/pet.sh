@@ -6,6 +6,7 @@ set -u
 
 ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 SRC="$(cd "$(dirname "$0")" && pwd)/pet.swift"
+EXAMPLES="$(cd "$(dirname "$0")/.." && pwd)/examples"
 BIN="$ROOT/bin/perchling"
 SESSIONS="$ROOT/sessions"
 OWNERS="$ROOT/owners"
@@ -72,7 +73,7 @@ cmd_up() {
     pkill -f "$BIN" 2>/dev/null
     cmd_build >/dev/null 2>&1 || exit 0
   fi
-  running || PERCHLING_HOME="$ROOT" nohup "$BIN" </dev/null >/dev/null 2>&1 &
+  running || PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
   exit 0
 }
 

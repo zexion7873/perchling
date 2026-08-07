@@ -255,6 +255,54 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
                      width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames)
 }
 
+func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
+
+// A manifest's `name` becomes its filename, so it has to survive being one.
+// Anything outside [a-z0-9-_] collapses to a dash rather than being dropped:
+// "Bob's Cat" and "BobsCat" are different pets and must not land on the same
+// file.
+func petSlug(_ name: String) -> String {
+    let ok = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    var out = ""
+    for u in name.lowercased().unicodeScalars {
+        out.append(ok.contains(u) ? Character(u) : "-")
+    }
+    while out.hasPrefix("-") { out.removeFirst() }
+    while out.hasSuffix("-") { out.removeLast() }
+    return out.isEmpty ? "pet" : out
+}
+
+// Every install predating the library has a REGULAR FILE at pet.json — that is
+// what draw-pet wrote. Linking over it would destroy a pet the user may have no
+// other copy of, so it becomes the library's first entry instead. A symlink is
+// already correct; a missing file means the built-in, which is also correct.
+// Both are left alone.
+func migrateLoosePet(root: URL) {
+    let fm = FileManager.default
+    let pet = root.appendingPathComponent("pet.json")
+    // attributesOfItem does not traverse symlinks, so this reports the link
+    // itself rather than what it points at — which is the distinction the
+    // whole guard rests on.
+    guard let attrs = try? fm.attributesOfItem(atPath: pet.path) else { return }
+    guard (attrs[.type] as? FileAttributeType) != .typeSymbolicLink else { return }
+
+    let dir = petsDir(root)
+    guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil
+    else { return }
+
+    let slug = petSlug((try? loadCustomPet(pet))?.name ?? "current")
+    var dest = dir.appendingPathComponent("\(slug).json")
+    var n = 2
+    while fm.fileExists(atPath: dest.path) {
+        dest = dir.appendingPathComponent("\(slug)-\(n).json")
+        n += 1
+    }
+    guard (try? fm.moveItem(at: pet, to: dest)) != nil else { return }
+    // A relative link keeps working if the whole perchling directory moves.
+    try? fm.createSymbolicLink(atPath: pet.path,
+                               withDestinationPath: "pets/\(dest.lastPathComponent)")
+}
+
 let base = buildBase()
 
 // The wave is the only animation that moves a limb instead of stamping extra
@@ -1287,6 +1335,12 @@ if let p = env["PERCHLING_HOME"] {
 }
 try? FileManager.default.createDirectory(at: root.appendingPathComponent("sessions"),
                                          withIntermediateDirectories: true)
+
+// Where the shipped pets live: PERCHLING_EXAMPLES, set by pet.sh to the
+// examples/ of whichever copy launched us — a checkout when run from a
+// checkout, the installed version otherwise, exactly as SRC already behaves.
+// Unset means no shipped group; the overlay must stay launchable by hand.
+let examplesRoot: URL? = env["PERCHLING_EXAMPLES"].map { URL(fileURLWithPath: $0) }
 
 // CLI validation for the authoring loop: same parser as the runtime, so an
 // "OK" here means the overlay will actually render the manifest. Anything
