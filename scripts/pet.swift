@@ -913,6 +913,103 @@ let moodRank: [Mood: Int] = [.idle: 0, .running: 1, .done: 2, .error: 3, .waitin
 // not sit on top of the attention fold, which it outranks, for minutes.
 let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .waiting: 3600]
 
+// Four words of UI, so the table is inline rather than a .lproj bundle a
+// single-file build cannot carry. Only languages whose wording I can vouch
+// for are listed — a wrong translation is worse than English. Shared by the
+// speech bubble and the tray rows so the two never word the same mood
+// differently.
+let moodStatus: [Mood: String] = {
+    let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
+                              .done: "done!", .error: "oops — error"]
+    let tables: [String: [Mood: String]] = [
+        "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
+        "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
+        "ja": [.running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
+    ]
+    // Region-only Chinese tags carry no script subtag, so map them by hand
+    // rather than letting a bare "zh" prefix decide the script.
+    func key(_ lang: String) -> String? {
+        if lang.hasPrefix("ja") { return "ja" }
+        guard lang.hasPrefix("zh") else { return nil }
+        if ["zh-Hant", "zh-TW", "zh-HK", "zh-MO"].contains(where: lang.hasPrefix) { return "zh-Hant" }
+        return "zh-Hans"
+    }
+    // Only the primary language decides. Scanning the whole list would let
+    // a Chinese entry further down override an English-first system —
+    // "I don't have your language" means fall back, not keep hunting.
+    guard let first = Locale.preferredLanguages.first,
+          let k = key(first), let t = tables[k] else { return en }
+    return t
+}()
+
+// One live session as the tray shows it.
+struct SessionRow {
+    let sid: String
+    let cwd: String?    // line 2 of the session file; nil on the one-line form
+    let mood: Mood      // effective: already decayed to idle past its own TTL
+}
+
+// The one place sessions/ is read. The attention fold and the menu both take
+// their sessions from here, so the face and the list cannot disagree about who
+// is live or what they are doing. `alive` is injected because a harness has no
+// pids to point at.
+func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow] {
+    let fm = FileManager.default
+    let cutoff = now.addingTimeInterval(-3600)
+    let items = (try? fm.contentsOfDirectory(at: dir,
+                                             includingPropertiesForKeys: [.contentModificationDateKey],
+                                             options: [.skipsHiddenFiles])) ?? []
+    var out: [SessionRow] = []
+    for url in items {
+        let sid = url.lastPathComponent
+        // A dead owner's last mood is not news: without this a killed app
+        // leaves "waiting for you" on the pet's face for the rest of the TTL,
+        // in front of whoever is still working elsewhere.
+        guard alive(sid),
+              let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+              stamp > cutoff else { continue }
+        let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let mood = Mood.parse(raw)
+        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
+        let cwd = lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        let ttl = moodTTL[mood] ?? 0
+        out.append(SessionRow(sid: sid,
+                              cwd: cwd.isEmpty ? nil : cwd,
+                              mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood))
+    }
+    return out
+}
+
+// The project directory is a session's identity. One whose cwd never arrived
+// gets its raw id instead — deliberately unfriendly, because that is a real
+// state (a file written before the label existed) and a made-up name would
+// hide it.
+func sessionName(_ r: SessionRow) -> String {
+    r.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? String(r.sid.prefix(8))
+}
+
+// What the human sees, which is not what the fold sees: `manual` is a bridge
+// for launches with no session behind them, so it holds a refcount but is not
+// a session and must not be listed as one. Most attention-worthy first, so the
+// row that wants you is the row under the cursor.
+func menuRows(_ rows: [SessionRow]) -> [SessionRow] {
+    rows.filter { $0.sid != "manual" }.sorted {
+        let (a, b) = (moodRank[$0.mood]!, moodRank[$1.mood]!)
+        if a != b { return a > b }
+        let (na, nb) = (sessionName($0), sessionName($1))
+        if na != nb { return na < nb }
+        return $0.sid < $1.sid
+    }
+}
+
+// `status` is passed rather than read off the global so the wording under test
+// is not whatever language the machine happens to be set to.
+func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
+    let name = sessionName(r)
+    guard let s = status[r.mood], !s.isEmpty else { return name }
+    return "\(name) — \(s)"
+}
+
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
 let CHIP: CGFloat = 26
 
@@ -980,34 +1077,7 @@ final class BubbleView: NSView {
 
     override var isFlipped: Bool { true }
 
-    // Four words of UI, so the table is inline rather than a .lproj bundle a
-    // single-file build cannot carry. Only languages whose wording I can vouch
-    // for are listed — a wrong translation is worse than English.
-    private static let status: [Mood: String] = {
-        let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
-                                  .done: "done!", .error: "oops — error"]
-        let tables: [String: [Mood: String]] = [
-            "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
-            "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
-            "ja": [.running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
-        ]
-        // Region-only Chinese tags carry no script subtag, so map them by hand
-        // rather than letting a bare "zh" prefix decide the script.
-        func key(_ lang: String) -> String? {
-            if lang.hasPrefix("ja") { return "ja" }
-            guard lang.hasPrefix("zh") else { return nil }
-            if ["zh-Hant", "zh-TW", "zh-HK", "zh-MO"].contains(where: lang.hasPrefix) { return "zh-Hant" }
-            return "zh-Hans"
-        }
-        // Only the primary language decides. Scanning the whole list would let
-        // a Chinese entry further down override an English-first system —
-        // "I don't have your language" means fall back, not keep hunting.
-        guard let first = Locale.preferredLanguages.first,
-              let k = key(first), let t = tables[k] else { return en }
-        return t
-    }()
-
-    private func statusText() -> String { BubbleView.status[mood] ?? "" }
+    private func statusText() -> String { moodStatus[mood] ?? "" }
 
     private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
         var t = s
@@ -1084,6 +1154,10 @@ final class Controller: NSObject, NSWindowDelegate {
     var collapsed = UserDefaults.standard.bool(forKey: "bubbleCollapsed")
     var lastChip: (Bool, Int, Bool)?
     var lastInputMoods: [String: Mood] = [:]
+    // Refreshed by pollMoods every 0.4s; the menu renders whatever the last
+    // poll left here. NSMenu tracking runs its own run-loop mode, so an open
+    // menu shows the snapshot it opened with — the same as the Pets submenu.
+    var sessionRows: [SessionRow] = []
 
     init(root: URL) {
         self.root = root
@@ -1365,41 +1439,32 @@ final class Controller: NSObject, NSWindowDelegate {
     func pollMoods() -> (display: Mood, entered: Set<Mood>) {
         let fm = FileManager.default
         let now = Date()
-        var inputs: [(String, Mood, Date)] = []
+        var inputs: [(String, Mood)] = []
         if let attrs = try? fm.attributesOfItem(atPath: stateURL.path),
            let stamp = attrs[.modificationDate] as? Date,
            let raw = try? String(contentsOf: stateURL, encoding: .utf8) {
-            inputs.append(("state", Mood.parse(raw), stamp))
-        }
-        let cutoff = now.addingTimeInterval(-3600)
-        let items = (try? fm.contentsOfDirectory(at: sessionsURL,
-                                                 includingPropertiesForKeys: [.contentModificationDateKey],
-                                                 options: [.skipsHiddenFiles])) ?? []
-        for url in items {
-            // A dead owner's last mood is not news: without this a killed app
-            // leaves "waiting for you" on the pet's face for the rest of the
-            // TTL, in front of whoever is still working elsewhere.
-            guard ownerAlive(url.lastPathComponent),
-                  let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
-                  stamp > cutoff else { continue }
-            let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-            inputs.append((url.lastPathComponent, Mood.parse(raw), stamp))
-        }
-        var display = Mood.idle
-        var current: [String: Mood] = [:]
-        var entered: Set<Mood> = []
-        for (key, m, stamp) in inputs {
-            var ttl = moodTTL[m] ?? 0
+            let m = Mood.parse(raw)
             // The state file has no owner to clean it up on session end, so it
             // gets a short leash: enough for manual puppeteering, too short to
             // haunt the fold as a dead session's ghost.
-            if key == "state" { ttl = min(ttl, 300) }
-            let effective = now.timeIntervalSince(stamp) > ttl ? Mood.idle : m
-            current[key] = effective
-            if moodRank[effective]! > moodRank[display]! { display = effective }
+            let ttl = min(moodTTL[m] ?? 0, 300)
+            inputs.append(("state", now.timeIntervalSince(stamp) > ttl ? .idle : m))
+        }
+        // One read, two consumers. `manual` stays in the fold — it is the
+        // refcount that holds an idle pet up — and is dropped from the rows.
+        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive)
+        sessionRows = menuRows(live)
+        inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
+
+        var display = Mood.idle
+        var current: [String: Mood] = [:]
+        var entered: Set<Mood> = []
+        for (key, m) in inputs {
+            current[key] = m
+            if moodRank[m]! > moodRank[display]! { display = m }
             let prev = lastInputMoods[key] ?? .idle
-            if effective != prev, effective == .waiting || effective == .done || effective == .error {
-                entered.insert(effective)
+            if m != prev, m == .waiting || m == .done || m == .error {
+                entered.insert(m)
             }
         }
         lastInputMoods = current
