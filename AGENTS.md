@@ -52,6 +52,19 @@ Verify without launching:
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns seven flat inks into a million.
+- **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
+  `sessionName`, and `sessionTitle` all sit above the runtime-home block, so a
+  harness for them should cut there instead of at `let argv`: cutting at `let
+  argv` still runs that block at load time, which touches
+  `~/.claude/perchling/` — the very directory this file forbids writing to.
+  Cut before `// Runtime home:` and stub the one global a still-included type
+  reaches for: `let examplesRoot: URL? = nil`. The shell side has the same
+  trap: `pet.sh up` ends in `running || ... nohup "$BIN" ...`, so calling it
+  directly starts a real overlay. Point `CLAUDE_CONFIG_DIR` at a scratch
+  directory, then neutralise the launch path by dropping a no-op executable at
+  `<scratch>/perchling/bin/perchling` with a mtime newer than `pet.swift` —
+  `cmd_up` then skips its rebuild check and `nohup` launches the stub, which
+  exits immediately instead of opening a window.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`

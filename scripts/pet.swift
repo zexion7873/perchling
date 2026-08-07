@@ -968,10 +968,10 @@ struct SessionRow {
     let mood: Mood      // effective: already decayed to idle past its own TTL
 }
 
-// The one place sessions/ is read for moods. The attention fold and the menu both take
-// their sessions from here, so the face and the list cannot disagree about who
-// is live or what they are doing. `alive` is injected because a harness has no
-// pids to point at.
+// The one place sessions/ is read for moods. The attention fold and the menu
+// both take their sessions from here, so the face and the list cannot disagree
+// about who is live or what they are doing. `alive` is injected because a
+// harness has no pids to point at.
 func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow] {
     let fm = FileManager.default
     let cutoff = now.addingTimeInterval(-3600)
@@ -1004,7 +1004,10 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow
 // state (a file written before the label existed) and a made-up name would
 // hide it.
 func sessionName(_ r: SessionRow) -> String {
-    r.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? String(r.sid.prefix(8))
+    // isDirectory:true is a lie the path is never asked to prove — it skips a
+    // filesystem stat that would otherwise run on every poll-loop comparator
+    // call and block the main-thread Timer if cwd sits on an unresponsive mount.
+    r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent } ?? String(r.sid.prefix(8))
 }
 
 // What the human sees, which is not what the fold sees: `manual` is a bridge
