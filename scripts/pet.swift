@@ -997,10 +997,13 @@ let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .wa
 // single-file build cannot carry. Only languages whose wording I can vouch
 // for are listed — a wrong translation is worse than English. Shared by the
 // speech bubble and the tray rows so the two never word the same mood
-// differently.
+// differently — which is also why no entry may contain an em dash:
+// `sessionTitle` joins the project name to the status with one, and a second
+// makes the row stutter. The bubble draws the status alone, so the collision
+// is invisible from here.
 let moodStatus: [Mood: String] = {
     let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
-                              .done: "done!", .error: "oops — error"]
+                              .done: "done!", .error: "oops, error"]
     let tables: [String: [Mood: String]] = [
         "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
         "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
