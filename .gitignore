@@ -10,6 +10,7 @@
 
 # Agent tooling: local caches and scratch checkouts, never shared
 .omc/
+.omo/
 .codegraph/
 .claude/worktrees/
 
