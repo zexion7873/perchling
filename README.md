@@ -142,6 +142,7 @@ Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:
 
 ```bash
+mkdir -p ~/.claude/perchling/pets
 ~/.claude/perchling/bin/perchling --export > ~/.claude/perchling/pets/mine.json
 ```
 
