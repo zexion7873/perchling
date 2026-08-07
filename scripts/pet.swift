@@ -258,9 +258,11 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
 
 // A manifest's `name` becomes its filename, so it has to survive being one.
-// Anything outside [a-z0-9-_] collapses to a dash rather than being dropped:
-// "Bob's Cat" and "BobsCat" are different pets and must not land on the same
-// file.
+// CharacterSet.alphanumerics is Unicode-wide, not ASCII-only: letters and
+// digits in any script pass through as-is, just lowercased — "café" and
+// "貓咪" are left intact rather than stripped to nothing. Everything else,
+// including "/", collapses to a dash, so the result can never come out empty
+// or smuggle in a path separator.
 func petSlug(_ name: String) -> String {
     let ok = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
     var out = ""
@@ -299,8 +301,17 @@ func migrateLoosePet(root: URL) {
     }
     guard (try? fm.moveItem(at: pet, to: dest)) != nil else { return }
     // A relative link keeps working if the whole perchling directory moves.
-    try? fm.createSymbolicLink(atPath: pet.path,
-                               withDestinationPath: "pets/\(dest.lastPathComponent)")
+    do {
+        try fm.createSymbolicLink(atPath: pet.path,
+                                  withDestinationPath: "pets/\(dest.lastPathComponent)")
+    } catch {
+        // The migrated file is safely in pets/, but pet.json no longer exists —
+        // and this guard's own doctrine reads a missing pet.json as "no loose
+        // pet, nothing to do," so without this it would never retry. Move it
+        // back so the next launch finds the original loose file again and
+        // attempts the whole migration over.
+        try? fm.moveItem(at: dest, to: pet)
+    }
 }
 
 let base = buildBase()
