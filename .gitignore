@@ -1,2 +1,18 @@
+# macOS
 .DS_Store
+._*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Agent tooling: local caches and scratch checkouts, never shared
 .omc/
+.codegraph/
+.claude/worktrees/
+
+# A harness compiled in the checkout instead of a scratch directory. AGENTS.md
+# says to build them elsewhere; this is the net for when someone doesn't.
+/perchling

@@ -76,17 +76,27 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   coordinate and `cell()` expands each source cell into a `RES × RES` block.
   Write new sprite coordinates in design space and pass them through `cell()`;
   hand-multiplying by `RES` at a call site is how the two spaces drift apart.
+  The shell is the one place expansion is not cell-blocky: `lathe()` slides
+  each design row's span toward the next across its `RES` sub-rows, because a
+  profile stepped 3px at a time scallops the silhouette while every other
+  rounded edge in the art steps 1px. Its profile is still written in design
+  cells.
 - **A limb that leaves its resting place has to be overlaid, not unioned.** The
-  head spans 26 of the grid's 32 columns and reaches all the way down to the
-  shoulder, so there is nowhere above the shoulder for an arm to go that is not
-  head. `buildBase()` merges its parts into one mask and `shade()` then derives
+  head spans all 32 columns at its bulge and reaches down to row 21 of 33, so
+  there is nowhere above the shoulder for an arm to go that is not head.
+  `buildBase()` merges its parts into one mask and `shade()` then derives
   every ink from neighbour tests over that mask, so an arm unioned in at head
   height stops being an arm and becomes a lump on the side of the head. The wave
   builds its arm as a separate mass, runs the same `shade()` over it and stamps
   the result on top — that is what gives it an outline of its own and lets it
-  cross the face. `buildBase(rightArm: false)` drops the resting arm so the pet
-  does not end up with three. Its swing is deliberately not on the twinkle's
-  clock: two extras sharing one period read as one mechanism, not two.
+  rise over the shell. Both swing phases must end the hand on the dark glass:
+  a coral arm over the coral shell is invisible, and the forearm has to keep a
+  two-design-cell x-overlap with the elbow or the rrect corner clips sever it.
+  The resting nubs have the inverse problem — they meet the torso along a
+  straight column, `shade()` derives no seam there, and the crease is painted.
+  `buildBase(rightArm: false)` drops the resting nub so the pet does not end
+  up with three. The wave's swing is deliberately not on the twinkle's clock:
+  two extras sharing one period read as one mechanism, not two.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -106,7 +116,7 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   chip is placed to clear the bubble's rect entirely, so neither draws over
   the other.
 - **A manifest carries pixels, not behavior.** Custom pets get one static frame
-  per mood. Cursor-following pupils, blinking, and any tick-driven animation are
+  per mood. Cursor-following pupils, the doze-and-peek cycle, and any tick-driven animation are
   renderer-only and cannot be expressed in `pet.json`; anything new in that
   family widens the gap between the built-in pet and custom ones.
 - **The active pet is a symlink, and its target is the only record of which

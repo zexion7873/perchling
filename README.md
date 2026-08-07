@@ -58,13 +58,13 @@ launch — a few seconds, once.
 
 |   | State | Trigger | What you see |
 |:-:|-------|---------|--------------|
-| ⌨️ | **running** | you submit a prompt, tools execute | bounces, glances around, types a line out on its belly |
+| ⌨️ | **running** | you submit a prompt, tools execute | bounces, narrows its eyes, types a line out on its screen |
 | 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, twitching |
 | 🎉 | **done** | turn or agent completed | hops under a twinkle, waves, then settles |
-| 😢 | **error** | an API failure ended the turn | droops, and a tear rolls off its chin |
-| 💤 | **idle** | nothing happening | breathes slowly, blinks |
+| 😢 | **error** | an API failure ended the turn | droops, and a tear rolls down its screen |
+| 💤 | **idle** | nothing happening | breathes slowly, dozes, peeks now and then |
 
-Its eyes follow your cursor. Hover it and it startles. Click it and it hops,
+When its eyes are open they follow your cursor. Hover it and it startles. Click it and it hops,
 then throws you back to Claude — the desktop app if that's running, otherwise
 whatever was frontmost when the pet launched.
 
@@ -129,8 +129,9 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Two worked examples ship
-in [`examples/`](examples/): a leafy slime, and the built-in creature itself.
+copied into your library the first time you pick one. Three worked examples
+ship in [`examples/`](examples/): a leafy slime, the retired first mascot
+(`classic`), and the built-in creature itself.
 The format lives in [`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
 
 > [!TIP]
@@ -151,8 +152,9 @@ live — which is exactly what the menu's **Built-in perchling** row does.
 
 > [!WARNING]
 > A manifest carries pixels, not behaviour. An exported pet loses the default's
-> cursor-following pupils, its blink, its blinking terminal cursor and its wave,
-> and its sideways twitch moves the whole body rather than just the eyes.
+> cursor-following pupils, its doze-and-peek cycle, its typing animation and
+> its wave, and its sideways twitch moves the whole body rather than just the
+> eyes.
 
 ---
 
@@ -218,8 +220,8 @@ Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
 
 The built-in creature is not a drawing at all — it is composed at runtime from
-rounded rectangles and spikes, with its shading derived from neighbouring
-pixels. The source code *is* the source art.
+rounded rectangles and a lathed shell profile, with its shading derived from
+neighbouring pixels. The source code *is* the source art.
 
 ## 📄 License
 

@@ -70,7 +70,7 @@ Rules the loader enforces:
    ```
    Tell the user what the snapshot does not carry before they commit to
    editing it: a manifest has no eye coordinates, so the default's
-   cursor-following pupils, idle blink, and blinking terminal cursor are
+   cursor-following pupils, doze-and-peek cycle, and typing animation are
    gone, and the sideways twitch that moves only the default's eyes becomes
    a whole-body shift for any manifest-driven pet.
 1. Settle the creature with the user: species, colors, vibe. An outline
@@ -118,13 +118,15 @@ Rules the loader enforces:
    then iterate on feedback — recolor, resize, fix the face — by editing a
    draft and re-installing it the same way.
 
-Two worked examples ship with this plugin, under `$CLAUDE_PLUGIN_ROOT/examples/`
+Three worked examples ship with this plugin, under `$CLAUDE_PLUGIN_ROOT/examples/`
 — read them by that path, not a bare relative one, since the skill runs with
 the user's project as the working directory:
 
 - `sprout.json` — a leafy slime, 48×40 at scale 2, shaded and blushing. Shows
   how the pieces fit together at the fine-detail end.
 - `perchling.json` — the built-in pet, exported: 96×99 at scale 1.
+- `classic.json` — the first mascot, retired when the built-in became the
+  terminal robot; same footprint as the export it was frozen from.
 
 ## Revert
 
