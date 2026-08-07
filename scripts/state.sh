@@ -13,9 +13,22 @@ if [ ! -t 0 ]; then
   # so one session's "running" can't stomp another's "waiting". The write also
   # re-stamps mtime, which the 1h staleness guard reads as liveness.
   sid=$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  # Verified against a real payload, not assumed: every hook event carries cwd.
+  # Same greedy shape as the extractions around it — a tool payload with its
+  # own "cwd" key would win and put a wrong directory name on one menu row
+  # until the next hook fires, which is not worth a second parser.
+  cwd=$(printf '%s' "$payload" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
   if [ -n "$sid" ]; then
     mkdir -p "$d/sessions" 2>/dev/null
-    printf '%s' "${1:-idle}" > "$d/.sess.$$" 2>/dev/null && mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
+    # Line 1 mood, line 2 cwd. One write, one file: the mood and its label are
+    # published by the same atomic mv and removed by the same rm, so they can
+    # never disagree.
+    if [ -n "$cwd" ]; then
+      printf '%s\n%s' "${1:-idle}" "$cwd" > "$d/.sess.$$" 2>/dev/null
+    else
+      printf '%s' "${1:-idle}" > "$d/.sess.$$" 2>/dev/null
+    fi
+    mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
   # UserPromptSubmit payloads carry the prompt; snippet it for the speech
   # bubble. Stops at the first escaped quote — it's a teaser, not a transcript.

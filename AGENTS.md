@@ -52,6 +52,19 @@ Verify without launching:
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns seven flat inks into a million.
+- **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
+  `sessionName`, and `sessionTitle` all sit above the runtime-home block, so a
+  harness for them should cut there instead of at `let argv`: cutting at `let
+  argv` still runs that block at load time, which touches
+  `~/.claude/perchling/` — the very directory this file forbids writing to.
+  Cut before `// Runtime home:` and stub the one global a still-included type
+  reaches for: `let examplesRoot: URL? = nil`. The shell side has the same
+  trap: `pet.sh up` ends in `running || ... nohup "$BIN" ...`, so calling it
+  directly starts a real overlay. Point `CLAUDE_CONFIG_DIR` at a scratch
+  directory, then neutralise the launch path by dropping a no-op executable at
+  `<scratch>/perchling/bin/perchling` with a mtime newer than `pet.swift` —
+  `cmd_up` then skips its rebuild check and `nohup` launches the stub, which
+  exits immediately instead of opening a window.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
@@ -165,11 +178,29 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
-- **Session files are both mood and refcount.** Writing one re-stamps liveness;
-  never `touch` one, because that resurrects a stale mood with a full TTL. The
-  `manual` entry is a bridge for launches with no session behind them, retired
-  by the first real session or by the last `SessionEnd` — it is not a session
-  and must not outlive them.
+- **Session files are mood, refcount, and label.** Line one is the mood; an
+  optional line two is that session's `cwd`, which the tray rows show and the
+  fold ignores. `Mood.parse` reads line one, so the one-line form stays valid
+  forever — `pet.sh up` writes it whenever there is no payload behind the
+  launch (`manual`, `enable`, `wake`). Writing a session file re-stamps
+  liveness; never `touch` one, because that resurrects a stale mood with a
+  full TTL. The `manual` entry is a bridge for launches with no session behind
+  them, retired by the first real session or by the last `SessionEnd` — it is
+  not a session, must not outlive them, and must not appear in the tray.
+  Hook payloads do carry `cwd`: observed on seven event types so far —
+  `UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `PreToolUse`,
+  `PostToolUse` and `PostToolBatch` — each from a real headless CLI run, not
+  read off the docs. In every one of those seven, `"cwd"` occurred exactly
+  once, including on tool events carrying `tool_input`, so the greedy-`sed`
+  hazard the extraction knowingly accepts has not actually bitten yet.
+- **`sessions/` is read for moods in exactly one place.** `liveSessions()`
+  owns the owner-alive guard, the one-hour staleness cutoff, and the per-mood
+  TTL decay, and both the attention fold and the tray rows consume its
+  output — a second *mood* scan is how the face ends up showing idle while
+  the menu says "thinking…". `pollSessions()` walks the same directory too,
+  for the 30s-empty-grace liveness check, but never touches a mood — it is
+  not the second reader this bullet forbids, and adding one that reads a mood
+  would be.
 - **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
   pid of the outermost process the session hangs off — Claude desktop, or the
   terminal that ran `claude`. A dead owner retires the session on the next

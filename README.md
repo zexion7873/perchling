@@ -98,7 +98,19 @@ chirp — but only while you're in another app. Look at Claude and it shuts up.
 
 It shows the most attention-worthy state across all of them — **waiting >
 error > done > running** — so one chatty session can't drown out another that
-actually needs you. Stale moods expire on their own, so a session killed
+actually needs you. **Right-click to see which is which:** every live session
+gets a row naming its project and what it's doing, the one that wants you
+first.
+
+```
+perchling — waiting for you…
+dotfiles — thinking…
+scratch
+```
+
+Clicking a row brings Claude forward, the same as tapping the pet — individual
+terminal tabs aren't addressable from an accessory app, so it doesn't pretend
+to jump you there. Stale moods expire on their own, so a session killed
 mid-flight can't leave the pet bouncing forever. It honours the system Reduce
 Motion setting throughout.
 

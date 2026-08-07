@@ -11,11 +11,17 @@ BIN="$ROOT/bin/perchling"
 SESSIONS="$ROOT/sessions"
 OWNERS="$ROOT/owners"
 
-read_session_id() {
+payload=""
+
+read_payload() {
   # Hook payload arrives as one JSON blob on stdin. The harness keeps the pipe
   # open after writing, so never read until EOF — dd does exactly one read()
   # and returns whatever the first write delivered. No jq dependency.
-  dd bs=65536 count=1 2>/dev/null | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+  payload=$(dd bs=65536 count=1 2>/dev/null)
+}
+
+payload_field() {
+  printf '%s' "$payload" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1
 }
 
 # The outermost process this session hangs off — Claude desktop for a session
@@ -41,12 +47,26 @@ cmd_up() {
   [ -e "$ROOT/disabled" ] && exit 0
   mkdir -p "$SESSIONS"
   sid="${1:-}"
-  [ -n "$sid" ] || sid="$(read_session_id)"
+  cwd=""
+  if [ -z "$sid" ]; then
+    read_payload
+    sid="$(payload_field session_id)"
+    cwd="$(payload_field cwd)"
+  fi
   [ -n "$sid" ] || sid="manual"
   # Write a fresh neutral mood, never bare-touch: the file's content is the
   # session's mood now, and touching a stale waiting/error would resurrect it
   # with a full TTL on session resume.
-  printf idle > "$ROOT/.up.$$" 2>/dev/null && mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
+  # A session that has started but not been prompted yet would otherwise be an
+  # unlabelled row — which for a resumed session sitting idle lasts as long as
+  # it sits. cmd_up called with an explicit sid (manual, enable, wake) has no
+  # payload and writes the one-line form, which stays valid forever.
+  if [ -n "$cwd" ]; then
+    printf 'idle\n%s' "$cwd" > "$ROOT/.up.$$" 2>/dev/null
+  else
+    printf idle > "$ROOT/.up.$$" 2>/dev/null
+  fi
+  mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
   # "manual" is a bridge for launches with no session behind them (enable,
   # wake, an unparseable payload). A real session supersedes it, and nothing
   # else ever deletes it — left alone it holds an idle pet up for the whole
@@ -79,7 +99,7 @@ cmd_up() {
 
 cmd_down() {
   sid="${1:-}"
-  [ -n "$sid" ] || sid="$(read_session_id)"
+  if [ -z "$sid" ]; then read_payload; sid="$(payload_field session_id)"; fi
   [ -n "$sid" ] && rm -f "$SESSIONS/$sid" "$OWNERS/$sid"
   # A bridge left over from an enable/wake that happened while sessions were
   # live: on its own it is not a reason for the pet to exist.
