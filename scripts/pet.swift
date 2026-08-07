@@ -847,6 +847,7 @@ final class PetView: NSView {
     // Controller closure that assigns this is a needless fight.
     var petList: (() -> [PetChoice])?
     var onPickPet: ((PetChoice?) -> Void)?   // nil picks the built-in
+    var sessionList: (() -> [SessionRow])?
 
     @objc private func tuckAction() { onTuck?() }
     @objc private func disableAction() { onDisable?() }
@@ -855,9 +856,27 @@ final class PetView: NSView {
         guard let choice = sender.representedObject as? PetChoice else { return }
         onPickPet?(choice)
     }
+    // A row cannot jump to its session — individual terminal tabs are not
+    // addressable from an accessory app — so it does what tapping the pet
+    // does, and does not pretend otherwise.
+    @objc private func focusSessionAction() { onTap?() }
 
     override func rightMouseDown(with event: NSEvent) {
         let menu = NSMenu()
+
+        // The fold's other half. The face can only ever show the maximum, so
+        // this is the only place that says which session it belongs to.
+        let sessions = sessionList?() ?? []
+        for r in sessions {
+            let item = NSMenuItem(title: sessionTitle(r, moodStatus),
+                                  action: #selector(focusSessionAction), keyEquivalent: "")
+            item.target = self
+            // Two projects can share a basename; the full path is the only
+            // thing that tells them apart, and there is no room for it inline.
+            item.toolTip = r.cwd
+            menu.addItem(item)
+        }
+        if !sessions.isEmpty { menu.addItem(.separator()) }
 
         let choices = petList?() ?? []
         let showingCustom = custom != nil
@@ -949,7 +968,7 @@ struct SessionRow {
     let mood: Mood      // effective: already decayed to idle past its own TTL
 }
 
-// The one place sessions/ is read. The attention fold and the menu both take
+// The one place sessions/ is read for moods. The attention fold and the menu both take
 // their sessions from here, so the face and the list cannot disagree about who
 // is live or what they are doing. `alive` is injected because a harness has no
 // pids to point at.
@@ -1231,6 +1250,7 @@ final class Controller: NSObject, NSWindowDelegate {
         view.petList = { [unowned self] in
             petChoices(root: self.root, examples: examplesRoot)
         }
+        view.sessionList = { [unowned self] in self.sessionRows }
         view.onPickPet = { [unowned self] choice in
             do {
                 if let c = choice {
