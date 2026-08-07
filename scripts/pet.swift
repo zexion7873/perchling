@@ -376,7 +376,7 @@ func petIsOnScreen(_ choice: PetChoice?, showingCustom: Bool) -> Bool {
 }
 
 // A shipped pet is copied into the library before it is linked. The plugin
-// path carries a version number (.../perchling/0.8.0/examples/), so it is
+// path carries a version number (.../perchling/<version>/examples/), so it is
 // replaced wholesale by the next update — a link into it would dangle.
 func adoptShippedPet(_ src: URL, root: URL) throws -> URL {
     let fm = FileManager.default
