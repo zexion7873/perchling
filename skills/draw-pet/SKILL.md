@@ -95,13 +95,19 @@ Rules the loader enforces:
    ignoring the flag: interrupt it, run
    `bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build`, and retry.
 4. Install atomically — the app watches mtime, and a partial write would
-   flash the fallback pet:
-   ```
-   mv /path/to/draft.json ~/.claude/perchling/pet.json
+   flash the fallback pet. `<slug>` is the manifest's `name` lowercased, with
+   letters and digits of any script kept and everything else turned into a
+   dash — the same rule the app uses when it adopts a pet, so a pet named
+   貓咪 becomes `貓咪.json`:
+   ```bash
+   mkdir -p ~/.claude/perchling/pets
+   mv /path/to/draft.json ~/.claude/perchling/pets/<slug>.json
+   ln -sf pets/<slug>.json ~/.claude/perchling/pet.json
    ```
    (If a security guard in your environment blocks `mv` into the home
    directory, plain `cp` is fine — the app re-reads on the next mtime
-   change, so a torn read self-heals within half a second.)
+   change, so a torn read self-heals within half a second.) Drawing a second
+   pet adds to the library instead of replacing the first.
 5. The pet transforms within a second. Tell the user to look at their screen,
    then iterate on feedback — recolor, resize, fix the face — by editing a
    draft and re-installing it the same way.

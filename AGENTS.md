@@ -109,6 +109,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   per mood. Cursor-following pupils, blinking, and any tick-driven animation are
   renderer-only and cannot be expressed in `pet.json`; anything new in that
   family widens the gap between the built-in pet and custom ones.
+- **The active pet is a symlink, and its target is the only record of which
+  pet is active.** There is no config file and must not be one: a "selected
+  pet" setting would be a second source of truth that can disagree with the
+  file actually being rendered. `pollPet` already resolved symlinks before the
+  library existed, for dotfiles setups, which is why the renderer needed no
+  change. Two things follow. A shipped pet is copied into `pets/` before it is
+  linked, because the plugin path carries a version number and is replaced
+  wholesale on update — a link into `examples/` dangles the moment the user
+  runs `plugin update`. And `pet.json` arriving as a regular file is the
+  pre-library state, not a corruption: it gets moved into `pets/`, never
+  linked over, because it may be the only copy of a pet someone drew.
 - **Not every wait announces itself, and not every announcement reaches the
   plugin.** `waiting` has two triggers: the `Notification` event, whose matcher
   is a regex over the notification type (`permission_prompt` also catches
