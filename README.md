@@ -125,24 +125,29 @@ live within a second. No rebuild, no restart, no image files.
 }
 ```
 
-A pet is one JSON file, so sharing one is sending one file. Two worked examples
-ship in [`examples/`](examples/): a leafy slime, and the built-in creature
-itself. The format lives in
-[`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
+A pet is one JSON file, so sharing one is sending one file. Your pets live in
+`~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
+active — **right-click the pet and open Pets** to switch, or to go back to the
+built-in. The examples that ship with the plugin are listed there too, and get
+copied into your library the first time you pick one. Two worked examples ship
+in [`examples/`](examples/): a leafy slime, and the built-in creature itself.
+The format lives in [`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
 
 > [!TIP]
 > `scale` is the sharpness dial. A small grid at `"scale": 4` gives the chunky
 > retro look; a grid twice as wide at `"scale": 2` fills about the same corner
 > of your screen with four times the detail.
 
-Remix the default instead of starting from a blank grid:
+Remix the default instead of starting from a blank grid. Writing it straight
+into the library puts it in the menu:
 
 ```bash
-~/.claude/perchling/bin/perchling --export > mypet.json
+mkdir -p ~/.claude/perchling/pets
+~/.claude/perchling/bin/perchling --export > ~/.claude/perchling/pets/mine.json
 ```
 
 Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
-live.
+live — which is exactly what the menu's **Built-in perchling** row does.
 
 > [!WARNING]
 > A manifest carries pixels, not behaviour. An exported pet loses the default's

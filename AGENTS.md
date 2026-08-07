@@ -109,6 +109,29 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   per mood. Cursor-following pupils, blinking, and any tick-driven animation are
   renderer-only and cannot be expressed in `pet.json`; anything new in that
   family widens the gap between the built-in pet and custom ones.
+- **The active pet is a symlink, and its target is the only record of which
+  pet is active.** There is no config file and must not be one: a "selected
+  pet" setting would be a second source of truth that can disagree with the
+  file actually being rendered. `pollPet` already resolved symlinks before the
+  library existed, for dotfiles setups, which is why the renderer needed no
+  change. Two things follow. A shipped pet is copied into `pets/` before it is
+  linked, because the plugin path carries a version number and is replaced
+  wholesale on update — a link into `examples/` dangles the moment the user
+  runs `plugin update`. And `pet.json` arriving as a regular file is the
+  pre-library state, not a corruption: it gets moved into `pets/`, never
+  linked over, because it may be the only copy of a pet someone drew. That is
+  not a launch-time concern that migration retires — the process outlives a
+  whole session, and `pet.json` can go back to being a loose file at any point
+  in it, so every path that removes `pet.json` rescues it first and refuses the
+  removal outright when the rescue cannot finish. A rescue that fails quietly
+  and then deletes is the same data loss with more steps.
+- **A checkmark means "on screen", which is not "what the link points at".**
+  A manifest that fails to load leaves `pet.json` pointing at it while the
+  built-in is what renders, and a dotfiles `pet.json` can point outside `pets/`
+  at a pet with no row in the menu at all. `PetView.custom` is the only honest
+  answer — `pollPet` clears it on every fallback — so the menu asks that rather
+  than deriving the tick from the list. Fixing one row's rule without the other
+  produces two checkmarks.
 - **Not every wait announces itself, and not every announcement reaches the
   plugin.** `waiting` has two triggers: the `Notification` event, whose matcher
   is a regex over the notification type (`permission_prompt` also catches
