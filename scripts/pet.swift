@@ -175,8 +175,10 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
         for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = .glyph } }
     }
 
-    // Blush on the chin, over body tones only — never the outline.
-    for (x0, y0, x1, y1) in [(5, 17, 7, 18), (24, 17, 26, 18)] {
+    // Blush tucked under the visor's lower corners, domed by the dropped
+    // outer top cell — on the flat cheek, never the derived outline.
+    for (x0, y0, x1, y1) in [(8, 17, 9, 17), (7, 18, 9, 18),
+                             (22, 17, 23, 17), (22, 18, 24, 18)] {
         let c = cell(x0, y0, x1, y1)
         for y in c.1...c.3 {
             for x in c.0...c.2 where [.body, .shade, .light].contains(out[y][x]) {
@@ -185,11 +187,11 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
         }
     }
 
-    // Chest badge: the Claude spark, amber with a cream heart. The terminal
+    // Chest badge: the Claude spark, cream with an amber heart. The terminal
     // prompt itself lives on the screen and only lights up while running.
-    for (ink, x0, y0, x1, y1) in [(Ink.eye, 16, 25, 16, 25), (.eye, 15, 26, 15, 26),
-                                  (.eye, 17, 26, 17, 26), (.eye, 16, 27, 16, 27),
-                                  (.glyph, 16, 26, 16, 26)] {
+    for (ink, x0, y0, x1, y1) in [(Ink.glyph, 16, 25, 16, 25), (.glyph, 15, 26, 15, 26),
+                                  (.glyph, 17, 26, 17, 26), (.glyph, 16, 27, 16, 27),
+                                  (.eye, 16, 26, 16, 26)] {
         let c = cell(x0, y0, x1, y1)
         for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = ink } }
     }
