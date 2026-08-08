@@ -73,20 +73,23 @@ func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
 
 // .screen is the glass the amber eyes draw on, .casing the darker ring around
 // it. .eye is the amber phosphor — sleepy arcs, open eyes and the typed line
-// are all the same ink, which is what keeps the face reading as one lit tube.
-enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush }
+// are all the same ink, keeping the face reading as one lit tube, except the
+// running ticker's ivory `.glyph` cursor cell and `.errorX`, the one
+// non-amber face ink (error's X).
+enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush, errorX }
 
 let palette: [Ink: NSColor] = [
-    .outline:  NSColor(srgbRed: 0.541, green: 0.271, blue: 0.188, alpha: 1),
-    .shade:    NSColor(srgbRed: 0.788, green: 0.431, blue: 0.302, alpha: 1),
-    .body:     NSColor(srgbRed: 0.898, green: 0.541, blue: 0.400, alpha: 1),
-    .light:    NSColor(srgbRed: 0.965, green: 0.706, blue: 0.573, alpha: 1),
-    .casing:   NSColor(srgbRed: 0.227, green: 0.141, blue: 0.110, alpha: 1),
-    .screen:   NSColor(srgbRed: 0.141, green: 0.094, blue: 0.075, alpha: 1),
-    .scanline: NSColor(srgbRed: 0.180, green: 0.125, blue: 0.102, alpha: 1),
+    .outline:  NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1),
+    .shade:    NSColor(srgbRed: 0.745, green: 0.349, blue: 0.216, alpha: 1),
+    .body:     NSColor(srgbRed: 0.855, green: 0.467, blue: 0.337, alpha: 1),
+    .light:    NSColor(srgbRed: 0.918, green: 0.635, blue: 0.525, alpha: 1),
+    .casing:   NSColor(srgbRed: 0.329, green: 0.216, blue: 0.165, alpha: 1),
+    .screen:   NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1),
+    .scanline: NSColor(srgbRed: 0.271, green: 0.184, blue: 0.137, alpha: 1),
     .eye:      NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1),
     .glyph:    NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1),
-    .blush:    NSColor(srgbRed: 0.969, green: 0.561, blue: 0.561, alpha: 1),
+    .blush:    NSColor(srgbRed: 1.000, green: 0.616, blue: 0.690, alpha: 1),
+    .errorX:   NSColor(srgbRed: 0.969, green: 0.561, blue: 0.561, alpha: 1),
 ]
 
 func merge(_ parts: [[[Int]]]) -> [[Int]] {
@@ -123,7 +126,7 @@ func shade(_ mass: [[Int]]) -> [[Ink]] {
     return out
 }
 
-func buildBase(rightArm: Bool = true) -> [[Ink]] {
+func buildBase() -> [[Ink]] {
     let R = RES
     // The head is two thirds of the pet; every part below it is deliberately
     // small. Rows 8-13 span the full grid — that mid-bulge is what keeps the
@@ -140,11 +143,10 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
         rrect(11 * R, 31 * R, 15 * R - 1, GH - 1, R),
         rrect(17 * R, 31 * R, 21 * R - 1, GH - 1, R),
         rrect(7 * R, 25 * R, 10 * R - 1, 30 * R - 1, R),
-    ] + (rightArm ? [
-        // Left out when the wave replaces it. Union order does not matter — the
-        // parts are merged into one mask before anything is shaded.
+        // Union order does not matter — the parts are merged into one mask
+        // before anything is shaded.
         rrect(22 * R, 25 * R, 25 * R - 1, 30 * R - 1, R),
-    ] : [])
+    ]
 
     var out = shade(merge(parts))
 
@@ -152,7 +154,7 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
     // single mass there and derives no seam. Painted, or the arms melt in.
     for y in (25 * R)..<(30 * R) {
         if out[y][10 * R] == .body { out[y][10 * R] = .shade }
-        if rightArm && out[y][22 * R - 1] == .body { out[y][22 * R - 1] = .shade }
+        if out[y][22 * R - 1] == .body { out[y][22 * R - 1] = .shade }
     }
 
     // Screen: casing ring, then glass. Stamped after shade() so the face is a
@@ -174,8 +176,10 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
         for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = .glyph } }
     }
 
-    // Blush on the chin, over body tones only — never the outline.
-    for (x0, y0, x1, y1) in [(5, 17, 7, 18), (24, 17, 26, 18)] {
+    // Blush tucked under the visor's lower corners, domed by the dropped
+    // outer top cell — on the flat cheek, never the derived outline.
+    for (x0, y0, x1, y1) in [(8, 17, 9, 17), (7, 18, 9, 18),
+                             (22, 17, 23, 17), (22, 18, 24, 18)] {
         let c = cell(x0, y0, x1, y1)
         for y in c.1...c.3 {
             for x in c.0...c.2 where [.body, .shade, .light].contains(out[y][x]) {
@@ -184,11 +188,11 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
         }
     }
 
-    // Chest badge: the Claude spark, amber with a cream heart. The terminal
+    // Chest badge: the Claude spark, cream with an amber heart. The terminal
     // prompt itself lives on the screen and only lights up while running.
-    for (ink, x0, y0, x1, y1) in [(Ink.eye, 16, 25, 16, 25), (.eye, 15, 26, 15, 26),
-                                  (.eye, 17, 26, 17, 26), (.eye, 16, 27, 16, 27),
-                                  (.glyph, 16, 26, 16, 26)] {
+    for (ink, x0, y0, x1, y1) in [(Ink.glyph, 16, 25, 16, 25), (.glyph, 15, 26, 15, 26),
+                                  (.glyph, 17, 26, 17, 26), (.glyph, 16, 27, 16, 27),
+                                  (.eye, 16, 26, 16, 26)] {
         let c = cell(x0, y0, x1, y1)
         for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = ink } }
     }
@@ -473,36 +477,6 @@ func useBuiltIn(root: URL) throws {
 
 let base = buildBase()
 
-// The wave is the only animation that moves a limb instead of stamping extra
-// pixels onto a finished sprite, so it cannot be a rect function the way the
-// tear and the twinkle are. The raised arm is built as its own mass and put
-// through the same shading, which gives it an outline of its own; unioning it
-// into the body the way the resting nub is would merge it into a head that
-// spans the full grid at its widest and leave a lump instead of a limb.
-//
-// The elbow is fixed and only the forearm pivots, two design cells either way:
-// 6 points at RES 3, against a bounce that already reads at 4. There is nowhere
-// above the shoulder for the arm to go that is not head, so it rises over the
-// shell and brushes the corner of the glass rather than clearing the face.
-// Consecutive rects must overlap by two design cells in x, or the rrect corner
-// clips sever the weld and the arm floats free.
-func waveArm(_ dx: Int) -> [[Int]] {
-    merge([(22, 23, 24, 28), (21, 18, 25, 24), (21 + dx, 10, 24 + dx, 20)]
-        .map { s in
-            let c = cell(s.0, s.1, s.2, s.3)
-            return rrect(c.0, c.1, c.2, c.3, RES)
-        })
-}
-
-// One finished grid per swing, built once: the pose is a pure function of the
-// phase, so nothing here has to be recomputed per frame.
-let waveBase: [[[Ink]]] = [-2, 2].map { dx in
-    var g = buildBase(rightArm: false)
-    let arm = shade(waveArm(dx))
-    for y in 0..<GH { for x in 0..<GW where arm[y][x] != .none { g[y][x] = arm[y][x] } }
-    return g
-}
-
 // The rects the built-in pet stamps over `base`. Kept as data rather than
 // draw calls so --export emits exactly the art the app renders.
 // Coordinates stay in the original 32x33 design space; cell() expands them and
@@ -517,17 +491,24 @@ func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
 // the glass is 22x11 design cells (x5..26, y4..14) and everything else on the
 // face is fixed, so a mood that only moves a small smudge inside it reads as
 // the same picture five times. The five are chosen to differ in OUTLINE, not
-// in area: shallow drowsy arcs, slit, wide-with-catchlight, deep happy arch,
-// droop. Gaze and the twitch shift these by one cell, which the zone's margin
-// inside the glass absorbs.
+// in area: idle's thick drowsy bowls, running's raised half-lid slits over
+// the ticker, waiting's wide-with-catchlight, done's lifted arch with a
+// corner sparkle, error's heavy X. Gaze and the twitch shift these by one
+// cell, which the zone's margin inside the glass absorbs.
 //
 // idle's resting face is the sleepy arc — the pet dozes. `peeking` swaps in
 // open eyes for a beat so the cursor-following gaze survives the redesign;
 // with Reduce Motion the tick freezes, peeking stays false, and the static
 // pose is the arcs, which is exactly the frame that should be permanent.
-func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int, Int, Int, Int)] {
+func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool,
+              _ blinking: Bool = false) -> [(Ink, Int, Int, Int, Int)] {
     switch mood {
     case .waiting:
+        // Blink slit, 2 ticks on its own clock: liveness for the one mood
+        // that could otherwise hold an unblinking stare for a full hour.
+        if blinking {
+            return [r(.eye, 8, 9, 14, 9, dx, gy), r(.eye, 17, 9, 23, 9, dx, gy)]
+        }
         // Widest of the five, plus a catchlight: the pet is looking AT you.
         return [r(.eye, 9, 6, 13, 6, dx, gy), r(.eye, 8, 7, 14, 10, dx, gy),
                 r(.eye, 9, 11, 13, 11, dx, gy),
@@ -535,17 +516,29 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int
                 r(.eye, 18, 11, 22, 11, dx, gy),
                 r(.glyph, 9, 7, 10, 8, dx, gy), r(.glyph, 18, 7, 19, 8, dx, gy)]
     case .done:
-        // The idle arc bent deeper, ends thrown up high: delight, same family.
-        return [r(.eye, 7, 7, 7, 8), r(.eye, 13, 7, 13, 8), r(.eye, 8, 9, 12, 9),
-                r(.eye, 18, 7, 18, 8), r(.eye, 24, 7, 24, 8), r(.eye, 19, 9, 23, 9)]
+        // Lifted happy arches plus a static corner sparkle: geometry, not
+        // motion, is what separates "finished" from "asleep" in a still frame.
+        return [r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 7),
+                r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8),
+                r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 7),
+                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8),
+                r(.glyph, 25, 10, 25, 12), r(.glyph, 24, 11, 26, 11)]
     case .error:
-        // Inner corner high, outer corner low — the droop reads as upset even
-        // before the tear falls, and it is the only shape here with a diagonal.
-        return [r(.eye, 11, 7, 13, 7), r(.eye, 8, 8, 12, 8), r(.eye, 7, 9, 9, 9),
-                r(.eye, 18, 7, 20, 7), r(.eye, 19, 8, 23, 8), r(.eye, 22, 9, 24, 9)]
+        // Heavy X strokes, the one deliberate exception to amber phosphor —
+        // the shape is the signal, the red only reinforces it.
+        return [r(.errorX, 7, 7, 8, 7), r(.errorX, 11, 7, 12, 7),
+                r(.errorX, 8, 8, 11, 8), r(.errorX, 9, 9, 10, 9),
+                r(.errorX, 8, 10, 11, 10),
+                r(.errorX, 7, 11, 8, 11), r(.errorX, 11, 11, 12, 11),
+                r(.errorX, 19, 7, 20, 7), r(.errorX, 23, 7, 24, 7),
+                r(.errorX, 20, 8, 23, 8), r(.errorX, 21, 9, 22, 9),
+                r(.errorX, 20, 10, 23, 10),
+                r(.errorX, 19, 11, 20, 11), r(.errorX, 23, 11, 24, 11)]
     case .running:
-        // Narrowed to a slit and sitting low, over the status line it types on.
-        return [r(.eye, 8, 9, 13, 10, dx), r(.eye, 18, 9, 23, 10, dx)]
+        // Focused half-lids raised over the ticker: the face stays home
+        // while the terminal line does the working underneath it.
+        return [r(.eye, 8, 8, 13, 8, dx), r(.eye, 9, 9, 12, 9, dx),
+                r(.eye, 18, 8, 23, 8, dx), r(.eye, 19, 9, 22, 9, dx)]
     case .idle:
         if peeking {
             // Awake for a beat: rounded amber eyes with a catchlight, gaze on.
@@ -555,20 +548,26 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int
                     r(.eye, 19, 11, 21, 11, dx, gy),
                     r(.glyph, 10, 8, 10, 8, dx, gy), r(.glyph, 19, 8, 19, 8, dx, gy)]
         }
-        // The resting face: wide shallow arcs, drowsy not grumpy.
-        return [r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8), r(.eye, 8, 9, 12, 9),
-                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8), r(.eye, 19, 9, 23, 9)]
+        // The resting face: thick drowsy bowls — stroke weight is what
+        // survives 3px cells, and thin arcs did not.
+        return [r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8),
+                r(.eye, 7, 9, 13, 9), r(.eye, 8, 10, 12, 10),
+                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8),
+                r(.eye, 18, 9, 24, 9), r(.eye, 19, 10, 23, 10)]
     }
 }
 
-// The prompt chevron plus `cursorCells` of typed line after it (0...5), on the
-// status row at the bottom of the glass — the belly the old pet typed on is
-// gone. Drawn (and exported) for running only; every other mood keeps its
-// glass clear for the face.
+// One-row status ticker along the glass bottom, clear of the row-13
+// scanline every other mood keeps clean. The reveal walks a word-mask over
+// cols 6-14 — the two dark gaps are what make it read as text rather than a
+// bar — and an ivory cursor cell holds the line's end. No dx, same as the
+// old chevron, so the text does not wobble with the twitch.
 func chromeRects(_ cursorCells: Int) -> [(Ink, Int, Int, Int, Int)] {
-    var out = [r(.eye, 6, 11, 7, 11), r(.eye, 7, 12, 8, 12), r(.eye, 6, 13, 7, 13)]
+    let lit = [6, 7, 9, 10, 11, 13, 14]
     let n = min(max(cursorCells, 0), 5)
-    if n > 0 { out.append(r(.eye, 10, 13, 9 + n, 13)) }
+    let count = min(lit.count, (lit.count * n + 4) / 5)
+    var out = lit.prefix(count).map { r(.eye, $0, 12, $0, 12) }
+    out.append(r(.glyph, 16, 12, 16, 12))
     return out
 }
 
@@ -593,7 +592,7 @@ func startledRects() -> [(Ink, Int, Int, Int, Int)] {
 func tearRow(_ tick: Int) -> Int? {
     let phase = tick % 54
     guard phase >= 12 else { return nil }
-    return 11 + min(5, (phase - 12) / 6)
+    return 12 + min(5, (phase - 12) / 6)
 }
 
 func tearRects(_ y: Int) -> [(Ink, Int, Int, Int, Int)] { [r(.glyph, 8, y, 8, y + 1)] }
@@ -618,7 +617,7 @@ func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
 func exportBuiltin() -> String {
     let key: [Ink: Character] = [.outline: "o", .shade: "s", .body: "b", .light: "l",
                                  .casing: "k", .screen: "c", .scanline: "m",
-                                 .eye: "e", .glyph: "g", .blush: "r"]
+                                 .eye: "e", .glyph: "g", .blush: "r", .errorX: "x"]
     func hex(_ c: NSColor) -> String {
         String(format: "#%02x%02x%02x",
                Int((c.redComponent * 255).rounded()),
@@ -654,7 +653,6 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
-    var waveUntil = -1
 
     override var isFlipped: Bool { true }
 
@@ -665,10 +663,6 @@ final class PetView: NSView {
     // `tick` parked below the deadline forever and the pose stuck for the life
     // of the process. Both ends have to check.
     var startled: Bool { custom == nil && motionOK && tick < startledUntil }
-    // Same deadline shape, and built-in only for the same reason the overlays
-    // are: a manifest carries pixels, so a custom pet has no arm the renderer
-    // knows how to raise.
-    var waving: Bool { custom == nil && motionOK && tick < waveUntil }
 
     // Hovering the pet startles it. The tracking area is rebuilt on resize
     // because installing a custom pet changes the window's bounds.
@@ -701,6 +695,15 @@ final class PetView: NSView {
         return (gx, gy)
     }
 
+    // Proximity peek: approach wakes the pet before hover startles it.
+    // Without a window (offscreen harness) there is no position, so no peek
+    // — the same neutrality gaze() already promises.
+    private func nearCursor() -> Bool {
+        guard let w = window else { return false }
+        let m = NSEvent.mouseLocation
+        return hypot(m.x - w.frame.midX, m.y - w.frame.midY) < 150
+    }
+
     // Every draw goes through here, so the side margin is applied once rather
     // than at each of the base / eyes / chrome / custom call sites.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
@@ -717,7 +720,7 @@ final class PetView: NSView {
     }
 
     private func drawEyes(_ p: Pose) {
-        for (ink, x0, y0, x1, y1) in eyeRects(p.mood, p.dx, p.gazeY, p.peeking) {
+        for (ink, x0, y0, x1, y1) in eyeRects(p.mood, p.dx, p.gazeY, p.peeking, p.blinking) {
             put(ink, x0, y0, x1, y1, p.off)
         }
     }
@@ -734,10 +737,10 @@ final class PetView: NSView {
         let gazeY: Int
         let startled: Bool
         let peeking: Bool
+        let blinking: Bool
         let cursorCells: Int
         let tearRow: Int?
         let sparkleLeft: Bool
-        let wavePhase: Int?
         let spriteGen: Int
     }
 
@@ -767,7 +770,7 @@ final class PetView: NSView {
         // does the gaze apply — closed lids following the cursor read as a
         // glitch, not a glance. Under Reduce Motion the tick freezes, peek
         // stays false, and the permanent frame is the resting arcs.
-        let peek = mood == .idle && custom == nil && motionOK && tick % 132 < 16
+        let peek = mood == .idle && custom == nil && motionOK && (nearCursor() || tick % 132 < 16)
         var off = 2
         var dx = 0
         var gy = 0
@@ -778,12 +781,17 @@ final class PetView: NSView {
         case .waiting:
             dx = (tick % 30 < 2) ? 1 : 0
             if custom == nil { let g = gaze(); dx += g.0; gy = g.1 }
+            // Attention beat: the fold ranks waiting above everything, so it
+            // cannot be the stillest thing on screen — two hops every ~3s.
+            if motionOK && tick % 60 < 12 { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
         case .done:
-            off = 2 + (tick / 12) % 2
+            off = 2 + (tick / 9) % 2
         case .error:
             off = 3
         case .idle:
-            off = 2 + (tick / 9) % 2
+            // Breath, not bounce: the resting state stops spending the
+            // attention budget the alert moods need to rise above.
+            off = (tick % 64 < 56) ? 2 : 3
             if peek { let g = gaze(); dx = g.0; gy = g.1 }
         }
         // The hop outranks the mood's resting bob, and now fires on a tap in
@@ -806,14 +814,15 @@ final class PetView: NSView {
         // the one extra that sits out Reduce Motion entirely.
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
-        // Deliberately not the twinkle's /6: two extras sharing one clock stop
-        // reading as two things happening and start reading as one mechanism.
-        let wave = waving ? (tick / 5) % 2 : nil
+        let blink = mood == .waiting && custom == nil && motionOK && tick % 80 < 2
+        // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
+        // blink %80 — deliberately share none, so overlapping animations read
+        // as three mechanisms, not one.
 
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
-                    startled: st, peeking: peek,
+                    startled: st, peeking: peek, blinking: blink,
                     cursorCells: cursor, tearRow: tear,
-                    sparkleLeft: (tick / 6) % 2 == 0, wavePhase: wave,
+                    sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen)
     }
 
@@ -839,7 +848,7 @@ final class PetView: NSView {
             return
         }
 
-        let grid = p.wavePhase.map { waveBase[$0] } ?? base
+        let grid = base
         for y in 0..<GH {
             for x in 0..<GW {
                 let ink = grid[y][x]
@@ -1616,15 +1625,14 @@ final class Controller: NSObject, NSWindowDelegate {
                     if tucked { setTucked(false) }
                 }
                 let (next, entered) = pollMoods()
-                if next != view.mood {
-                    view.mood = next
-                    if next == .done && view.motionOK {
-                        view.hopUntil = view.tick + 12
-                        // done holds until the next prompt, so the wave is a
-                        // burst on arrival rather than a loop — three swings,
-                        // then the arm goes back down and stays there.
-                        view.waveUntil = view.tick + 30
-                    }
+                let becameDone = next != view.mood && next == .done
+                if next != view.mood { view.mood = next }
+                // A burst on every arrival, not only the display transition:
+                // a second session finishing while done is already on screen
+                // must not be swallowed, so this follows `entered` the same
+                // way the reminder path below does.
+                if (becameDone || entered.contains(.done)) && next == .done && view.motionOK {
+                    view.hopUntil = view.tick + 12
                 }
                 // Reminders and tuck-wake follow per-input events, not the
                 // (possibly masked) display transition.
