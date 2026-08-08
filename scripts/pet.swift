@@ -1660,15 +1660,15 @@ final class Controller: NSObject, NSWindowDelegate {
                     if tucked { setTucked(false) }
                 }
                 let (next, entered) = pollMoods()
-                if next != view.mood {
-                    view.mood = next
-                    if next == .done && view.motionOK {
-                        view.hopUntil = view.tick + 12
-                        // done holds until the next prompt, so the wave is a
-                        // burst on arrival rather than a loop — three swings,
-                        // then the arm goes back down and stays there.
-                        view.waveUntil = view.tick + 30
-                    }
+                let becameDone = next != view.mood && next == .done
+                if next != view.mood { view.mood = next }
+                // A burst on every arrival, not only the display transition:
+                // a second session finishing while done is already on screen
+                // must not be swallowed, so this follows `entered` the same
+                // way the reminder path below does.
+                if (becameDone || entered.contains(.done)) && next == .done && view.motionOK {
+                    view.hopUntil = view.tick + 12
+                    view.waveUntil = view.tick + 30
                 }
                 // Reminders and tuck-wake follow per-input events, not the
                 // (possibly masked) display transition.
