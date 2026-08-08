@@ -73,7 +73,9 @@ func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
 
 // .screen is the glass the amber eyes draw on, .casing the darker ring around
 // it. .eye is the amber phosphor — sleepy arcs, open eyes and the typed line
-// are all the same ink, which is what keeps the face reading as one lit tube.
+// are all the same ink, keeping the face reading as one lit tube, except the
+// running ticker's ivory `.glyph` cursor cell and `.errorX`, the one
+// non-amber face ink (error's X).
 enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush, errorX }
 
 let palette: [Ink: NSColor] = [
@@ -520,9 +522,10 @@ func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
 // the glass is 22x11 design cells (x5..26, y4..14) and everything else on the
 // face is fixed, so a mood that only moves a small smudge inside it reads as
 // the same picture five times. The five are chosen to differ in OUTLINE, not
-// in area: shallow drowsy arcs, slit, wide-with-catchlight, deep happy arch,
-// droop. Gaze and the twitch shift these by one cell, which the zone's margin
-// inside the glass absorbs.
+// in area: idle's thick drowsy bowls, running's raised half-lid slits over
+// the ticker, waiting's wide-with-catchlight, done's lifted arch with a
+// corner sparkle, error's heavy X. Gaze and the twitch shift these by one
+// cell, which the zone's margin inside the glass absorbs.
 //
 // idle's resting face is the sleepy arc — the pet dozes. `peeking` swaps in
 // open eyes for a beat so the cursor-following gaze survives the redesign;
@@ -852,6 +855,9 @@ final class PetView: NSView {
         // Encore: a wave burst every ~15s across done's 60s TTL, pure modulo
         // so a frozen tick lands on a valid frame.
         let encore = mood == .done && custom == nil && motionOK && tick % 300 < 30
+        // Five clocks, five periods — wave /5, twinkle /6, beat %60, blink %80,
+        // encore %300 — deliberately share none, so overlapping animations
+        // read as five mechanisms, not one.
         let wave = (waving || encore) ? (tick / 5) % 2 : nil
 
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
