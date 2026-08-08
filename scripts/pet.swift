@@ -536,14 +536,24 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int
                 r(.eye, 18, 11, 22, 11, dx, gy),
                 r(.glyph, 9, 7, 10, 8, dx, gy), r(.glyph, 18, 7, 19, 8, dx, gy)]
     case .done:
-        // The idle arc bent deeper, ends thrown up high: delight, same family.
-        return [r(.eye, 7, 7, 7, 8), r(.eye, 13, 7, 13, 8), r(.eye, 8, 9, 12, 9),
-                r(.eye, 18, 7, 18, 8), r(.eye, 24, 7, 24, 8), r(.eye, 19, 9, 23, 9)]
+        // Lifted happy arches plus a static corner sparkle: geometry, not
+        // motion, is what separates "finished" from "asleep" in a still frame.
+        return [r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 7),
+                r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8),
+                r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 7),
+                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8),
+                r(.glyph, 25, 10, 25, 12), r(.glyph, 24, 11, 26, 11)]
     case .error:
-        // Inner corner high, outer corner low — the droop reads as upset even
-        // before the tear falls, and it is the only shape here with a diagonal.
-        return [r(.eye, 11, 7, 13, 7), r(.eye, 8, 8, 12, 8), r(.eye, 7, 9, 9, 9),
-                r(.eye, 18, 7, 20, 7), r(.eye, 19, 8, 23, 8), r(.eye, 22, 9, 24, 9)]
+        // Heavy X strokes, the one deliberate exception to amber phosphor —
+        // the shape is the signal, the red only reinforces it.
+        return [r(.errorX, 7, 7, 8, 7), r(.errorX, 11, 7, 12, 7),
+                r(.errorX, 8, 8, 11, 8), r(.errorX, 9, 9, 10, 9),
+                r(.errorX, 8, 10, 11, 10),
+                r(.errorX, 7, 11, 8, 11), r(.errorX, 11, 11, 12, 11),
+                r(.errorX, 19, 7, 20, 7), r(.errorX, 23, 7, 24, 7),
+                r(.errorX, 20, 8, 23, 8), r(.errorX, 21, 9, 22, 9),
+                r(.errorX, 20, 10, 23, 10),
+                r(.errorX, 19, 11, 20, 11), r(.errorX, 23, 11, 24, 11)]
     case .running:
         // Narrowed to a slit and sitting low, over the status line it types on.
         return [r(.eye, 8, 9, 13, 10, dx), r(.eye, 18, 9, 23, 10, dx)]
@@ -556,9 +566,12 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int
                     r(.eye, 19, 11, 21, 11, dx, gy),
                     r(.glyph, 10, 8, 10, 8, dx, gy), r(.glyph, 19, 8, 19, 8, dx, gy)]
         }
-        // The resting face: wide shallow arcs, drowsy not grumpy.
-        return [r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8), r(.eye, 8, 9, 12, 9),
-                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8), r(.eye, 19, 9, 23, 9)]
+        // The resting face: thick drowsy bowls — stroke weight is what
+        // survives 3px cells, and thin arcs did not.
+        return [r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8),
+                r(.eye, 7, 9, 13, 9), r(.eye, 8, 10, 12, 10),
+                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8),
+                r(.eye, 18, 9, 24, 9), r(.eye, 19, 10, 23, 10)]
     }
 }
 
@@ -594,7 +607,7 @@ func startledRects() -> [(Ink, Int, Int, Int, Int)] {
 func tearRow(_ tick: Int) -> Int? {
     let phase = tick % 54
     guard phase >= 12 else { return nil }
-    return 11 + min(5, (phase - 12) / 6)
+    return 12 + min(5, (phase - 12) / 6)
 }
 
 func tearRects(_ y: Int) -> [(Ink, Int, Int, Int, Int)] { [r(.glyph, 8, y, 8, y + 1)] }
