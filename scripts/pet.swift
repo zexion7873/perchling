@@ -555,8 +555,10 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int
                 r(.errorX, 20, 10, 23, 10),
                 r(.errorX, 19, 11, 20, 11), r(.errorX, 23, 11, 24, 11)]
     case .running:
-        // Narrowed to a slit and sitting low, over the status line it types on.
-        return [r(.eye, 8, 9, 13, 10, dx), r(.eye, 18, 9, 23, 10, dx)]
+        // Focused half-lids raised over the ticker: the face stays home
+        // while the terminal line does the working underneath it.
+        return [r(.eye, 8, 8, 13, 8, dx), r(.eye, 9, 9, 12, 9, dx),
+                r(.eye, 18, 8, 23, 8, dx), r(.eye, 19, 9, 22, 9, dx)]
     case .idle:
         if peeking {
             // Awake for a beat: rounded amber eyes with a catchlight, gaze on.
@@ -575,14 +577,17 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int
     }
 }
 
-// The prompt chevron plus `cursorCells` of typed line after it (0...5), on the
-// status row at the bottom of the glass — the belly the old pet typed on is
-// gone. Drawn (and exported) for running only; every other mood keeps its
-// glass clear for the face.
+// One-row status ticker along the glass bottom, clear of the row-13
+// scanline every other mood keeps clean. The reveal walks a word-mask over
+// cols 6-14 — the two dark gaps are what make it read as text rather than a
+// bar — and an ivory cursor cell holds the line's end. No dx, same as the
+// old chevron, so the text does not wobble with the twitch.
 func chromeRects(_ cursorCells: Int) -> [(Ink, Int, Int, Int, Int)] {
-    var out = [r(.eye, 6, 11, 7, 11), r(.eye, 7, 12, 8, 12), r(.eye, 6, 13, 7, 13)]
+    let lit = [6, 7, 9, 10, 11, 13, 14]
     let n = min(max(cursorCells, 0), 5)
-    if n > 0 { out.append(r(.eye, 10, 13, 9 + n, 13)) }
+    let count = min(lit.count, (lit.count * n + 4) / 5)
+    var out = lit.prefix(count).map { r(.eye, $0, 12, $0, 12) }
+    out.append(r(.glyph, 16, 12, 16, 12))
     return out
 }
 
