@@ -817,7 +817,7 @@ final class PetView: NSView {
             if custom == nil { let g = gaze(); dx += g.0; gy = g.1 }
             // Attention beat: the fold ranks waiting above everything, so it
             // cannot be the stillest thing on screen — two hops every ~3s.
-            if tick % 60 < 12 { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
+            if motionOK && tick % 60 < 12 { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
         case .done:
             off = 2 + (tick / 9) % 2
         case .error:
