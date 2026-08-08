@@ -89,36 +89,46 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   coordinate and `cell()` expands each source cell into a `RES × RES` block.
   Write new sprite coordinates in design space and pass them through `cell()`;
   hand-multiplying by `RES` at a call site is how the two spaces drift apart.
-  The shell is the one place expansion is not cell-blocky: `lathe()` slides
-  each design row's span toward the next across its `RES` sub-rows, because a
-  profile stepped 3px at a time scallops the silhouette while every other
-  rounded edge in the art steps 1px. Its profile is still written in design
-  cells.
-- **A limb that leaves its resting place has to be overlaid, not unioned.** The
-  head spans all 32 columns at its bulge and reaches down to row 21 of 33, so
-  there is nowhere above the shoulder for an arm to go that is not head.
-  `buildBase()` merges its parts into one mask and `shade()` then derives
-  every ink from neighbour tests over that mask, so an arm unioned in at head
-  height stops being an arm and becomes a lump on the side of the head — any
-  raised-arm animation has to build its arm as a separate mass, run the same
-  `shade()` over it, and stamp the result on top, which is what gives it an
-  outline of its own instead of melting into the shell. The wave was the
-  first attempt at this and was retired in 1.0.1: its elbow was anchored at
-  hip height, where the resting arm nub sits, so the raised arm spanned
-  hip-to-glass with zero transition frames and read as a creature suddenly
-  extending a limb, not waving one. It returns in 1.1 built on the
-  silhouette rework's real shoulders — the overlay rule above is exactly
-  what that rebuild needs; the retired wave's operational details (which
-  frames end on the dark glass, the elbow's overlap margin, the parameter
-  that dropped the resting nub) do not carry forward, since a new shoulder
-  is new geometry from scratch.
-- **`Ink.errorX` exists for exactly one thing: error's X.** It is not a
-  reuse of `.blush` or `.shade` — error's cross needed its own hex once the
-  palette split face inks apart, and it is the one face ink that is not
-  amber. `tools/moods-gif.swift` keeps its own literal `inks` array mirroring
-  the enum's cases, so any addition, removal, or reorder in `Ink` has to be
-  mirrored there too, or the GIF tool's ink-count assertion fails at regen
-  time instead of at compile time.
+  The shell and torso are the one place expansion is not cell-blocky:
+  `lathe()` slides each design row's span toward the next across its `RES`
+  sub-rows, because a profile stepped 3px at a time scallops the silhouette
+  while every other rounded edge in the art steps 1px. Its profile is still
+  written in design cells.
+- **A limb that leaves its resting place has to be overlaid, not unioned.**
+  `buildBase()` builds the 1.1 body from two `lathe()` profiles joined by a
+  waist — the head is the wider profile, the torso the narrower one below
+  it — plus a pair of square `rrect` legs (rounding a 5x4 leg at this size
+  costs its planted look, and the outline is most of the leg anyway).
+  `buildBase()` still merges shell, torso, and legs into one mask and
+  `shade()` derives every ink from neighbour tests over that mask, so an arm
+  unioned into it at any height stops being an arm and becomes a lump on
+  whatever it touches. Both of the built-in's arms are already built this
+  way — each is its own mask, shaded on its own, and stamped over the base —
+  which generalises what used to be a wave-only trick into how every arm
+  works, resting or not, and is what gives each one an outline of its own
+  instead of melting into the shell. The wave was the original reason for
+  the rule and was retired in 1.0.1: its elbow was anchored at hip height,
+  where the resting arm nub sits, so the raised arm spanned hip-to-glass with
+  zero transition frames and read as a creature suddenly extending a limb,
+  not waving one. The 1.1 rework gives the body real shoulders and proves the
+  overlay rule at the resting arms, but the wave itself is still retired —
+  nobody has rebuilt it on the new geometry, and its old operational details
+  (which frames end on the dark glass, the elbow's overlap margin, the
+  parameter that dropped the resting nub) do not carry forward regardless,
+  since a new shoulder is new geometry from scratch.
+- **The glass carries eyes only, and `Ink.errorX` exists for exactly one
+  thing: error's X.** 1.1 retired `.scanline` and `.blush` along with the
+  corner glint and the terminal ticker — nothing stamps onto the glass now
+  except `eyeRects`'/`startledRects`' `.eye`/`.glyph`/`.errorX`, so a face
+  idea that used to live on one of those retired inks needs a home in one of
+  the three survivors or it does not ship. `errorX` is not a reuse of
+  `.shade` — error's cross needed its own hex once the palette split face
+  inks apart, and it is the one face ink that is not amber.
+  `tools/moods-gif.swift` keeps its own literal `inks` array mirroring the
+  enum's cases, so any change to `Ink` — addition, removal, or reorder —
+  has to be mirrored there too, or the GIF tool's ink-count assertion fails
+  at regen time instead of at compile time; `.scanline`/`.blush` going away
+  is exactly as much a mirror update as a new ink arriving.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
