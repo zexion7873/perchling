@@ -528,9 +528,15 @@ func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
 // open eyes for a beat so the cursor-following gaze survives the redesign;
 // with Reduce Motion the tick freezes, peeking stays false, and the static
 // pose is the arcs, which is exactly the frame that should be permanent.
-func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool) -> [(Ink, Int, Int, Int, Int)] {
+func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool,
+              _ blinking: Bool = false) -> [(Ink, Int, Int, Int, Int)] {
     switch mood {
     case .waiting:
+        // Blink slit, 2 ticks on its own clock: liveness for the one mood
+        // that could otherwise hold an unblinking stare for a full hour.
+        if blinking {
+            return [r(.eye, 8, 9, 14, 9, dx, gy), r(.eye, 17, 9, 23, 9, dx, gy)]
+        }
         // Widest of the five, plus a catchlight: the pet is looking AT you.
         return [r(.eye, 9, 6, 13, 6, dx, gy), r(.eye, 8, 7, 14, 10, dx, gy),
                 r(.eye, 9, 11, 13, 11, dx, gy),
@@ -722,6 +728,15 @@ final class PetView: NSView {
         return (gx, gy)
     }
 
+    // Proximity peek: approach wakes the pet before hover startles it.
+    // Without a window (offscreen harness) there is no position, so no peek
+    // — the same neutrality gaze() already promises.
+    private func nearCursor() -> Bool {
+        guard let w = window else { return false }
+        let m = NSEvent.mouseLocation
+        return hypot(m.x - w.frame.midX, m.y - w.frame.midY) < 150
+    }
+
     // Every draw goes through here, so the side margin is applied once rather
     // than at each of the base / eyes / chrome / custom call sites.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
@@ -738,7 +753,7 @@ final class PetView: NSView {
     }
 
     private func drawEyes(_ p: Pose) {
-        for (ink, x0, y0, x1, y1) in eyeRects(p.mood, p.dx, p.gazeY, p.peeking) {
+        for (ink, x0, y0, x1, y1) in eyeRects(p.mood, p.dx, p.gazeY, p.peeking, p.blinking) {
             put(ink, x0, y0, x1, y1, p.off)
         }
     }
@@ -755,6 +770,7 @@ final class PetView: NSView {
         let gazeY: Int
         let startled: Bool
         let peeking: Bool
+        let blinking: Bool
         let cursorCells: Int
         let tearRow: Int?
         let sparkleLeft: Bool
@@ -788,7 +804,7 @@ final class PetView: NSView {
         // does the gaze apply — closed lids following the cursor read as a
         // glitch, not a glance. Under Reduce Motion the tick freezes, peek
         // stays false, and the permanent frame is the resting arcs.
-        let peek = mood == .idle && custom == nil && motionOK && tick % 132 < 16
+        let peek = mood == .idle && custom == nil && motionOK && (nearCursor() || tick % 132 < 16)
         var off = 2
         var dx = 0
         var gy = 0
@@ -799,12 +815,17 @@ final class PetView: NSView {
         case .waiting:
             dx = (tick % 30 < 2) ? 1 : 0
             if custom == nil { let g = gaze(); dx += g.0; gy = g.1 }
+            // Attention beat: the fold ranks waiting above everything, so it
+            // cannot be the stillest thing on screen — two hops every ~3s.
+            if tick % 60 < 12 { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
         case .done:
-            off = 2 + (tick / 12) % 2
+            off = 2 + (tick / 9) % 2
         case .error:
             off = 3
         case .idle:
-            off = 2 + (tick / 9) % 2
+            // Breath, not bounce: the resting state stops spending the
+            // attention budget the alert moods need to rise above.
+            off = (tick % 64 < 56) ? 2 : 3
             if peek { let g = gaze(); dx = g.0; gy = g.1 }
         }
         // The hop outranks the mood's resting bob, and now fires on a tap in
@@ -827,12 +848,14 @@ final class PetView: NSView {
         // the one extra that sits out Reduce Motion entirely.
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
-        // Deliberately not the twinkle's /6: two extras sharing one clock stop
-        // reading as two things happening and start reading as one mechanism.
-        let wave = waving ? (tick / 5) % 2 : nil
+        let blink = mood == .waiting && custom == nil && motionOK && tick % 80 < 2
+        // Encore: a wave burst every ~15s across done's 60s TTL, pure modulo
+        // so a frozen tick lands on a valid frame.
+        let encore = mood == .done && custom == nil && motionOK && tick % 300 < 30
+        let wave = (waving || encore) ? (tick / 5) % 2 : nil
 
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
-                    startled: st, peeking: peek,
+                    startled: st, peeking: peek, blinking: blink,
                     cursorCells: cursor, tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0, wavePhase: wave,
                     spriteGen: spriteGen)
