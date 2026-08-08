@@ -73,10 +73,10 @@ func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
 }
 
 // .screen is the glass the amber eyes draw on, .casing the darker ring around
-// it. .eye is the amber phosphor — sleepy arcs, open eyes and the typed line
-// are all the same ink, keeping the face reading as one lit tube, except the
-// running ticker's ivory `.glyph` cursor cell and `.errorX`, the one
-// non-amber face ink (error's X).
+// it. .eye is the amber phosphor — sleepy arcs and open eyes are all the same
+// ink, keeping the face reading as one lit tube, except catchlights' and
+// sparkles' ivory `.glyph` and `.errorX`, the one non-amber face ink (error's
+// X).
 enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush, errorX }
 
 let palette: [Ink: NSColor] = [
@@ -475,8 +475,8 @@ func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
 // the glass is 22x11 design cells (x5..26, y4..14) and everything else on the
 // face is fixed, so a mood that only moves a small smudge inside it reads as
 // the same picture five times. The five are chosen to differ in OUTLINE, not
-// in area: idle's thick drowsy bowls, running's raised half-lid slits over
-// the ticker, waiting's wide-with-catchlight, done's lifted arch with a
+// in area: idle's thick drowsy bowls, running's raised half-lid slits,
+// waiting's wide-with-catchlight, done's lifted arch with a
 // corner sparkle, error's heavy X. Gaze and the twitch shift these by one
 // cell, which the zone's margin inside the glass absorbs.
 //
@@ -493,36 +493,42 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool,
         if blinking {
             return [r(.eye, 8, 9, 14, 9, dx, gy), r(.eye, 17, 9, 23, 9, dx, gy)]
         }
-        // Widest of the five, plus a catchlight: the pet is looking AT you.
-        return [r(.eye, 9, 6, 13, 6, dx, gy), r(.eye, 8, 7, 14, 10, dx, gy),
-                r(.eye, 9, 11, 13, 11, dx, gy),
-                r(.eye, 18, 6, 22, 6, dx, gy), r(.eye, 17, 7, 23, 10, dx, gy),
-                r(.eye, 18, 11, 22, 11, dx, gy),
-                r(.glyph, 9, 7, 10, 8, dx, gy), r(.glyph, 18, 7, 19, 8, dx, gy)]
+        // The widest of the five: a 7x7 octagon filling the glass, with one
+        // catchlight per eye in the SAME upper-left corner — one light source,
+        // so this pair is deliberately not mirrored.
+        return [r(.eye, 10, 6, 12, 6, dx, gy), r(.eye, 9, 7, 13, 7, dx, gy),
+                r(.eye, 8, 8, 14, 10, dx, gy), r(.eye, 9, 11, 13, 11, dx, gy),
+                r(.eye, 10, 12, 12, 12, dx, gy),
+                r(.eye, 19, 6, 21, 6, dx, gy), r(.eye, 18, 7, 22, 7, dx, gy),
+                r(.eye, 17, 8, 23, 10, dx, gy), r(.eye, 18, 11, 22, 11, dx, gy),
+                r(.eye, 19, 12, 21, 12, dx, gy),
+                r(.glyph, 9, 8, 10, 9, dx, gy), r(.glyph, 18, 8, 19, 9, dx, gy)]
     case .done:
-        // Lifted happy arches plus a static corner sparkle: geometry, not
-        // motion, is what separates "finished" from "asleep" in a still frame.
-        return [r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 7),
-                r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8),
-                r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 7),
-                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8),
-                r(.glyph, 25, 10, 25, 12), r(.glyph, 24, 11, 26, 11)]
+        // A thin lifted arch with the tips thrown up, and a sparkle two clear
+        // rows below it — closer and the pair reads as a mouse cursor.
+        return [r(.eye, 9, 6, 12, 6), r(.eye, 8, 7, 9, 7), r(.eye, 12, 7, 13, 7),
+                r(.eye, 8, 8, 8, 8), r(.eye, 13, 8, 13, 8),
+                r(.eye, 19, 6, 22, 6), r(.eye, 18, 7, 19, 7), r(.eye, 22, 7, 23, 7),
+                r(.eye, 18, 8, 18, 8), r(.eye, 23, 8, 23, 8),
+                r(.glyph, 23, 10, 23, 10), r(.glyph, 22, 11, 24, 11),
+                r(.glyph, 23, 12, 23, 12)]
     case .error:
-        // Heavy X strokes, the one deliberate exception to amber phosphor —
-        // the shape is the signal, the red only reinforces it.
-        return [r(.errorX, 7, 7, 8, 7), r(.errorX, 11, 7, 12, 7),
-                r(.errorX, 8, 8, 11, 8), r(.errorX, 9, 9, 10, 9),
-                r(.errorX, 8, 10, 11, 10),
-                r(.errorX, 7, 11, 8, 11), r(.errorX, 11, 11, 12, 11),
-                r(.errorX, 19, 7, 20, 7), r(.errorX, 23, 7, 24, 7),
-                r(.errorX, 20, 8, 23, 8), r(.errorX, 21, 9, 22, 9),
-                r(.errorX, 20, 10, 23, 10),
-                r(.errorX, 19, 11, 20, 11), r(.errorX, 23, 11, 24, 11)]
+        // A waisted X two cells thick — the waist is what stops it reading as
+        // a block. The one deliberate exception to amber phosphor.
+        return [r(.errorX, 8, 7, 9, 7), r(.errorX, 12, 7, 13, 7),
+                r(.errorX, 9, 8, 12, 8), r(.errorX, 10, 9, 11, 9),
+                r(.errorX, 9, 10, 12, 10),
+                r(.errorX, 8, 11, 9, 11), r(.errorX, 12, 11, 13, 11),
+                r(.errorX, 18, 7, 19, 7), r(.errorX, 22, 7, 23, 7),
+                r(.errorX, 19, 8, 22, 8), r(.errorX, 20, 9, 21, 9),
+                r(.errorX, 19, 10, 22, 10),
+                r(.errorX, 18, 11, 19, 11), r(.errorX, 22, 11, 23, 11)]
     case .running:
-        // Focused half-lids raised over the ticker: the face stays home
-        // while the terminal line does the working underneath it.
-        return [r(.eye, 8, 8, 13, 8, dx), r(.eye, 9, 9, 12, 9, dx),
-                r(.eye, 18, 8, 23, 8, dx), r(.eye, 19, 9, 22, 9, dx)]
+        // A flat half-lid slab, raised. With the ticker gone this shape is the
+        // ONLY thing separating running from idle, so it sits as high in the
+        // glass as idle's bowl sits low.
+        return [r(.eye, 8, 7, 13, 7, dx), r(.eye, 9, 8, 12, 8, dx),
+                r(.eye, 18, 7, 23, 7, dx), r(.eye, 19, 8, 22, 8, dx)]
     case .idle:
         if peeking {
             // Awake for a beat: rounded amber eyes with a catchlight, gaze on.
@@ -532,40 +538,23 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool,
                     r(.eye, 19, 11, 21, 11, dx, gy),
                     r(.glyph, 10, 8, 10, 8, dx, gy), r(.glyph, 19, 8, 19, 8, dx, gy)]
         }
-        // The resting face: thick drowsy bowls — stroke weight is what
-        // survives 3px cells, and thin arcs did not.
-        return [r(.eye, 7, 8, 8, 8), r(.eye, 12, 8, 13, 8),
-                r(.eye, 7, 9, 13, 9), r(.eye, 8, 10, 12, 10),
-                r(.eye, 18, 8, 19, 8), r(.eye, 23, 8, 24, 8),
-                r(.eye, 18, 9, 24, 9), r(.eye, 19, 10, 23, 10)]
+        // The resting face: thick drowsy bowls sunk to the glass floor.
+        return [r(.eye, 8, 10, 9, 10), r(.eye, 12, 10, 13, 10),
+                r(.eye, 8, 11, 13, 11), r(.eye, 9, 12, 12, 12),
+                r(.eye, 18, 10, 19, 10), r(.eye, 22, 10, 23, 10),
+                r(.eye, 18, 11, 23, 11), r(.eye, 19, 12, 22, 12)]
     }
 }
 
-// One-row status ticker along the glass bottom, clear of the row-13
-// scanline every other mood keeps clean. The reveal walks a word-mask over
-// cols 6-14 — the two dark gaps are what make it read as text rather than a
-// bar — and an ivory cursor cell holds the line's end. No dx, same as the
-// old chevron, so the text does not wobble with the twitch.
-func chromeRects(_ cursorCells: Int) -> [(Ink, Int, Int, Int, Int)] {
-    let lit = [6, 7, 9, 10, 11, 13, 14]
-    let n = min(max(cursorCells, 0), 5)
-    let count = min(lit.count, (lit.count * n + 4) / 5)
-    var out = lit.prefix(count).map { r(.eye, $0, 12, $0, 12) }
-    out.append(r(.glyph, 16, 12, 16, 12))
-    return out
-}
-
 // Startle: both eyes blown wide, overriding whatever the mood was drawing.
-// "Wide" is relative to the moods, so this has to be re-measured whenever they
-// move: seven cells across is wider than waiting, the widest mood, and the
-// pupil shrinks rather than grows because a pinprick in a large eye is what
-// reads as startled. The zone tops out at y5 — one row inside the glass.
+// "Wide" is relative to the moods, so this is re-measured whenever they move:
+// nine cells across beats waiting's seven-wide octagon, and the pupil shrinks
+// rather than grows because a pinprick in a large eye is what reads as
+// startled. Carries no gaze offset, so it may use the glass to its edges.
 func startledRects() -> [(Ink, Int, Int, Int, Int)] {
-    [r(.eye, 9, 5, 11, 5), r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 9),
-     r(.eye, 8, 10, 12, 10), r(.eye, 9, 11, 11, 11),
-     r(.eye, 20, 5, 22, 5), r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 9),
-     r(.eye, 19, 10, 23, 10), r(.eye, 20, 11, 22, 11),
-     r(.screen, 9, 7, 11, 9), r(.screen, 20, 7, 22, 9)]
+    [r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 11), r(.eye, 8, 12, 12, 12),
+     r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 11), r(.eye, 19, 12, 23, 12),
+     r(.screen, 9, 8, 11, 10), r(.screen, 20, 8, 22, 10)]
 }
 
 // A tear wells under the left eye, slides down the glass and off the casing
@@ -595,9 +584,9 @@ func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
 // Snapshot the built-in pet as a manifest, so the default is a starting point
 // for a custom pet instead of something you can only redraw from scratch.
 // A manifest carries pixels, not behavior: the snapshot loses the
-// cursor-following pupils, the doze-and-peek cycle and the typing animation,
-// and because it has no eye coordinates the sideways twitch that moves only
-// these eyes becomes a whole-body shift.
+// cursor-following pupils and the doze-and-peek cycle, and because it has no
+// eye coordinates the sideways twitch that moves only these eyes becomes a
+// whole-body shift.
 func exportBuiltin() -> String {
     let key: [Ink: Character] = [.outline: "o", .shade: "s", .body: "b", .light: "l",
                                  .casing: "k", .screen: "c", .scanline: "m",
@@ -611,9 +600,7 @@ func exportBuiltin() -> String {
     var moods: [String: [String]] = [:]
     for mood in [Mood.idle, .running, .waiting, .done, .error] {
         var grid = base
-        // The status line is running's alone; other moods export a clear glass.
-        let chrome = mood == .running ? chromeRects(5) : []
-        for (ink, x0, y0, x1, y1) in eyeRects(mood, 0, 0, false) + chrome {
+        for (ink, x0, y0, x1, y1) in eyeRects(mood, 0, 0, false) {
             for y in y0...y1 where y >= 0 && y < GH {
                 for x in x0...x1 where x >= 0 && x < GW { grid[y][x] = ink }
             }
@@ -722,7 +709,6 @@ final class PetView: NSView {
         let startled: Bool
         let peeking: Bool
         let blinking: Bool
-        let cursorCells: Int
         let tearRow: Int?
         let sparkleLeft: Bool
         let spriteGen: Int
@@ -783,16 +769,6 @@ final class PetView: NSView {
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
 
         let st = startled
-        // running types a line out a cell at a time onto the glass; the other
-        // moods draw no status line at all, so their value is pinned rather
-        // than blinking a cursor nobody can see into pointless repaints.
-        let cursor: Int
-        switch mood {
-        // A frozen clock must land on a good pose, and phase 0 of the typing
-        // cycle is an empty prompt line — the one frame that reads as broken.
-        case .running: cursor = motionOK ? min(5, (tick / 3) % 7) : 5
-        case .waiting, .done, .error, .idle: cursor = 5
-        }
 
         // A droplet frozen mid-fall reads as a rendering fault, so the tear is
         // the one extra that sits out Reduce Motion entirely.
@@ -805,7 +781,7 @@ final class PetView: NSView {
 
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
                     startled: st, peeking: peek, blinking: blink,
-                    cursorCells: cursor, tearRow: tear,
+                    tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen)
     }
@@ -843,10 +819,6 @@ final class PetView: NSView {
             for (ink, x0, y0, x1, y1) in startledRects() { put(ink, x0, y0, x1, y1, p.off) }
         } else {
             drawEyes(p)
-        }
-
-        if p.mood == .running {
-            for (ink, x0, y0, x1, y1) in chromeRects(p.cursorCells) { put(ink, x0, y0, x1, y1, p.off) }
         }
 
         if let y = p.tearRow {
