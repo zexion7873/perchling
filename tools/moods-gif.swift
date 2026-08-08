@@ -148,7 +148,7 @@ NSApplication.shared.setActivationPolicy(.prohibited)
 
 if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
     FileHandle.standardError.write(
-        "Reduce Motion is on: the tear, the typing and the startle never draw, so the GIF would be five still poses. Turn it off and re-run.\n"
+        "Reduce Motion is on: the tear and the startle never draw, so the GIF would be five still poses. Turn it off and re-run.\n"
         .data(using: .utf8)!)
     exit(1)
 }
@@ -192,7 +192,7 @@ for step in 0..<FRAMES {
     // Blit the cached CGImage straight in. Going through NSImage.draw lets the
     // context interpolate — the view is flipped and the context is not, and the
     // resulting half-pixel offset blends every pixel with its neighbour, which
-    // turns seven flat inks into a million.
+    // turns nine flat inks into a million.
     ctx.interpolationQuality = .none
     ctx.setShouldAntialias(false)
     for (i, v) in views.enumerated() {

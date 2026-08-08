@@ -676,7 +676,7 @@ final class PetView: NSView {
     }
 
     // Every draw goes through here, so the side margin is applied once rather
-    // than at each of the base / eyes / chrome / custom call sites.
+    // than at each of the base / eyes / tear / sparkle / custom call sites.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
         color.setFill()
         let r = NSRect(x: CGFloat(x0 + xpad) * scale,
@@ -749,7 +749,10 @@ final class PetView: NSView {
         // the twitch below already spends up to 4 of those 6 sideways on its
         // own — a full-unit gaze stacked on top of a full-unit twitch pushes
         // the widest eye past the casing, and a full-unit vertical gaze alone
-        // already exceeds the 3px it has to work with.
+        // already exceeds the 3px it has to work with. Idle's peek gaze skips
+        // the halving: its eyes are narrower and centered, with about 9px of
+        // sideways and 6px of vertical margin inside the glass and no twitch
+        // stacked on top, so the full unit fits.
         var gazeDX = 0
         var gazeGY = 0
         switch mood {

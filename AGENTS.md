@@ -51,7 +51,7 @@ Verify without launching:
   its pupils at wherever the mouse happens to be, which is how a render stops
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
-  and turns seven flat inks into a million.
+  and turns nine flat inks into a million.
 - **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
   `sessionName`, and `sessionTitle` all sit above the runtime-home block, so a
   harness for them should cut there instead of at `let argv`: cutting at `let
@@ -119,7 +119,8 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 - **The glass carries eyes only, and `Ink.errorX` exists for exactly one
   thing: error's X.** 1.1 retired `.scanline` and `.blush` along with the
   corner glint and the terminal ticker — nothing stamps onto the glass now
-  except `eyeRects`'/`startledRects`' `.eye`/`.glyph`/`.errorX`, so a face
+  except `eyeRects`'/`startledRects`'/`tearRects`'/`sparkleRects`'
+  `.eye`/`.glyph`/`.errorX`, so a face
   idea that used to live on one of those retired inks needs a home in one of
   the three survivors or it does not ship. `errorX` is not a reuse of
   `.shade` — error's cross needed its own hex once the palette split face
