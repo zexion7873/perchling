@@ -166,6 +166,19 @@ func buildBase() -> [[Ink]] {
         for y in 0..<GH { for x in 0..<GW where arm[y][x] != .none { out[y][x] = arm[y][x] } }
     }
 
+    // The brim, and the only way this head could have got one. Everything
+    // above is merged into a single mask before shade() runs, so shade() can
+    // only ever derive the OUTSIDE contour — five rounds of reshaping the head
+    // profile failed on exactly that, because a lathe is convex and a merged
+    // mass has no interior edges. This borrows the arm's trick instead: its
+    // own mask, its own shade(), stamped over the base, so it lands with an
+    // outline and a light band of its own and the visor reads as set into the
+    // shell rather than painted on it. One band and no more: a second one
+    // starts reading as stripes on a light desktop.
+    let brimCell = cell(5, 2, 26, 4)
+    let brim = shade(rrect(brimCell.0, brimCell.1, brimCell.2, brimCell.3, RES))
+    for y in 0..<GH { for x in 0..<GW where brim[y][x] != .none { out[y][x] = brim[y][x] } }
+
     // Screen: casing ring, then glass. Stamped after shade() so the face is a
     // window into the shell, not a shaded lump on it. Nothing else goes on the
     // glass — 1.1 retired the scanlines and the corner glint, so the eyes are

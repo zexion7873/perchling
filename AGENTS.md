@@ -121,6 +121,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   (which frames end on the dark glass, the elbow's overlap margin, the
   parameter that dropped the resting nub) do not carry forward regardless,
   since a new shoulder is new geometry from scratch.
+- **The only way to draw a line INSIDE the pet is to stamp a separately
+  shaded mass.** `buildBase()` merges shell, torso and legs into one mask, so
+  `shade()` can only ever derive the OUTSIDE contour — which is why the head
+  was a flat coral field with a rim, and why five rounds of reshaping its
+  `lathe` profile could not give it a feature (a lathe is one centred span
+  per row, so it can only produce a convex silhouette; every bump that would
+  break that reads as ears, an antenna or a hood). The arms already dodged
+  this; the brim over the visor is the same trick pointed at the head, and it
+  is what makes the screen read as set into the shell rather than painted on
+  it. Two limits worth not rediscovering: the head's contrast budget is spent
+  at ONE band, because a second starts reading as stripes on a light desktop;
+  and an overlay can never fix the SILHOUETTE, since `rrect` expands
+  cell-blocky while the head expands through `lathe`'s sub-row slide, so an
+  overlay cannot even follow the existing contour. Also fixed forever: the
+  forehead cannot grow, because the casing's top is frozen at design row 4
+  and the head cannot start above row 0, so every row a taller head buys
+  lands below the visor as blank chin.
 - **The glass carries eyes only, and `Ink.errorX` exists for exactly one
   thing: error's X.** 1.1 retired `.scanline` and `.blush` along with the
   corner glint and the terminal ticker — nothing stamps onto the glass now
