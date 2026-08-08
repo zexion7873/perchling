@@ -106,7 +106,12 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   way — each is its own mask, shaded on its own, and stamped over the base —
   which generalises what used to be a wave-only trick into how every arm
   works, resting or not, and is what gives each one an outline of its own
-  instead of melting into the shell. The wave was the original reason for
+  instead of melting into the shell. Each arm is ONE uniform 4-cell pill,
+  not a shoulder welded to a forearm: those overlapped, so the arm was widest
+  in the middle and grew outward as it descended, which reads as a flexed
+  deltoid. Four cells is the floor, not a preference — three is all outline
+  once `shade()` takes its ring, and reaching past column 4 drops the
+  arm-to-torso overlap to zero so the limb floats. The wave was the original reason for
   the rule and was retired in 1.0.1: its elbow was anchored at hip height,
   where the resting arm nub sits, so the raised arm spanned hip-to-glass with
   zero transition frames and read as a creature suddenly extending a limb,
