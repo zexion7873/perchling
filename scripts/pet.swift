@@ -744,13 +744,25 @@ final class PetView: NSView {
         var off = 2
         var dx = 0
         var gy = 0
+        // Gaze rides half the bounce unit, not the whole thing: the glass
+        // gives waiting's eyes 6px of sideways headroom and 3px vertical, and
+        // the twitch below already spends up to 4 of those 6 sideways on its
+        // own — a full-unit gaze stacked on top of a full-unit twitch pushes
+        // the widest eye past the casing, and a full-unit vertical gaze alone
+        // already exceeds the 3px it has to work with.
+        var gazeDX = 0
+        var gazeGY = 0
         switch mood {
         case .running:
             off = 2 + (tick / 4) % 2
             dx = ((tick / 10) % 4 == 1) ? -1 : (((tick / 10) % 4 == 3) ? 1 : 0)
         case .waiting:
             dx = (tick % 30 < 2) ? 1 : 0
-            if custom == nil { let g = gaze(); dx += g.0; gy = g.1 }
+            if custom == nil {
+                let g = gaze()
+                gazeDX = g.0 * (u / 2)
+                gazeGY = g.1 * (u / 2)
+            }
             // Attention beat: the fold ranks waiting above everything, so it
             // cannot be the stillest thing on screen — two hops every ~3s.
             if motionOK && tick % 60 < 12 { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
@@ -779,7 +791,7 @@ final class PetView: NSView {
         // blink %80 — deliberately share none, so overlapping animations read
         // as three mechanisms, not one.
 
-        return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
+        return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gy * u + gazeGY,
                     startled: st, peeking: peek, blinking: blink,
                     tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
