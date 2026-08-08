@@ -151,8 +151,13 @@ func buildBase() -> [[Ink]] {
     // one pixel wide at shipping size and lets the arm melt into the torso on
     // a light desktop. Each arm is its own mask, shaded on its own and
     // stamped over the base, which gives it a real outline for free.
+    //
+    // One uniform pill, not a shoulder welded to a forearm: those overlapped
+    // at rows 22-23, so the arm was widest in the middle and grew outward as
+    // it descended, which reads as a flexed deltoid. Four cells is the floor —
+    // three is all outline, and reaching past column 4 breaks the weld.
     for mirrored in [false, true] {
-        let pills = [(5, 19, 9, 23), (3, 22, 7, 27)].map { p -> [[Int]] in
+        let pills = [(4, 19, 7, 26)].map { p -> [[Int]] in
             let (x0, x1) = mirrored ? (31 - p.2, 31 - p.0) : (p.0, p.2)
             let c = cell(x0, p.1, x1, p.3)
             return rrect(c.0, c.1, c.2, c.3, RES)
