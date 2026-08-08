@@ -126,7 +126,7 @@ func shade(_ mass: [[Int]]) -> [[Ink]] {
     return out
 }
 
-func buildBase(rightArm: Bool = true) -> [[Ink]] {
+func buildBase() -> [[Ink]] {
     let R = RES
     // The head is two thirds of the pet; every part below it is deliberately
     // small. Rows 8-13 span the full grid — that mid-bulge is what keeps the
@@ -143,11 +143,10 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
         rrect(11 * R, 31 * R, 15 * R - 1, GH - 1, R),
         rrect(17 * R, 31 * R, 21 * R - 1, GH - 1, R),
         rrect(7 * R, 25 * R, 10 * R - 1, 30 * R - 1, R),
-    ] + (rightArm ? [
-        // Left out when the wave replaces it. Union order does not matter — the
-        // parts are merged into one mask before anything is shaded.
+        // Union order does not matter — the parts are merged into one mask
+        // before anything is shaded.
         rrect(22 * R, 25 * R, 25 * R - 1, 30 * R - 1, R),
-    ] : [])
+    ]
 
     var out = shade(merge(parts))
 
@@ -155,7 +154,7 @@ func buildBase(rightArm: Bool = true) -> [[Ink]] {
     // single mass there and derives no seam. Painted, or the arms melt in.
     for y in (25 * R)..<(30 * R) {
         if out[y][10 * R] == .body { out[y][10 * R] = .shade }
-        if rightArm && out[y][22 * R - 1] == .body { out[y][22 * R - 1] = .shade }
+        if out[y][22 * R - 1] == .body { out[y][22 * R - 1] = .shade }
     }
 
     // Screen: casing ring, then glass. Stamped after shade() so the face is a
@@ -478,36 +477,6 @@ func useBuiltIn(root: URL) throws {
 
 let base = buildBase()
 
-// The wave is the only animation that moves a limb instead of stamping extra
-// pixels onto a finished sprite, so it cannot be a rect function the way the
-// tear and the twinkle are. The raised arm is built as its own mass and put
-// through the same shading, which gives it an outline of its own; unioning it
-// into the body the way the resting nub is would merge it into a head that
-// spans the full grid at its widest and leave a lump instead of a limb.
-//
-// The elbow is fixed and only the forearm pivots, two design cells either way:
-// 6 points at RES 3, against a bounce that already reads at 4. There is nowhere
-// above the shoulder for the arm to go that is not head, so it rises over the
-// shell and brushes the corner of the glass rather than clearing the face.
-// Consecutive rects must overlap by two design cells in x, or the rrect corner
-// clips sever the weld and the arm floats free.
-func waveArm(_ dx: Int) -> [[Int]] {
-    merge([(22, 23, 24, 28), (21, 18, 25, 24), (21 + dx, 10, 24 + dx, 20)]
-        .map { s in
-            let c = cell(s.0, s.1, s.2, s.3)
-            return rrect(c.0, c.1, c.2, c.3, RES)
-        })
-}
-
-// One finished grid per swing, built once: the pose is a pure function of the
-// phase, so nothing here has to be recomputed per frame.
-let waveBase: [[[Ink]]] = [-2, 2].map { dx in
-    var g = buildBase(rightArm: false)
-    let arm = shade(waveArm(dx))
-    for y in 0..<GH { for x in 0..<GW where arm[y][x] != .none { g[y][x] = arm[y][x] } }
-    return g
-}
-
 // The rects the built-in pet stamps over `base`. Kept as data rather than
 // draw calls so --export emits exactly the art the app renders.
 // Coordinates stay in the original 32x33 design space; cell() expands them and
@@ -684,7 +653,6 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
-    var waveUntil = -1
 
     override var isFlipped: Bool { true }
 
@@ -695,10 +663,6 @@ final class PetView: NSView {
     // `tick` parked below the deadline forever and the pose stuck for the life
     // of the process. Both ends have to check.
     var startled: Bool { custom == nil && motionOK && tick < startledUntil }
-    // Same deadline shape, and built-in only for the same reason the overlays
-    // are: a manifest carries pixels, so a custom pet has no arm the renderer
-    // knows how to raise.
-    var waving: Bool { custom == nil && motionOK && tick < waveUntil }
 
     // Hovering the pet startles it. The tracking area is rebuilt on resize
     // because installing a custom pet changes the window's bounds.
@@ -777,7 +741,6 @@ final class PetView: NSView {
         let cursorCells: Int
         let tearRow: Int?
         let sparkleLeft: Bool
-        let wavePhase: Int?
         let spriteGen: Int
     }
 
@@ -852,18 +815,14 @@ final class PetView: NSView {
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
         let blink = mood == .waiting && custom == nil && motionOK && tick % 80 < 2
-        // Encore: a wave burst every ~15s across done's 60s TTL, pure modulo
-        // so a frozen tick lands on a valid frame.
-        let encore = mood == .done && custom == nil && motionOK && tick % 300 < 30
-        // Five clocks, five periods — wave /5, twinkle /6, beat %60, blink %80,
-        // encore %300 — deliberately share none, so overlapping animations
-        // read as five mechanisms, not one.
-        let wave = (waving || encore) ? (tick / 5) % 2 : nil
+        // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
+        // blink %80 — deliberately share none, so overlapping animations read
+        // as three mechanisms, not one.
 
         return Pose(mood: mood, off: off * u, dx: dx * u, gazeY: gy * u,
                     startled: st, peeking: peek, blinking: blink,
                     cursorCells: cursor, tearRow: tear,
-                    sparkleLeft: (tick / 6) % 2 == 0, wavePhase: wave,
+                    sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen)
     }
 
@@ -889,7 +848,7 @@ final class PetView: NSView {
             return
         }
 
-        let grid = p.wavePhase.map { waveBase[$0] } ?? base
+        let grid = base
         for y in 0..<GH {
             for x in 0..<GW {
                 let ink = grid[y][x]
@@ -1674,7 +1633,6 @@ final class Controller: NSObject, NSWindowDelegate {
                 // way the reminder path below does.
                 if (becameDone || entered.contains(.done)) && next == .done && view.motionOK {
                     view.hopUntil = view.tick + 12
-                    view.waveUntil = view.tick + 30
                 }
                 // Reminders and tuck-wake follow per-input events, not the
                 // (possibly masked) display transition.

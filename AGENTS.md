@@ -99,17 +99,19 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   there is nowhere above the shoulder for an arm to go that is not head.
   `buildBase()` merges its parts into one mask and `shade()` then derives
   every ink from neighbour tests over that mask, so an arm unioned in at head
-  height stops being an arm and becomes a lump on the side of the head. The wave
-  builds its arm as a separate mass, runs the same `shade()` over it and stamps
-  the result on top — that is what gives it an outline of its own and lets it
-  rise over the shell. Both swing phases must end the hand on the dark glass:
-  a coral arm over the coral shell is invisible, and the forearm has to keep a
-  two-design-cell x-overlap with the elbow or the rrect corner clips sever it.
-  The resting nubs have the inverse problem — they meet the torso along a
-  straight column, `shade()` derives no seam there, and the crease is painted.
-  `buildBase(rightArm: false)` drops the resting nub so the pet does not end
-  up with three. The wave's swing is deliberately not on the twinkle's clock:
-  two extras sharing one period read as one mechanism, not two.
+  height stops being an arm and becomes a lump on the side of the head — any
+  raised-arm animation has to build its arm as a separate mass, run the same
+  `shade()` over it, and stamp the result on top, which is what gives it an
+  outline of its own instead of melting into the shell. The wave was the
+  first attempt at this and was retired in 1.0.1: its elbow was anchored at
+  hip height, where the resting arm nub sits, so the raised arm spanned
+  hip-to-glass with zero transition frames and read as a creature suddenly
+  extending a limb, not waving one. It returns in 1.1 built on the
+  silhouette rework's real shoulders — the overlay rule above is exactly
+  what that rebuild needs; the retired wave's operational details (which
+  frames end on the dark glass, the elbow's overlap margin, the parameter
+  that dropped the resting nub) do not carry forward, since a new shoulder
+  is new geometry from scratch.
 - **`Ink.errorX` exists for exactly one thing: error's X.** It is not a
   reuse of `.blush` or `.shade` — error's cross needed its own hex once the
   palette split face inks apart, and it is the one face ink that is not
