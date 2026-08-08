@@ -77,7 +77,7 @@ func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
 // ink, keeping the face reading as one lit tube, except catchlights' and
 // sparkles' ivory `.glyph` and `.errorX`, the one non-amber face ink (error's
 // X).
-enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush, errorX }
+enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, eye, glyph, errorX }
 
 let palette: [Ink: NSColor] = [
     .outline:  NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1),
@@ -86,10 +86,8 @@ let palette: [Ink: NSColor] = [
     .light:    NSColor(srgbRed: 0.918, green: 0.635, blue: 0.525, alpha: 1),
     .casing:   NSColor(srgbRed: 0.329, green: 0.216, blue: 0.165, alpha: 1),
     .screen:   NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1),
-    .scanline: NSColor(srgbRed: 0.271, green: 0.184, blue: 0.137, alpha: 1),
     .eye:      NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1),
     .glyph:    NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1),
-    .blush:    NSColor(srgbRed: 1.000, green: 0.616, blue: 0.690, alpha: 1),
     .errorX:   NSColor(srgbRed: 0.969, green: 0.561, blue: 0.561, alpha: 1),
 ]
 
@@ -548,9 +546,11 @@ func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool,
 
 // Startle: both eyes blown wide, overriding whatever the mood was drawing.
 // "Wide" is relative to the moods, so this is re-measured whenever they move:
-// nine cells across beats waiting's seven-wide octagon, and the pupil shrinks
-// rather than grows because a pinprick in a large eye is what reads as
-// startled. Carries no gaze offset, so it may use the glass to its edges.
+// its widest row ties waiting's seven-wide octagon, but stands five rows tall
+// where waiting's band is three — height, not width, is what out-sizes it.
+// The pupil shrinks rather than grows because a pinprick in a large eye is
+// what reads as startled. Carries no gaze offset, so it may use the glass to
+// its edges.
 func startledRects() -> [(Ink, Int, Int, Int, Int)] {
     [r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 11), r(.eye, 8, 12, 12, 12),
      r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 11), r(.eye, 19, 12, 23, 12),
@@ -589,8 +589,8 @@ func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
 // whole-body shift.
 func exportBuiltin() -> String {
     let key: [Ink: Character] = [.outline: "o", .shade: "s", .body: "b", .light: "l",
-                                 .casing: "k", .screen: "c", .scanline: "m",
-                                 .eye: "e", .glyph: "g", .blush: "r", .errorX: "x"]
+                                 .casing: "k", .screen: "c",
+                                 .eye: "e", .glyph: "g", .errorX: "x"]
     func hex(_ c: NSColor) -> String {
         String(format: "#%02x%02x%02x",
                Int((c.redComponent * 255).rounded()),
