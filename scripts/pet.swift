@@ -52,10 +52,11 @@ func rrect(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ r: Int) -> [[Int]] {
 // 1px grain every other rounded edge in the art already has. A lathe profile
 // rather than unioned rrects because a continuous bulge has no 45-degree
 // corner an rrect cut could produce.
-func lathe(_ profile: [(x0: Int, x1: Int)]) -> [[Int]] {
+func lathe(_ profile: [(x0: Int, x1: Int)], from y0: Int = 0) -> [[Int]] {
     var t = blank()
-    for y in 0..<min(GH, profile.count * RES) {
-        let d = y / RES, f = y % RES
+    let top = y0 * RES
+    for y in top..<min(GH, top + profile.count * RES) {
+        let d = (y - top) / RES, f = (y - top) % RES
         let cur = profile[d]
         let nxt = d + 1 < profile.count ? profile[d + 1] : cur
         let x0 = cur.x0 * (RES - f) + nxt.x0 * f
@@ -127,72 +128,55 @@ func shade(_ mass: [[Int]]) -> [[Ink]] {
 }
 
 func buildBase() -> [[Ink]] {
-    let R = RES
-    // The head is two thirds of the pet; every part below it is deliberately
-    // small. Rows 8-13 span the full grid — that mid-bulge is what keeps the
-    // shell reading as a curved tube rather than a box with cut corners.
-    let shell = lathe([(9, 22), (6, 25), (4, 27), (3, 28), (2, 29),
-                       (1, 30), (1, 30), (1, 30),
-                       (0, 31), (0, 31), (0, 31), (0, 31), (0, 31), (0, 31),
-                       (1, 30), (1, 30), (1, 30),
-                       (2, 29), (3, 28), (4, 27), (6, 25), (9, 22)])
-    let parts = [
-        shell,
-        rrect(10 * R, 22 * R, 22 * R - 1, 31 * R - 1, R),
-        // Feet are pebbles under the torso, not legs beside it.
-        rrect(11 * R, 31 * R, 15 * R - 1, GH - 1, R),
-        rrect(17 * R, 31 * R, 21 * R - 1, GH - 1, R),
-        rrect(7 * R, 25 * R, 10 * R - 1, 30 * R - 1, R),
-        // Union order does not matter — the parts are merged into one mask
-        // before anything is shaded.
-        rrect(22 * R, 25 * R, 25 * R - 1, 30 * R - 1, R),
-    ]
+    // Head, then a lathed torso rather than a rect: the waist at rows 18-19
+    // is what separates the head from the body, and a curve derived the same
+    // way the head's is will not read as a bolted-on box.
+    let shell = lathe([(10, 21), (7, 24), (5, 26), (4, 27), (3, 28),
+                       (2, 29), (2, 29), (2, 29), (2, 29), (2, 29),
+                       (2, 29), (2, 29), (2, 29), (2, 29), (2, 29),
+                       (3, 28), (4, 27), (6, 25)])
+    let torso = lathe([(10, 21), (8, 23),
+                       (7, 24), (7, 24), (7, 24), (7, 24),
+                       (7, 24), (7, 24), (7, 24), (7, 24),
+                       (8, 23)], from: 18)
+    // Legs are square on purpose — rounding 5x4 pebbles costs them their
+    // planted look, and at this size the outline is most of the leg.
+    let legs = [(9, 29, 13, 32), (18, 29, 22, 32)].map { l -> [[Int]] in
+        let c = cell(l.0, l.1, l.2, l.3)
+        return rrect(c.0, c.1, c.2, c.3, 0)
+    }
 
-    var out = shade(merge(parts))
+    var out = shade(merge([shell, torso] + legs))
 
-    // The arm nubs touch the torso along a straight column, so shade() sees a
-    // single mass there and derives no seam. Painted, or the arms melt in.
-    for y in (25 * R)..<(30 * R) {
-        if out[y][10 * R] == .body { out[y][10 * R] = .shade }
-        if out[y][22 * R - 1] == .body { out[y][22 * R - 1] = .shade }
+    // An arm unioned into the body has no seam along the straight join, and
+    // shade() derives none — the 1.0 answer was a painted crease, which is
+    // one pixel wide at shipping size and lets the arm melt into the torso on
+    // a light desktop. Each arm is its own mask, shaded on its own and
+    // stamped over the base, which gives it a real outline for free.
+    for mirrored in [false, true] {
+        let pills = [(5, 19, 9, 23), (3, 22, 7, 27)].map { p -> [[Int]] in
+            let (x0, x1) = mirrored ? (31 - p.2, 31 - p.0) : (p.0, p.2)
+            let c = cell(x0, p.1, x1, p.3)
+            return rrect(c.0, c.1, c.2, c.3, RES)
+        }
+        let arm = shade(merge(pills))
+        for y in 0..<GH { for x in 0..<GW where arm[y][x] != .none { out[y][x] = arm[y][x] } }
     }
 
     // Screen: casing ring, then glass. Stamped after shade() so the face is a
-    // window into the tube, not a shaded lump on it.
-    let ca = rrect(4 * R, 3 * R, 28 * R - 1, 16 * R - 1, 2 * R)
-    for y in 0..<GH { for x in 0..<GW where ca[y][x] == 1 { out[y][x] = .casing } }
-    let gl = rrect(5 * R, 4 * R, 27 * R - 1, 15 * R - 1, 2 * R)
-    for y in 0..<GH { for x in 0..<GW where gl[y][x] == 1 { out[y][x] = .screen } }
-
-    // Sparse scanlines fill the glass without shouting over the eyes.
-    for row in [6, 13] {
-        let c = cell(6, row, 25, row)
-        for y in c.1...c.3 { for x in c.0...c.2 where out[y][x] == .screen { out[y][x] = .scanline } }
+    // window into the shell, not a shaded lump on it. Nothing else goes on the
+    // glass — 1.1 retired the scanlines and the corner glint, so the eyes are
+    // the whole face.
+    for (rect, ink) in [((5, 4, 26, 14), Ink.casing), ((6, 5, 25, 13), .screen)] {
+        let c = cell(rect.0, rect.1, rect.2, rect.3)
+        let m = rrect(c.0, c.1, c.2, c.3, 2 * RES)
+        for y in 0..<GH { for x in 0..<GW where m[y][x] == 1 { out[y][x] = ink } }
     }
 
-    // Glass glint, top-left, agreeing with the light band's direction.
-    for (x0, y0, x1, y1) in [(7, 4, 9, 4), (6, 5, 6, 5)] {
-        let c = cell(x0, y0, x1, y1)
-        for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = .glyph } }
-    }
-
-    // Blush tucked under the visor's lower corners, domed by the dropped
-    // outer top cell — on the flat cheek, never the derived outline.
-    for (x0, y0, x1, y1) in [(8, 17, 9, 17), (7, 18, 9, 18),
-                             (22, 17, 23, 17), (22, 18, 24, 18)] {
-        let c = cell(x0, y0, x1, y1)
-        for y in c.1...c.3 {
-            for x in c.0...c.2 where [.body, .shade, .light].contains(out[y][x]) {
-                out[y][x] = .blush
-            }
-        }
-    }
-
-    // Chest badge: the Claude spark, cream with an amber heart. The terminal
-    // prompt itself lives on the screen and only lights up while running.
-    for (ink, x0, y0, x1, y1) in [(Ink.glyph, 16, 25, 16, 25), (.glyph, 15, 26, 15, 26),
-                                  (.glyph, 17, 26, 17, 26), (.glyph, 16, 27, 16, 27),
-                                  (.eye, 16, 26, 16, 26)] {
+    // Chest badge: the Claude spark, cream with an amber heart.
+    for (ink, x0, y0, x1, y1) in [(Ink.glyph, 16, 22, 16, 22), (.glyph, 15, 23, 15, 23),
+                                  (.glyph, 17, 23, 17, 23), (.glyph, 16, 24, 16, 24),
+                                  (.eye, 16, 23, 16, 23)] {
         let c = cell(x0, y0, x1, y1)
         for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = ink } }
     }
