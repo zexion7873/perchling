@@ -60,7 +60,7 @@ launch — a few seconds, once.
 |:-:|-------|---------|--------------|
 | ⌨️ | **running** | you submit a prompt, tools execute | bounces, narrows its eyes, types a line out on its screen |
 | 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, twitching |
-| 🎉 | **done** | turn or agent completed | hops under a twinkle, waves, then settles |
+| 🎉 | **done** | turn or agent completed | hops under a twinkle, eyes lift into a happy arch |
 | 😢 | **error** | an API failure ended the turn | droops, and a tear rolls down its screen |
 | 💤 | **idle** | nothing happening | breathes slowly, dozes, peeks now and then |
 
@@ -164,9 +164,8 @@ live — which is exactly what the menu's **Built-in perchling** row does.
 
 > [!WARNING]
 > A manifest carries pixels, not behaviour. An exported pet loses the default's
-> cursor-following pupils, its doze-and-peek cycle, its typing animation and
-> its wave, and its sideways twitch moves the whole body rather than just the
-> eyes.
+> cursor-following pupils, its doze-and-peek cycle, and its typing animation,
+> and its sideways twitch moves the whole body rather than just the eyes.
 
 ---
 
