@@ -110,6 +110,13 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `buildBase(rightArm: false)` drops the resting nub so the pet does not end
   up with three. The wave's swing is deliberately not on the twinkle's clock:
   two extras sharing one period read as one mechanism, not two.
+- **`Ink.errorX` exists for exactly one thing: error's X.** It is not a
+  reuse of `.blush` or `.shade` — error's cross needed its own hex once the
+  palette split face inks apart, and it is the one face ink that is not
+  amber. `tools/moods-gif.swift` keeps its own literal `inks` array mirroring
+  the enum's cases, so any addition, removal, or reorder in `Ink` has to be
+  mirrored there too, or the GIF tool's ink-count assertion fails at regen
+  time instead of at compile time.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
