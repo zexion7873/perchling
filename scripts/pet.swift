@@ -74,19 +74,20 @@ func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
 // .screen is the glass the amber eyes draw on, .casing the darker ring around
 // it. .eye is the amber phosphor — sleepy arcs, open eyes and the typed line
 // are all the same ink, which is what keeps the face reading as one lit tube.
-enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush }
+enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, scanline, eye, glyph, blush, errorX }
 
 let palette: [Ink: NSColor] = [
-    .outline:  NSColor(srgbRed: 0.541, green: 0.271, blue: 0.188, alpha: 1),
-    .shade:    NSColor(srgbRed: 0.788, green: 0.431, blue: 0.302, alpha: 1),
-    .body:     NSColor(srgbRed: 0.898, green: 0.541, blue: 0.400, alpha: 1),
-    .light:    NSColor(srgbRed: 0.965, green: 0.706, blue: 0.573, alpha: 1),
-    .casing:   NSColor(srgbRed: 0.227, green: 0.141, blue: 0.110, alpha: 1),
-    .screen:   NSColor(srgbRed: 0.141, green: 0.094, blue: 0.075, alpha: 1),
-    .scanline: NSColor(srgbRed: 0.180, green: 0.125, blue: 0.102, alpha: 1),
+    .outline:  NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1),
+    .shade:    NSColor(srgbRed: 0.745, green: 0.349, blue: 0.216, alpha: 1),
+    .body:     NSColor(srgbRed: 0.855, green: 0.467, blue: 0.337, alpha: 1),
+    .light:    NSColor(srgbRed: 0.918, green: 0.635, blue: 0.525, alpha: 1),
+    .casing:   NSColor(srgbRed: 0.329, green: 0.216, blue: 0.165, alpha: 1),
+    .screen:   NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1),
+    .scanline: NSColor(srgbRed: 0.271, green: 0.184, blue: 0.137, alpha: 1),
     .eye:      NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1),
     .glyph:    NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1),
-    .blush:    NSColor(srgbRed: 0.969, green: 0.561, blue: 0.561, alpha: 1),
+    .blush:    NSColor(srgbRed: 1.000, green: 0.616, blue: 0.690, alpha: 1),
+    .errorX:   NSColor(srgbRed: 0.969, green: 0.561, blue: 0.561, alpha: 1),
 ]
 
 func merge(_ parts: [[[Int]]]) -> [[Int]] {
@@ -618,7 +619,7 @@ func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
 func exportBuiltin() -> String {
     let key: [Ink: Character] = [.outline: "o", .shade: "s", .body: "b", .light: "l",
                                  .casing: "k", .screen: "c", .scanline: "m",
-                                 .eye: "e", .glyph: "g", .blush: "r"]
+                                 .eye: "e", .glyph: "g", .blush: "r", .errorX: "x"]
     func hex(_ c: NSColor) -> String {
         String(format: "#%02x%02x%02x",
                Int((c.redComponent * 255).rounded()),

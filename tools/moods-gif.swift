@@ -154,7 +154,7 @@ if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
 }
 
 let inks: [Ink] = [.outline, .shade, .body, .light, .casing, .screen, .scanline,
-                   .eye, .glyph, .blush]
+                   .eye, .glyph, .blush, .errorX]
 
 let canvas = canvasSize(GW, GH, SCALE)
 let cw = Int(canvas.width), chh = Int(canvas.height)
