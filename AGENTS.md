@@ -244,17 +244,41 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   pose that cannot be drawn, and `custom` can change under a running process.
   A single drawn `hover` grid was built and removed: the reaction Codex plays
   on hover is its five-frame `jumping` row, so a one-frame version is the wrong
-  shape, and the manifest has no notion of a frame sequence to hold the right
-  one. Synthesising it by opening the declared eye box was also built and
-  removed — it keeps the pose's own lids and merely widens them, where the
-  built-in swaps the eye SHAPE outright.
+  shape. That gap is what `sequences.hover` fills — a custom pet gets a
+  multi-frame burst of its own, armed in the same `mouseEntered`, gated on the
+  same `motionOK`, and expiring by elapsing rather than on `mouseExited`, so
+  neither kind of pet holds a hover state. A pet that ships no hover sequence
+  still has no hover reaction at all. Synthesising it by opening the declared
+  eye box was also built and removed — it keeps the pose's own lids and merely
+  widens them, where the built-in swaps the eye SHAPE outright.
+- **A playing sequence owns the body, and the shear is the one thing it does
+  not take.** While a sequence plays, `pose()` pins the bounce to its resting
+  value and zeroes the twitch, the gaze and the blink: the frames carry their
+  own motion, so a bounce added on top double-counts a jump's lift, and the eye
+  box is declared against the MOOD frames — on a real pet `done` already lands
+  37.5% of it on the shell, and a lifted frame is worse. The lean stays,
+  because it is applied inside `fill()`, which every blit including the
+  sequence's already passes through, and because it is the only thing telling
+  the viewer which way the pet is being dragged: a manifest ships ONE
+  direction-agnostic `drag` sequence, deliberately. Render-time mirroring is
+  not the missing half — the offline conversion pipeline restamps a face on
+  every frame and the renderer does not, so a mirror flips the face, the chest
+  mark and anything else asymmetric, and a manifest has no way to say which
+  pixels must not flip. Sequence frames also count toward `inkTop`, so a lifted
+  frame moves the chrome for every mood, permanently, not only while it plays.
 - **Anything added to the manifest goes at the TOP LEVEL, never inside
   `moods`.** The mood loop rejects any key that is not one of the five, so a
   new grid parked in `moods` makes the whole file unloadable on every older
   perchling — the pet falls back to the built-in and its row greys out in the
   Pets menu, with no error anywhere the user can see. Unknown top-level keys
   are ignored by every version. Found the hard way, in one afternoon, by a
-  single misplaced key.
+  single misplaced key. Inside `sequences` the rule INVERTS: an unrecognised
+  sequence name is ignored rather than rejected, so a later perchling adding a
+  third sequence does not make its manifests unloadable here — `--validate`
+  warns on stderr and the file still loads. `moods` rejects because a mistyped
+  mood is a mood that silently never shows; `sequences` ignores because a
+  mistyped sequence is a reaction that silently never plays, and only one of
+  those can take the whole file down with it.
 - **Gaze rides a different unit for each kind of pet.** The built-in measures
   it in bounce units, because its eye rects are in design cells; a manifest
   measures it in its own `eyes.range` pixels, because the box is the only

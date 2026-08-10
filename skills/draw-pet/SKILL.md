@@ -65,12 +65,34 @@ Rules the loader enforces:
   overrides the blink color, which is otherwise the brightest color occupying
   at least 3% of the box. `perchling --validate` prints the box it read and
   says `blink UNAVAILABLE` if nothing in the box is bright enough to close.
+- **sequences** (optional) gives the pet the two reactions that need several
+  frames on a clock:
+  `"sequences": { "hover": { "ms": 150, "frames": [ <grid>, <grid> ] } }`.
+  `hover` plays once when the cursor arrives and then stops — it does not hold
+  while the cursor stays, and there is no exit reaction. `drag` loops for as
+  long as the pet is held. Each frame is a grid exactly like a mood's: same
+  canvas size, same palette. `frames` takes 2–16 — one frame is a pose, not a
+  sequence. `ms` (optional, 50–1000, default 150) is per frame; the renderer
+  ticks every 50ms, so the number rounds to a multiple of 50 — write 120 and
+  you get 100, and `perchling --validate` prints what you actually got. Ship
+  either one without the other. Neither plays while macOS Reduce Motion is on.
+  Do not draw a left and a right `drag`: the lean every pet already gets is
+  what shows which way it is being pulled.
+- A sequence frame that reaches higher than any mood raises the pet's ink line,
+  and the speech bubble and chip hang off that line — permanently, in every
+  mood, not just while the sequence plays. A big jump buys a reaction and costs
+  a few points of headroom all the time. `--validate` says when a sequence
+  moved it and by how much.
 - The app animates position itself (bounce, hop, droop, twitch) and reserves
   the canvas margin those need — draw poses and expressions, not motion, and
-  do not pad the grid with blank rows to make room.
-- The doze-and-peek cycle and the hover startle stay renderer-only: both cut
-  between two drawn eye shapes, and a manifest has one frame per mood to cut
-  between.
+  do not pad the grid with blank rows to make room. A playing sequence takes
+  the body over: the bounce, the twitch, the gaze and the blink all stand down
+  for its duration, because the frames carry their own motion.
+- The doze-and-peek cycle stays renderer-only: it cuts between two drawn eye
+  shapes, and a manifest has one frame per mood to cut between. The hover
+  startle was the same shape, which is what `sequences.hover` exists to fix —
+  but only for pets that ship the frames. A pet with no hover sequence has no
+  hover reaction at all.
 
 ## Workflow
 
