@@ -16,6 +16,15 @@ let SCALE: CGFloat = 1
 // the timer cannot be allowed to drift apart.
 let TICK_MS = 50
 
+// Points of sustained sideways travel before a mirrored sequence changes which
+// way it faces. Small because it is a DISTANCE, not a speed: jitter cancels
+// itself out of the accumulator, so this only has to exceed the wobble of a
+// hand trying to hold still. Turning around costs this much plus whatever
+// residue the previous direction left behind, so up to twice it — which reads
+// as the creature having to shed its momentum, and is the whole reason the
+// accumulator is not cleared on every event.
+let FACING_TRAVEL: CGFloat = 4
+
 func bounceUnit(_ scale: CGFloat) -> Int { max(1, Int((4.0 / scale).rounded())) }
 func headroom(_ scale: CGFloat) -> Int { 3 * bounceUnit(scale) }
 // The twitch moves a custom pet's whole sprite sideways, so the canvas needs
@@ -894,6 +903,19 @@ final class PetView: NSView {
     // to zero the moment the hand stops moving, so a pause mid-drag would spin
     // the creature back to facing right.
     var dragFacingLeft = false
+    // Signed distance travelled since the facing last changed. The facing has
+    // to follow DISTANCE, not speed: `mouseDragged` fires per mouse event, so a
+    // per-event threshold is really a velocity gate — at 60Hz, four points in
+    // one event is 240 points a second, and a gentle drag never crosses it no
+    // matter how far it goes. Accumulating fixes that and still cancels jitter,
+    // because a wobble contributes both signs.
+    private var facingTravel: CGFloat = 0
+
+    func updateFacing(_ dx: CGFloat) {
+        facingTravel += dx
+        if facingTravel >= FACING_TRAVEL { dragFacingLeft = false; facingTravel = 0 }
+        else if facingTravel <= -FACING_TRAVEL { dragFacingLeft = true; facingTravel = 0 }
+    }
     // Drag inertia, in sprite pixels of top-row offset. A lean is a transform
     // of whatever pixels are already there, which is why it is the one drag
     // reaction a manifest can have without shipping a pose for it — the Codex
@@ -1286,11 +1308,7 @@ final class PetView: NSView {
         if motionOK, let last = lastDrag {
             let cap = CGFloat(sidePad(scale))
             lean = max(-cap, min(cap, lean * 0.5 - (p.x - last.x) * 0.5))
-            // Latched with a deadzone, the same four points Codex uses. A facing
-            // that follows every jitter flickers, and one that resets on a pause
-            // spins the creature round while the hand is simply still.
-            if p.x - last.x >= 4 { dragFacingLeft = false }
-            else if p.x - last.x <= -4 { dragFacingLeft = true }
+            updateFacing(p.x - last.x)
         }
         lastDrag = p
         w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))

@@ -275,9 +275,16 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   render-time mirroring was rejected outright. Now the author says. Two
   consequences: `mirror` on `hover` is meaningless (a one-shot burst has no
   direction of travel) and `--validate` warns rather than failing, and the
-  facing is a LATCHED value with a four-point deadzone, never derived from
-  `lean` — the lean decays to zero the moment the hand pauses, which would spin
-  the creature round mid-drag.
+  facing is latched off **accumulated signed travel**, never off a single
+  `mouseDragged` delta and never off `lean`. Both alternatives were written and
+  are wrong in opposite ways: a per-event threshold is a velocity gate, because
+  mouse events arrive at 60Hz or better and four points inside one of them is
+  240 points a second — a gentle drag never crosses it however far it goes —
+  while `lean` decays to zero the moment the hand pauses and would spin the
+  creature round mid-drag. An accumulator has neither failure: jitter cancels
+  because a wobble contributes both signs, and turning around costs
+  `FACING_TRAVEL` plus whatever residue the previous direction left, up to twice
+  it, which reads as shedding momentum.
 - **Anything added to the manifest goes at the TOP LEVEL, never inside
   `moods`.** The mood loop rejects any key that is not one of the five, so a
   new grid parked in `moods` makes the whole file unloadable on every older
