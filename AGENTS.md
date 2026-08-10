@@ -372,6 +372,16 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
+- **Only `cmd_up` launches the pet, and of the hook events only `SessionStart`
+  reaches it.** Everything else — `UserPromptSubmit`, `PostToolBatch`, `Stop`,
+  `StopFailure`, `PreToolUse`, `Notification` — runs `state.sh`, which writes
+  the global state file and the session refcount and starts nothing. So a pet
+  killed mid-session by `pet.sh stop`, by the menu's Quit, or by a crash does
+  NOT come back on the next prompt: it comes back when a new session starts, or
+  from `pet.sh up`, `pet.sh enable` or `pet.sh wake`, each of which calls
+  `cmd_up` when nothing is running. This is easy to get backwards — and was, in
+  advice given to the user — because the next prompt visibly does re-stamp
+  `sessions/<sid>`, so the refcount returns without the process.
 - **Session files are mood, refcount, and label.** Line one is the mood; an
   optional line two is that session's `cwd`, which the tray rows show and the
   fold ignores. `Mood.parse` reads line one, so the one-line form stays valid
