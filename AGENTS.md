@@ -170,10 +170,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   belongs to the bubble needs its own window, the way the chip does — and the
   chip is placed to clear the bubble's rect entirely, so neither draws over
   the other.
-- **A manifest carries pixels, not behavior.** Custom pets get one static frame
-  per mood. Cursor-following pupils, the doze-and-peek cycle, and any tick-driven animation are
-  renderer-only and cannot be expressed in `pet.json`; anything new in that
-  family widens the gap between the built-in pet and custom ones.
+- **The startle is built-in-only, and it is a timed burst rather than a hover
+  state.** `mouseEntered` arms `startledUntil = tick + 16` and there is no
+  `mouseExited`: it reverts after 0.8s whether or not the cursor is still on
+  the pet. Both ends check `custom == nil` — the deadline is never armed for a
+  pose that cannot be drawn, and `custom` can change under a running process.
+  A single drawn `hover` grid was built and removed: the reaction Codex plays
+  on hover is its five-frame `jumping` row, so a one-frame version is the wrong
+  shape, and the manifest has no notion of a frame sequence to hold the right
+  one. Synthesising it by opening the declared eye box was also built and
+  removed — it keeps the pose's own lids and merely widens them, where the
+  built-in swaps the eye SHAPE outright.
 - **The active pet is a symlink, and its target is the only record of which
   pet is active.** There is no config file and must not be one: a "selected
   pet" setting would be a second source of truth that can disagree with the

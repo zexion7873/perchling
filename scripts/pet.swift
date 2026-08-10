@@ -653,8 +653,11 @@ final class PetView: NSView {
     // of the process. Both ends have to check.
     var startled: Bool { custom == nil && motionOK && tick < startledUntil }
 
-    // Hovering the pet startles it. The tracking area is rebuilt on resize
-    // because installing a custom pet changes the window's bounds.
+    // Hovering the BUILT-IN pet startles it. The startle swaps the eye shape,
+    // and a manifest has one frame per mood with no second frame to cut to, so
+    // a custom pet cannot have the reaction at all. The tracking area is still
+    // built for it — it is rebuilt on resize anyway, because installing a
+    // custom pet changes the window's bounds.
     private var tracking: NSTrackingArea?
 
     override func updateTrackingAreas() {
@@ -667,7 +670,12 @@ final class PetView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        if motionOK { startledUntil = tick + 16 }
+        // Same two conditions `startled` reads, so the deadline is never armed
+        // for a pose that cannot be drawn. `custom` can change under a running
+        // process, which is the reason to check it here as well as there: a
+        // pet swapped mid-hover would otherwise inherit a deadline armed for
+        // the creature before it.
+        if custom == nil && motionOK { startledUntil = tick + 16 }
     }
 
     // Pupils drift toward the cursor (waiting, and idle's open-eyed peeks) —
