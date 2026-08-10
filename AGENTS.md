@@ -170,6 +170,24 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   belongs to the bubble needs its own window, the way the chip does — and the
   chip is placed to clear the bubble's rect entirely, so neither draws over
   the other.
+- **A manifest carries pixels, and the one thing it can say about them is
+  where the eyes are.** Custom pets get one static frame per mood, so anything
+  that cuts between two eye SHAPES — the doze-and-peek cycle, the startle — is
+  renderer-only and stays that way; a manifest has no second frame to cut to.
+  The optional `eyes` block (`box`, `socket`, and optional `range`/`lid`) is
+  the exception, and it buys two things: gaze, by shifting the box's contents
+  and refilling the vacated pixels with `socket`, and blink, from a frame
+  synthesised once at load. Everything about that block exists because
+  the eyes cannot be FOUND: on a soft-shaded sprite the brightest inks inside
+  the screen are the bezel's own rim highlights, so every detector returns a
+  second copy of the bezel and shifting it smears the frame. Two consequences
+  worth not rediscovering. The box's border has to sit on flat colour, because
+  a shift rewrites the whole box and a border crossing a gradient leaves a
+  seam — verify with a difference map against the unshifted frame, where a
+  correct shift changes exactly `box` pixels and nothing outside it. And
+  `blink` is not guaranteed by declaring a box: synthesis needs pixels inside
+  it brighter than `socket`, and `--validate` says `blink UNAVAILABLE` rather
+  than failing when there are none.
 - **The startle is built-in-only, and it is a timed burst rather than a hover
   state.** `mouseEntered` arms `startledUntil = tick + 16` and there is no
   `mouseExited`: it reverts after 0.8s whether or not the cursor is still on
@@ -181,6 +199,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   one. Synthesising it by opening the declared eye box was also built and
   removed — it keeps the pose's own lids and merely widens them, where the
   built-in swaps the eye SHAPE outright.
+- **Anything added to the manifest goes at the TOP LEVEL, never inside
+  `moods`.** The mood loop rejects any key that is not one of the five, so a
+  new grid parked in `moods` makes the whole file unloadable on every older
+  perchling — the pet falls back to the built-in and its row greys out in the
+  Pets menu, with no error anywhere the user can see. Unknown top-level keys
+  are ignored by every version. Found the hard way, in one afternoon, by a
+  single misplaced key.
+- **Gaze rides a different unit for each kind of pet.** The built-in measures
+  it in bounce units, because its eye rects are in design cells; a manifest
+  measures it in its own `eyes.range` pixels, because the box is the only
+  thing that knows how much headroom the eyes have. `Pose.dx` moves the whole
+  sprite, so the eye offset needs its own `eyeDX`/`eyeDY` — reusing `dx` drags
+  the body along with the glance. `gazeVector()` returns a DIRECTION, one of
+  sixteen sectors with a deadzone dead ahead; callers scale x and y by
+  different amounts because the glass is wider than it is tall. Sixteen
+  survives the rounding even at a two-pixel radius — all sixteen sectors land
+  on distinct integer offsets — so the resolution is not decorative.
 - **The active pet is a symlink, and its target is the only record of which
   pet is active.** There is no config file and must not be one: a "selected
   pet" setting would be a second source of truth that can disagree with the

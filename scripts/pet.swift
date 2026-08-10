@@ -223,14 +223,37 @@ struct PetError: Error, CustomStringConvertible {
     init(_ m: String) { description = m }
 }
 
+// A manifest's eyes are baked into its pixels, indistinguishable from the body,
+// which is why gaze and blink were built-in-only: the renderer knows where the
+// built-in's eyes are because they are rects in `eyeRects`, and knows nothing
+// about a manifest's. Finding them by colour does not work — on a soft-shaded
+// sprite the brightest inks inside the screen include the screen's own rim
+// highlights, so the "eyes" come out as a second copy of the bezel and shifting
+// them smears the frame. The author has to say. `socket` is the flat colour the
+// vacated pixels take, so the box has to sit inside a flat field.
+struct EyeBox {
+    let x0: Int, y0: Int, x1: Int, y1: Int
+    let socket: NSColor
+    let range: Int
+
+    func contains(_ x: Int, _ y: Int) -> Bool { x >= x0 && x <= x1 && y >= y0 && y <= y1 }
+}
+
 struct CustomPet {
     let name: String
     let width: Int
     let height: Int
     let scale: CGFloat
     let frames: [Mood: [[NSColor?]]]
+    let eyes: EyeBox?
+    let blinkFrame: [[NSColor?]]?
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
+}
+
+func srgbLuma(_ c: NSColor) -> CGFloat {
+    guard let s = c.usingColorSpace(.sRGB) else { return 0 }
+    return 0.2126 * s.redComponent + 0.7152 * s.greenComponent + 0.0722 * s.blueComponent
 }
 
 func parseHex(_ s: String) -> NSColor? {
@@ -244,6 +267,59 @@ func parseHex(_ s: String) -> NSColor? {
     return NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255,
                    green: CGFloat((v >> 8) & 0xff) / 255,
                    blue: CGFloat(v & 0xff) / 255, alpha: 1)
+}
+
+// The lid spans the lit runs, not the whole box: a box wide enough to gaze in
+// is wider than the eyes, and a bar across all of it reads as a letterbox
+// rather than a shut eye.
+func synthBlinkFrame(_ rows: [[Character]], _ pal: [Character: NSColor],
+                     _ e: EyeBox, _ socketCh: Character, _ lidCh: Character?) -> [[NSColor?]]? {
+    guard let socketColor = pal[socketCh] else { return nil }
+    let socketLuma = srgbLuma(socketColor)
+    var counts: [Character: Int] = [:]
+    for y in e.y0...e.y1 {
+        for x in e.x0...e.x1 where rows[y][x] != socketCh { counts[rows[y][x], default: 0] += 1 }
+    }
+    let area = (e.x1 - e.x0 + 1) * (e.y1 - e.y0 + 1)
+    // The 3% floor is what stops a single specular pixel winning: the very
+    // brightest ink inside a screen is usually one cell of catchlight, and a
+    // lid drawn in it comes out white instead of the eye's own colour.
+    let auto = counts.filter { $0.value * 100 >= area * 3 }
+        .max(by: { srgbLuma(pal[$0.key]!) < srgbLuma(pal[$1.key]!) })?.key
+    guard let lid = lidCh ?? auto, let lidColor = pal[lid] else { return nil }
+
+    func lit(_ x: Int, _ y: Int) -> Bool {
+        guard let c = pal[rows[y][x]] else { return false }
+        return srgbLuma(c) > socketLuma + 0.16
+    }
+    var cols: [Int] = []
+    for x in e.x0...e.x1 {
+        for y in e.y0...e.y1 where lit(x, y) { cols.append(x); break }
+    }
+    var lines: [Int] = []
+    for y in e.y0...e.y1 {
+        for x in e.x0...e.x1 where lit(x, y) { lines.append(y); break }
+    }
+    guard let first = cols.first, let top = lines.first, let bottom = lines.last else { return nil }
+    var runs: [(Int, Int)] = []
+    var start = first, prev = first
+    for x in cols.dropFirst() {
+        if x > prev + 2 { runs.append((start, prev)); start = x }
+        prev = x
+    }
+    runs.append((start, prev))
+
+    var out: [[NSColor?]] = rows.map { $0.map { ch in ch == "0" || ch == "." ? nil : pal[ch] } }
+    for y in e.y0...e.y1 {
+        for x in e.x0...e.x1 { out[y][x] = socketColor }
+    }
+    let mid = (top + bottom) / 2
+    for (a, b) in runs {
+        for y in mid...min(mid + 1, e.y1) {
+            for x in a...b { out[y][x] = lidColor }
+        }
+    }
+    return out
 }
 
 func loadCustomPet(_ url: URL) throws -> CustomPet {
@@ -310,8 +386,48 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         }
         scale = n
     }
+    var eyes: EyeBox?
+    var blinkFrame: [[NSColor?]]?
+    if let raw = top["eyes"] {
+        guard let spec = raw as? [String: Any] else {
+            throw PetError("\"eyes\" must be an object with \"box\" and \"socket\"")
+        }
+        guard let b = spec["box"] as? [Int], b.count == 4 else {
+            throw PetError("eyes.box must be [x, y, width, height] in pixels")
+        }
+        guard b[2] > 0, b[3] > 0, b[0] >= 0, b[1] >= 0,
+              b[0] + b[2] <= dims.w, b[1] + b[3] <= dims.h else {
+            throw PetError("eyes.box \(b[0]),\(b[1]) \(b[2])x\(b[3]) does not fit the \(dims.w)x\(dims.h) canvas")
+        }
+        guard let sk = spec["socket"] as? String, sk.count == 1,
+              let socketCh = sk.first, let socket = pal[socketCh] else {
+            throw PetError("eyes.socket must be a palette key — the flat color behind the eyes")
+        }
+        var range = 2
+        if let r = spec["range"] {
+            guard let n = r as? Int, (0...8).contains(n) else {
+                throw PetError("eyes.range must be an integer 0...8 (pixels of travel)")
+            }
+            range = n
+        }
+        var lidCh: Character?
+        if let l = spec["lid"] {
+            guard let s = l as? String, s.count == 1, let ch = s.first, pal[ch] != nil else {
+                throw PetError("eyes.lid must be a palette key")
+            }
+            lidCh = ch
+        }
+        let box = EyeBox(x0: b[0], y0: b[1], x1: b[0] + b[2] - 1, y1: b[1] + b[3] - 1,
+                         socket: socket, range: range)
+        eyes = box
+        // Blink is waiting's, so it is waiting's frame that gets a lid. A pet
+        // with no waiting frame falls back to idle the same way drawing does.
+        let src = (moodsRaw["waiting"] ?? moodsRaw["idle"]!).map(Array.init)
+        blinkFrame = synthBlinkFrame(src, pal, box, socketCh, lidCh)
+    }
     return CustomPet(name: (top["name"] as? String) ?? "custom",
-                     width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames)
+                     width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
+                     eyes: eyes, blinkFrame: blinkFrame)
 }
 
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
@@ -642,7 +758,6 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
-
     override var isFlipped: Bool { true }
 
     var motionOK: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -680,16 +795,25 @@ final class PetView: NSView {
 
     // Pupils drift toward the cursor (waiting, and idle's open-eyed peeks) —
     // the feature OpenAI built for Codex pets and left Statsig-gated off.
-    private func gaze() -> (Int, Int) {
+    //
+    // Sixteen sectors, which is the resolution their own atlas devotes two
+    // whole rows to. The three-value version this replaced could not tell a
+    // cursor above from one above-and-left, so half the screen produced the
+    // same two poses. The vector is a direction only — callers scale it, and
+    // they scale x and y differently because the glass is wider than it is
+    // tall and the eyes have about twice the sideways headroom.
+    private func gazeVector() -> (CGFloat, CGFloat) {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return (0, 0) }
         guard let w = window else { return (0, 0) }
         let m = NSEvent.mouseLocation
-        let dx = m.x - w.frame.midX
-        let dy = m.y - w.frame.midY
-        let gx = dx < -30 ? -1 : (dx > 30 ? 1 : 0)
+        let dx = m.x - w.frame.midX, dy = m.y - w.frame.midY
+        // Dead ahead is not a direction. Without this the eyes chase the
+        // sub-pixel jitter of a resting cursor and read as a nervous tic.
+        guard hypot(dx, dy) > 40 else { return (0, 0) }
+        let step = CGFloat.pi / 8
+        let a = (atan2(dy, dx) / step).rounded() * step
         // Screen coords are y-up, the grid is y-down: cursor above → pupils up.
-        let gy = dy > 80 ? -1 : (dy < -40 ? 1 : 0)
-        return (gx, gy)
+        return (cos(a), -sin(a))
     }
 
     // Proximity peek: approach wakes the pet before hover startles it.
@@ -735,6 +859,10 @@ final class PetView: NSView {
         let startled: Bool
         let peeking: Bool
         let blinking: Bool
+        // Custom pets only. `dx` moves the whole sprite, so the eye shift needs
+        // its own pair or a glance would drag the body with it.
+        let eyeDX: Int
+        let eyeDY: Int
         let tearRow: Int?
         let sparkleLeft: Bool
         let spriteGen: Int
@@ -769,7 +897,6 @@ final class PetView: NSView {
         let peek = mood == .idle && custom == nil && motionOK && (nearCursor() || tick % 132 < 16)
         var off = 2
         var dx = 0
-        var gy = 0
         // Gaze rides half the bounce unit, not the whole thing: the glass
         // gives waiting's eyes 6px of sideways headroom and 3px vertical, and
         // the twitch below already spends up to 4 of those 6 sideways on its
@@ -781,6 +908,11 @@ final class PetView: NSView {
         // stacked on top, so the full unit fits.
         var gazeDX = 0
         var gazeGY = 0
+        // A manifest declares one eye box, so its gaze is measured in that
+        // box's own pixels rather than in bounce units: the box is the only
+        // thing that knows how much headroom the eyes actually have.
+        var eyeDX = 0
+        var eyeDY = 0
         switch mood {
         case .running:
             off = 2 + (tick / 4) % 2
@@ -788,9 +920,13 @@ final class PetView: NSView {
         case .waiting:
             dx = (tick % 30 < 2) ? 1 : 0
             if custom == nil {
-                let g = gaze()
-                gazeDX = g.0 * (u / 2)
-                gazeGY = g.1 * (u / 2)
+                let g = gazeVector()
+                gazeDX = Int((g.0 * CGFloat(u) / 2).rounded())
+                gazeGY = Int((g.1 * CGFloat(u) / 2).rounded())
+            } else if let e = custom?.eyes {
+                let g = gazeVector()
+                eyeDX = Int((g.0 * CGFloat(e.range)).rounded())
+                eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
             }
             // Attention beat: the fold ranks waiting above everything, so it
             // cannot be the stillest thing on screen — two hops every ~3s.
@@ -803,7 +939,23 @@ final class PetView: NSView {
             // Breath, not bounce: the resting state stops spending the
             // attention budget the alert moods need to rise above.
             off = (tick % 64 < 56) ? 2 : 3
-            if peek { let g = gaze(); dx = g.0; gy = g.1 }
+            // Straight into the gaze pair rather than through `dx`, which is
+            // measured in whole cells and would collapse sixteen sectors back
+            // to the three the old three-value gaze had.
+            if peek {
+                let g = gazeVector()
+                gazeDX = Int((g.0 * CGFloat(u)).rounded())
+                gazeGY = Int((g.1 * CGFloat(u)).rounded())
+            }
+            // The doze cycle cuts between two eye shapes, and a manifest has
+            // only one idle frame to cut between — so proximity moves the eyes
+            // it already has instead. The pet still notices you approaching;
+            // it just cannot open eyes it has no art for.
+            else if let e = custom?.eyes, motionOK, nearCursor() {
+                let g = gazeVector()
+                eyeDX = Int((g.0 * CGFloat(e.range)).rounded())
+                eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
+            }
         }
         // The hop outranks the mood's resting bob, and now fires on a tap in
         // any mood rather than only on the switch into done.
@@ -815,13 +967,15 @@ final class PetView: NSView {
         // the one extra that sits out Reduce Motion entirely.
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
-        let blink = mood == .waiting && custom == nil && motionOK && tick % 80 < 2
+        let blink = mood == .waiting && motionOK && tick % 80 < 2
+            && (custom == nil || custom?.blinkFrame != nil)
         // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
         // blink %80 — deliberately share none, so overlapping animations read
         // as three mechanisms, not one.
 
-        return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gy * u + gazeGY,
+        return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gazeGY,
                     startled: st, peeking: peek, blinking: blink,
+                    eyeDX: eyeDX, eyeDY: eyeDY,
                     tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen)
@@ -840,10 +994,25 @@ final class PetView: NSView {
         // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
         // the manifest knows nothing about eye coordinates.
         if let pet = custom {
-            let grid = pet.frame(for: p.mood)
+            let grid = (p.blinking ? pet.blinkFrame : nil) ?? pet.frame(for: p.mood)
+            let shifting = p.eyeDX != 0 || p.eyeDY != 0
+            // Startle outranks the glance rather than composing with it, the
+            // same way `startledRects` replaces the built-in's eyes outright:
+            // a creature whose eyes have just snapped open is not also
+            // tracking the cursor with them.
+
             for y in 0..<pet.height {
                 for x in 0..<pet.width {
-                    if let c = grid[y][x] { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
+                    var c = grid[y][x]
+                    // Sampled backwards, so every destination pixel is written
+                    // exactly once. Scattering forwards instead leaves a gap
+                    // wherever the shift steps past a source pixel, which is
+                    // the difference between a glance and a torn eye.
+                    if shifting, let e = pet.eyes, e.contains(x, y) {
+                        let sx = x - p.eyeDX, sy = y - p.eyeDY
+                        c = e.contains(sx, sy) ? grid[sy][sx] : e.socket
+                    }
+                    if let c = c { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
                 }
             }
             return
@@ -1702,7 +1871,16 @@ if argv.count >= 2 {
         do {
             let pet = try loadCustomPet(target)
             let moods = pet.frames.keys.map { $0.rawValue }.sorted().joined(separator: ", ")
-            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)]")
+            // The eye box is reported because a manifest can declare one and
+            // still get no blink — synthesis needs lit pixels inside the box,
+            // and silently having none is the failure worth naming here.
+            var eyes = "no eyes declared"
+            if let e = pet.eyes {
+                eyes = "eyes \(e.x1 - e.x0 + 1)x\(e.y1 - e.y0 + 1) at \(e.x0),\(e.y0) range \(e.range)"
+                eyes += pet.blinkFrame == nil ? ", blink UNAVAILABLE (no lit pixels in box)" : ", blink ok"
+
+            }
+            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes)")
             exit(0)
         } catch {
             FileHandle.standardError.write(Data("invalid pet manifest: \(error)\n".utf8))
