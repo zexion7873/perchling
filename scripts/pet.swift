@@ -12,6 +12,19 @@ let SCALE: CGFloat = 1
 // how big a pet's cells are. Expressed in cells so the sprite grid stays the
 // only coordinate system, and the canvas reserves three of those below the
 // art for the motion to happen in.
+// The tick loop's period. Sequence timings quantise to this, so the parser and
+// the timer cannot be allowed to drift apart.
+let TICK_MS = 50
+
+// Points of sustained sideways travel before a mirrored sequence changes which
+// way it faces. Small because it is a DISTANCE, not a speed: jitter cancels
+// itself out of the accumulator, so this only has to exceed the wobble of a
+// hand trying to hold still. Turning around costs this much plus whatever
+// residue the previous direction left behind, so up to twice it — which reads
+// as the creature having to shed its momentum, and is the whole reason the
+// accumulator is not cleared on every event.
+let FACING_TRAVEL: CGFloat = 4
+
 func bounceUnit(_ scale: CGFloat) -> Int { max(1, Int((4.0 / scale).rounded())) }
 func headroom(_ scale: CGFloat) -> Int { 3 * bounceUnit(scale) }
 // The twitch moves a custom pet's whole sprite sideways, so the canvas needs
@@ -239,6 +252,34 @@ struct EyeBox {
     func contains(_ x: Int, _ y: Int) -> Bool { x >= x0 && x <= x1 && y >= y0 && y <= y1 }
 }
 
+// A sequence is several frames on a clock — the one thing a manifest could not
+// say, because a mood is a single grid. `ticksPerFrame` is resolved at load
+// because the tick loop quantises every duration to `TICK_MS`: an author who
+// writes 120 gets 100, and `--validate` says so rather than leaving them to
+// discover it by counting frames.
+enum SeqKind: String, CaseIterable { case hover, drag }
+
+struct PetSequence {
+    let frames: [[[NSColor?]]]
+    let ticksPerFrame: Int
+    let declaredMs: Int
+    // Consent to being flipped, which the format could not express before and
+    // is the only reason mirroring is safe at all. A rightward run and its
+    // leftward twin are the same pixels reflected — Codex spends a whole atlas
+    // row on the copy, measured byte-identical to a flip of the other — so the
+    // frames are worth reusing, but a flip also reverses any asymmetric detail:
+    // a badge, a logo, lettering. The renderer cannot tell those apart from the
+    // gait, so the author says.
+    let mirror: Bool
+    var actualMs: Int { ticksPerFrame * TICK_MS }
+    var totalTicks: Int { frames.count * ticksPerFrame }
+}
+
+// A tuple will not synthesise Equatable, and Pose's equality IS the repaint
+// contract — without the frame index in there, repaintIfChanged() reads two
+// consecutive sequence frames as the same pose and the animation never paints.
+struct SeqRef: Equatable { let kind: SeqKind; let index: Int; let flipped: Bool }
+
 struct CustomPet {
     let name: String
     let width: Int
@@ -261,8 +302,18 @@ struct CustomPet {
     // frame swap rather than per-tick pixel work, and a manifest that ships a
     // real blink frame later can replace this without the drawing changing.
     let blinkFrame: [[NSColor?]]?
+    let sequences: [SeqKind: PetSequence]
+    // Only --validate reads this. A name it did not recognise is worth saying
+    // out loud once, or a typo is indistinguishable from a sequence that simply
+    // never plays.
+    let unknownSequenceKeys: [String]
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
+
+    func sequenceGrid(_ ref: SeqRef?) -> [[NSColor?]]? {
+        guard let r = ref, let s = sequences[r.kind], r.index < s.frames.count else { return nil }
+        return s.frames[r.index]
+    }
 }
 
 func srgbLuma(_ c: NSColor) -> CGFloat {
@@ -336,6 +387,22 @@ func synthBlinkFrame(_ rows: [[Character]], _ pal: [Character: NSColor],
     return out
 }
 
+func parseGrid(_ rows: [String], _ pal: [Character: NSColor], _ w: Int,
+               _ label: String) throws -> [[NSColor?]] {
+    var grid: [[NSColor?]] = []
+    for (y, row) in rows.enumerated() {
+        guard row.count == w else { throw PetError("\(label) row \(y): length \(row.count) != \(w)") }
+        var line: [NSColor?] = []
+        for ch in row {
+            if ch == "0" || ch == "." { line.append(nil) }
+            else if let c = pal[ch] { line.append(c) }
+            else { throw PetError("\(label) row \(y): \"\(ch)\" is not in the palette") }
+        }
+        grid.append(line)
+    }
+    return grid
+}
+
 func loadCustomPet(_ url: URL) throws -> CustomPet {
     guard let data = try? Data(contentsOf: url) else { throw PetError("cannot read \(url.path)") }
     let top: [String: Any]
@@ -377,18 +444,7 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         guard dims == (w, rows.count) else {
             throw PetError("\(key): size \(w)x\(rows.count) differs from \(dims.w)x\(dims.h) — all moods share one canvas")
         }
-        var grid: [[NSColor?]] = []
-        for (y, row) in rows.enumerated() {
-            guard row.count == w else { throw PetError("\(key) row \(y): length \(row.count) != \(w)") }
-            var line: [NSColor?] = []
-            for ch in row {
-                if ch == "0" || ch == "." { line.append(nil) }
-                else if let c = pal[ch] { line.append(c) }
-                else { throw PetError("\(key) row \(y): \"\(ch)\" is not in the palette") }
-            }
-            grid.append(line)
-        }
-        frames[mood] = grid
+        frames[mood] = try parseGrid(rows, pal, w, key)
     }
     guard frames[.idle] != nil else { throw PetError("moods.idle is required") }
     // Finer-grained pets: a big grid at scale 2 beats a small grid at 4 —
@@ -439,12 +495,75 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         let src = (moodsRaw["waiting"] ?? moodsRaw["idle"]!).map(Array.init)
         blinkFrame = synthBlinkFrame(src, pal, box, socketCh, lidCh)
     }
-    let inkTop = frames.values
+    // Unknown keys are IGNORED here, which is deliberately the opposite of
+    // `moods`. `moods` rejects them, and that is what makes a misplaced grid
+    // silently fatal on an older perchling — the file fails to load, the pet
+    // falls back to the built-in, and its row greys out in the Pets menu with
+    // no error the user can see. A future perchling adding a sequence must not
+    // do that to this one, so an unrecognised name is reported by --validate
+    // and otherwise skipped.
+    var sequences: [SeqKind: PetSequence] = [:]
+    var unknownSequenceKeys: [String] = []
+    if let raw = top["sequences"] {
+        guard let seqs = raw as? [String: Any] else {
+            throw PetError("\"sequences\" must be an object mapping hover/drag to frame lists")
+        }
+        for (name, body) in seqs.sorted(by: { $0.key < $1.key }) {
+            guard let kind = SeqKind(rawValue: name) else {
+                unknownSequenceKeys.append(name)
+                continue
+            }
+            guard let obj = body as? [String: Any] else {
+                throw PetError("sequences.\(name) must be an object with \"frames\"")
+            }
+            guard let rawFrames = obj["frames"] as? [[String]] else {
+                throw PetError("sequences.\(name).frames must be an array of frames, each an array of row strings")
+            }
+            // One frame is a pose, not a sequence — that version was built and
+            // rejected. The ceiling is boundary validation: a frame costs about
+            // 11KB in a 96x112 pet.
+            guard (2...16).contains(rawFrames.count) else {
+                throw PetError("sequences.\(name).frames has \(rawFrames.count) frames — must be 2...16")
+            }
+            var ms = 150
+            if let m = obj["ms"] {
+                guard let n = m as? Int, (50...1000).contains(n) else {
+                    throw PetError("sequences.\(name).ms must be an integer 50...1000 (milliseconds per frame)")
+                }
+                ms = n
+            }
+            var mirror = false
+            if let mr = obj["mirror"] {
+                guard let b = mr as? Bool else {
+                    throw PetError("sequences.\(name).mirror must be true or false")
+                }
+                mirror = b
+            }
+            var grids: [[[NSColor?]]] = []
+            for (i, rows) in rawFrames.enumerated() {
+                let fw = rows.first?.count ?? 0
+                guard (fw, rows.count) == (dims.w, dims.h) else {
+                    throw PetError("sequences.\(name) frame \(i): size \(fw)x\(rows.count) differs from \(dims.w)x\(dims.h) — sequences share the moods' canvas")
+                }
+                grids.append(try parseGrid(rows, pal, dims.w, "sequences.\(name) frame \(i)"))
+            }
+            sequences[kind] = PetSequence(
+                frames: grids,
+                ticksPerFrame: max(1, Int((Double(ms) / Double(TICK_MS)).rounded())),
+                declaredMs: ms, mirror: mirror)
+        }
+    }
+    // Sequence frames count: a jump lifts the body above every mood, and the
+    // chrome hangs off this one number. Leaving them out would sit the bubble
+    // where a hovering pet's head goes through it — precisely when the user is
+    // looking, since hover is the cursor being on the pet.
+    let inkTop = (Array(frames.values) + sequences.values.flatMap { $0.frames })
         .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
         .min() ?? 0
     return CustomPet(name: (top["name"] as? String) ?? "custom",
                      width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
-                     eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame)
+                     eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame,
+                     sequences: sequences, unknownSequenceKeys: unknownSequenceKeys)
 }
 
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
@@ -775,6 +894,28 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
+    // Custom pets only. `-1` is disarmed, matching hopUntil and startledUntil.
+    // Hover is one-shot and expires by elapsing; drag loops until mouseUp.
+    var hoverSeqStart = -1
+    var dragSeqStart = -1
+    // Which way the drag is heading, latched. Only consulted for a sequence
+    // that declared `mirror`. Deliberately NOT derived from `lean`: that decays
+    // to zero the moment the hand stops moving, so a pause mid-drag would spin
+    // the creature back to facing right.
+    var dragFacingLeft = false
+    // Signed distance travelled since the facing last changed. The facing has
+    // to follow DISTANCE, not speed: `mouseDragged` fires per mouse event, so a
+    // per-event threshold is really a velocity gate — at 60Hz, four points in
+    // one event is 240 points a second, and a gentle drag never crosses it no
+    // matter how far it goes. Accumulating fixes that and still cancels jitter,
+    // because a wobble contributes both signs.
+    private var facingTravel: CGFloat = 0
+
+    func updateFacing(_ dx: CGFloat) {
+        facingTravel += dx
+        if facingTravel >= FACING_TRAVEL { dragFacingLeft = false; facingTravel = 0 }
+        else if facingTravel <= -FACING_TRAVEL { dragFacingLeft = true; facingTravel = 0 }
+    }
     // Drag inertia, in sprite pixels of top-row offset. A lean is a transform
     // of whatever pixels are already there, which is why it is the one drag
     // reaction a manifest can have without shipping a pose for it — the Codex
@@ -817,6 +958,9 @@ final class PetView: NSView {
         // pet swapped mid-hover would otherwise inherit a deadline armed for
         // the creature before it.
         if custom == nil && motionOK { startledUntil = tick + 16 }
+        // A custom pet has no startle to swap to; it gets the burst only if it
+        // shipped the frames for one.
+        else if motionOK, custom?.sequences[.hover] != nil { hoverSeqStart = tick }
     }
 
     // Pupils drift toward the cursor (waiting, and idle's open-eyed peeks) —
@@ -905,6 +1049,7 @@ final class PetView: NSView {
         let tearRow: Int?
         let sparkleLeft: Bool
         let spriteGen: Int
+        let seq: SeqRef?
     }
 
     // Which creature, as opposed to how it is posed. Swapping pet.json changes
@@ -1000,6 +1145,41 @@ final class PetView: NSView {
         // any mood rather than only on the switch into done.
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
 
+        // Drag outranks hover: the cursor sitting on a pet you are already
+        // holding is not new information. Both are gated on motionOK because
+        // `tick` freezes under Reduce Motion, so an index derived from
+        // `tick - start` would stick on one frame forever.
+        var seq: SeqRef?
+        if motionOK, let pet = custom {
+            if dragSeqStart >= 0, let s = pet.sequences[.drag] {
+                // Frames as drawn face RIGHT; the flip is what leftward travel
+                // looks like. A pet that did not declare `mirror` never flips,
+                // whichever way it is dragged.
+                seq = SeqRef(kind: .drag,
+                             index: ((tick - dragSeqStart) / s.ticksPerFrame) % s.frames.count,
+                             flipped: s.mirror && dragFacingLeft)
+            } else if hoverSeqStart >= 0, let s = pet.sequences[.hover] {
+                let i = (tick - hoverSeqStart) / s.ticksPerFrame
+                // A burst has no direction of travel, so it never flips.
+                if i < s.frames.count { seq = SeqRef(kind: .hover, index: i, flipped: false) }
+            }
+        }
+        // The frames own their own motion. The bounce would double-count a
+        // jump's lift, the twitch shares the one-bounce-unit side budget with
+        // the shear, and the eye box is declared against the mood frames — on a
+        // real pet `done` already lands 37.5% of it on the shell, and a lifted
+        // frame is worse. The shear is NOT reset: it is applied inside fill(),
+        // which the custom blit already goes through, and it is what tells the
+        // viewer which way the pet is being dragged.
+        if seq != nil {
+            off = 2
+            dx = 0
+            gazeDX = 0
+            gazeGY = 0
+            eyeDX = 0
+            eyeDY = 0
+        }
+
         // The side margin is one bounce unit and the twitch already spends all
         // of it, so the two cannot both run — and a nervous tic while the pet
         // is being held in a fist is not a thing worth reserving canvas for.
@@ -1013,7 +1193,7 @@ final class PetView: NSView {
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
         let blink = mood == .waiting && motionOK && tick % 80 < 2
-            && (custom == nil || custom?.blinkFrame != nil)
+            && (custom == nil || custom?.blinkFrame != nil) && seq == nil
         // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
         // blink %80 — deliberately share none, so overlapping animations read
         // as three mechanisms, not one.
@@ -1023,7 +1203,7 @@ final class PetView: NSView {
                     eyeDX: eyeDX, eyeDY: eyeDY, lean: ln,
                     tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
-                    spriteGen: spriteGen)
+                    spriteGen: spriteGen, seq: seq)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1040,16 +1220,24 @@ final class PetView: NSView {
         // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
         // the manifest knows nothing about eye coordinates.
         if let pet = custom {
-            let grid = (p.blinking ? pet.blinkFrame : nil) ?? pet.frame(for: p.mood)
+            // Sequence outranks both: it replaces the whole sprite for its
+            // duration, which is why the gaze and the blink already bowed out
+            // in pose(). Pixels do not composite, so a pet hovered mid-task
+            // shows the reaction rather than its mood — the same trade Codex
+            // makes (`respondToHover && isHovered ? 'jumping' : state`).
+            let grid = pet.sequenceGrid(p.seq)
+                ?? (p.blinking ? pet.blinkFrame : nil)
+                ?? pet.frame(for: p.mood)
             let shifting = p.eyeDX != 0 || p.eyeDY != 0
             // Startle outranks the glance rather than composing with it, the
             // same way `startledRects` replaces the built-in's eyes outright:
             // a creature whose eyes have just snapped open is not also
             // tracking the cursor with them.
 
+            let flip = p.seq?.flipped == true
             for y in 0..<pet.height {
                 for x in 0..<pet.width {
-                    var c = grid[y][x]
+                    var c = grid[y][flip ? pet.width - 1 - x : x]
                     // Sampled backwards, so every destination pixel is written
                     // exactly once. Scattering forwards instead leaves a gap
                     // wherever the shift steps past a source pixel, which is
@@ -1103,18 +1291,24 @@ final class PetView: NSView {
         winAt = window?.frame.origin
         lastDrag = nil
         dragged = false
+        dragSeqStart = -1
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let p0 = pressAt, let w0 = winAt, let w = window else { return }
         let p = NSEvent.mouseLocation
         if abs(p.x - p0.x) + abs(p.y - p0.y) > 2 { dragged = true }
+        if dragSeqStart < 0, motionOK, custom?.sequences[.drag] != nil {
+            dragSeqStart = tick
+            hoverSeqStart = -1
+        }
         // Velocity, not displacement: a slow drag across the whole screen must
         // not accumulate into a permanent tilt. The blend is what keeps a
         // single jerky event from snapping the pet to full lean and back.
         if motionOK, let last = lastDrag {
             let cap = CGFloat(sidePad(scale))
             lean = max(-cap, min(cap, lean * 0.5 - (p.x - last.x) * 0.5))
+            updateFacing(p.x - last.x)
         }
         lastDrag = p
         w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))
@@ -1130,6 +1324,7 @@ final class PetView: NSView {
         pressAt = nil
         winAt = nil
         lastDrag = nil
+        dragSeqStart = -1
     }
 
     // Where the art starts, in points below the window's top edge — the same
@@ -2000,7 +2195,7 @@ final class Controller: NSObject, NSWindowDelegate {
 
     func run() {
         var clock = 0
-        Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [self] _ in
+        Timer.scheduledTimer(withTimeInterval: Double(TICK_MS) / 1000.0, repeats: true) { [self] _ in
             clock += 1
             // Reduce Motion freezes the animation clock (static pose), never
             // the polling clock — liveness and mood changes must keep working.
@@ -2106,7 +2301,39 @@ if argv.count >= 2 {
                 eyes += pet.blinkFrame == nil ? ", blink UNAVAILABLE (no lit pixels in box)" : ", blink ok"
 
             }
-            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes)")
+            var seqs = "no sequences"
+            if !pet.sequences.isEmpty {
+                seqs = SeqKind.allCases.compactMap { k -> String? in
+                    guard let s = pet.sequences[k] else { return nil }
+                    // Saying the rounded duration out loud is the point: an
+                    // author who writes 120 and silently receives 100 has no
+                    // other way to find out.
+                    let msg = s.declaredMs == s.actualMs
+                        ? "@\(s.declaredMs)ms"
+                        : "@\(s.declaredMs)ms -> \(s.actualMs)ms"
+                    let secs = String(format: "%.2fs", Double(s.totalTicks * TICK_MS) / 1000)
+                    let shape = k == .drag ? "loop" : "total"
+                    return "\(k.rawValue) \(s.frames.count) frames \(msg) (\(s.ticksPerFrame) ticks, \(secs) \(shape))"
+                        + (s.mirror ? ", mirrors when dragged left" : "")
+                }.joined(separator: "; ")
+            }
+            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes) — \(seqs)")
+            // In grid rows, not points: the on-screen distance is rows * scale,
+            // so the same manifest at scale 2 moves the chrome twice as far.
+            let moodTop = pet.frames.values
+                .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
+                .min() ?? 0
+            if moodTop != pet.inkTop {
+                print("inkTop: \(pet.inkTop) (moods alone: \(moodTop) — sequences reach higher, chrome moves up \(moodTop - pet.inkTop) rows)")
+            }
+            // Silently ignoring it would be indistinguishable from a mirror that
+            // simply never triggers, which is an afternoon nobody should spend.
+            if pet.sequences[.hover]?.mirror == true {
+                FileHandle.standardError.write(Data("warning: sequences.hover.mirror is ignored — a one-shot burst has no direction of travel\n".utf8))
+            }
+            for k in pet.unknownSequenceKeys {
+                FileHandle.standardError.write(Data("warning: sequences.\(k) is not a recognised sequence (hover, drag) — ignored\n".utf8))
+            }
             exit(0)
         } catch {
             FileHandle.standardError.write(Data("invalid pet manifest: \(error)\n".utf8))

@@ -244,17 +244,60 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   pose that cannot be drawn, and `custom` can change under a running process.
   A single drawn `hover` grid was built and removed: the reaction Codex plays
   on hover is its five-frame `jumping` row, so a one-frame version is the wrong
-  shape, and the manifest has no notion of a frame sequence to hold the right
-  one. Synthesising it by opening the declared eye box was also built and
-  removed — it keeps the pose's own lids and merely widens them, where the
-  built-in swaps the eye SHAPE outright.
+  shape. That gap is what `sequences.hover` fills — a custom pet gets a
+  multi-frame burst of its own, armed in the same `mouseEntered`, gated on the
+  same `motionOK`, and expiring by elapsing rather than on `mouseExited`, so
+  neither kind of pet holds a hover state. A pet that ships no hover sequence
+  still has no hover reaction at all. Synthesising it by opening the declared
+  eye box was also built and removed — it keeps the pose's own lids and merely
+  widens them, where the built-in swaps the eye SHAPE outright.
+- **A playing sequence owns the body, and the shear is the one thing it does
+  not take.** While a sequence plays, `pose()` pins the bounce to its resting
+  value and zeroes the twitch, the gaze and the blink: the frames carry their
+  own motion, so a bounce added on top double-counts a jump's lift, and the eye
+  box is declared against the MOOD frames — on a real pet `done` already lands
+  37.5% of it on the shell, and a lifted frame is worse. The lean stays,
+  because it is applied inside `fill()`, which every blit including the
+  sequence's already passes through, and because it is the only thing telling
+  the viewer which way the pet is being dragged: a manifest ships ONE
+  direction-agnostic `drag` sequence, and mirroring is what gives it a second
+  facing. Sequence frames also count toward `inkTop`, so a lifted frame moves
+  the chrome for every mood, permanently, not only while it plays.
+- **A sequence is mirrored only if it says it may be.** `mirror: true` on
+  `drag` makes the renderer draw the frames flipped while the drag heads left;
+  the frames as drawn always face right. The flag exists because the reflection
+  is free and the consent is not: Codex spends a whole atlas row on
+  `running-left`, and every one of its columns is a byte-exact flip of
+  `running-right` — measured, max channel delta 0 — so shipping both directions
+  is six grids of pure redundancy. But a flip also reverses any asymmetric
+  detail: a badge, a logo, lettering. The renderer cannot tell those from the
+  gait, and before this flag a manifest had no way to say so, which is why
+  render-time mirroring was rejected outright. Now the author says. Two
+  consequences: `mirror` on `hover` is meaningless (a one-shot burst has no
+  direction of travel) and `--validate` warns rather than failing, and the
+  facing is latched off **accumulated signed travel**, never off a single
+  `mouseDragged` delta and never off `lean`. Both alternatives were written and
+  are wrong in opposite ways: a per-event threshold is a velocity gate, because
+  mouse events arrive at 60Hz or better and four points inside one of them is
+  240 points a second — a gentle drag never crosses it however far it goes —
+  while `lean` decays to zero the moment the hand pauses and would spin the
+  creature round mid-drag. An accumulator has neither failure: jitter cancels
+  because a wobble contributes both signs, and turning around costs
+  `FACING_TRAVEL` plus whatever residue the previous direction left, up to twice
+  it, which reads as shedding momentum.
 - **Anything added to the manifest goes at the TOP LEVEL, never inside
   `moods`.** The mood loop rejects any key that is not one of the five, so a
   new grid parked in `moods` makes the whole file unloadable on every older
   perchling — the pet falls back to the built-in and its row greys out in the
   Pets menu, with no error anywhere the user can see. Unknown top-level keys
   are ignored by every version. Found the hard way, in one afternoon, by a
-  single misplaced key.
+  single misplaced key. Inside `sequences` the rule INVERTS: an unrecognised
+  sequence name is ignored rather than rejected, so a later perchling adding a
+  third sequence does not make its manifests unloadable here — `--validate`
+  warns on stderr and the file still loads. `moods` rejects because a mistyped
+  mood is a mood that silently never shows; `sequences` ignores because a
+  mistyped sequence is a reaction that silently never plays, and only one of
+  those can take the whole file down with it.
 - **Gaze rides a different unit for each kind of pet.** The built-in measures
   it in bounce units, because its eye rects are in design cells; a manifest
   measures it in its own `eyes.range` pixels, because the box is the only
@@ -357,8 +400,31 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   terminal that ran `claude`. A dead owner retires the session on the next
   poll, which is what makes a force-quit (where no `SessionEnd` ever fires)
   survivable. A missing owner file means unknown, never dead: it falls back to
-  the one-hour staleness window. Whatever writes a session file owes it an
-  owner file, and owes both a removal.
+  the one-hour staleness window.
+
+  **Only `cmd_up` ever writes an owner file, and absence is a normal state with
+  two different causes.** `cmd_up` writes the pair at `SessionStart` and
+  deliberately writes NO owner when the process tree is unclimbable or resolves
+  to itself — there, absence means "cannot be known". `state.sh` is the other
+  writer of session files, on every prompt and every tool batch, and it never
+  touches `owners/` by design: resolving an owner costs a whole-process-table
+  `ps`, and that file is the hot path. So `pet.sh stop`, which wipes both
+  directories, leaves a session whose very next hook restores the refcount
+  alone — there, absence means "was known, then erased", and that session runs
+  ownerless until it ends. Reproduced deterministically; the only cost is that
+  a force-quit after a manual `stop` is retired by the one-hour window instead
+  of immediately, and it self-heals.
+
+  Do not "fix" that by having `state.sh` fill in the missing owner. The two
+  causes of absence are indistinguishable on disk, so the unclimbable case
+  would re-run `ps` on every hook forever and could write the very pid
+  `cmd_up`'s `!= "$$"` guard exists to reject. Closing it properly means
+  inventing a third state, which buys back a self-healing hour.
+
+  What DOES hold, and is worth keeping: removal is symmetric. `cmd_down`
+  removes both halves at `SessionEnd` whatever the owner situation was, and
+  `cmd_up` prunes owner files whose session is already gone, so neither
+  directory leaks.
 - **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
   the pause between one session ending and the next starting — a resume, a
   `/clear`, a new window. Both ways of losing every session skip it: refcounts
