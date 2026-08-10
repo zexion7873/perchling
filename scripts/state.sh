@@ -33,6 +33,18 @@ if [ ! -t 0 ]; then
   # UserPromptSubmit payloads carry the prompt; snippet it for the speech
   # bubble. Stops at the first escaped quote — it's a teaser, not a transcript.
   snippet=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | head -c 300 | sed 's/\\*$//')
+  # Not every UserPromptSubmit is a person typing. The harness re-enters the
+  # session with its own machinery — a finished background task, a reminder, a
+  # slash command's stdout — through the same event, so the bubble was showing
+  # "<task-notification> <task-id>w0o…" over the pet's head. The mood is still
+  # right for those (the session really is running again); only the caption is
+  # wrong, so this drops the snippet and leaves the previous one up rather than
+  # skipping the whole hook. Matched on the specific tags, not a bare leading
+  # "<", so a prompt that opens with markup still reaches the bubble.
+  case "$snippet" in
+    '<task-notification>'*|'<system-reminder>'*|'<local-command-'*|'<command-name>'*|'<command-message>'*)
+      snippet= ;;
+  esac
   # On Stop, the reply is better bubble material than an echo of the prompt the
   # user already typed. Each content block is its own transcript record, so
   # match the text-block signature — the final record is usually a tool_use or
