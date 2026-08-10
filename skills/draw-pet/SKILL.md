@@ -54,9 +54,23 @@ Rules the loader enforces:
   sharpness dial: 24×24 at scale 4 is chunky retro, 96×96 at scale 1 is the
   same footprint with sixteen times the detail. The built-in pet sits at
   scale 1 for exactly this reason.
+- **eyes** (optional) makes the eyes follow the cursor while the pet waits and
+  blink on their own: `"eyes": { "box": [x, y, width, height], "socket": "k" }`.
+  `box` frames the eyes, `socket` is the palette key of the flat color behind
+  them — the renderer shifts everything in the box and refills what the shift
+  vacates with `socket`, so the box's whole border must sit on that one color
+  or the shift leaves a seam. Leave the eyes a couple of pixels of clearance
+  inside the box; whatever crosses the edge gets clipped. `range` (optional,
+  0–8, default 2) is the travel in pixels, and `lid` (optional palette key)
+  overrides the blink color, which is otherwise the brightest color occupying
+  at least 3% of the box. `perchling --validate` prints the box it read and
+  says `blink UNAVAILABLE` if nothing in the box is bright enough to close.
 - The app animates position itself (bounce, hop, droop, twitch) and reserves
   the canvas margin those need — draw poses and expressions, not motion, and
   do not pad the grid with blank rows to make room.
+- The doze-and-peek cycle and the hover startle stay renderer-only: both cut
+  between two drawn eye shapes, and a manifest has one frame per mood to cut
+  between.
 
 ## Workflow
 
@@ -69,10 +83,12 @@ Rules the loader enforces:
    ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
    ```
    Tell the user what the snapshot does not carry before they commit to
-   editing it: a manifest has no eye coordinates, so the default's
-   cursor-following pupils, doze-and-peek cycle, and typing animation are
-   gone, and the sideways twitch that moves only the default's eyes becomes
-   a whole-body shift for any manifest-driven pet.
+   editing it: the export is pixels, so the default's doze-and-peek cycle and
+   typing animation are gone, and the sideways twitch that moves only the
+   default's eyes becomes a whole-body shift. Declaring `eyes` on the copy
+   wins back the gaze and the blink — the export's own eye
+   box is `[22, 15, 52, 27]` with `socket` `"c"` — two pixels wider than the
+   eyes on every side, which is the clearance the gaze needs.
 1. Settle the creature with the user: species, colors, vibe. An outline
    color, 2–3 body colors, and 1–2 face colors is the sweet spot.
 2. Draw the five grids. Design `idle` first, then copy it per mood and

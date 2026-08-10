@@ -169,11 +169,118 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   click-through that lets it sit over other windows. Anything tappable that
   belongs to the bubble needs its own window, the way the chip does — and the
   chip is placed to clear the bubble's rect entirely, so neither draws over
-  the other.
-- **A manifest carries pixels, not behavior.** Custom pets get one static frame
-  per mood. Cursor-following pupils, the doze-and-peek cycle, and any tick-driven animation are
-  renderer-only and cannot be expressed in `pet.json`; anything new in that
-  family widens the gap between the built-in pet and custom ones.
+  the other. That is not only a click concern now: both are frosted, and two
+  translucent panels crossing double the tint exactly where they meet.
+- **The chrome hangs off the ART, not off the canvas.** `chromeLayout()` is a
+  pure function of the pet's frame and `PetView.artTopInset` precisely so the
+  offscreen harness composes the same rects the Controller does. The inset
+  matters because `canvasSize()` reserves headroom for the bounce AND a
+  manifest pads its own grid on top of that: measured to the window, the
+  bubble floated 23 points clear of a pet whose ink starts at row 13. The chip
+  hangs off the same line — beside the top of the head, with the bubble's
+  right edge flush to the chip's so the three read as one right-aligned
+  column — and its screen clamp has to run BEFORE the bubble's x is derived
+  from it, or a pet shoved against the screen edge moves the chip and leaves
+  the bubble behind, breaking the one alignment the layout exists for.
+  `CustomPet.inkTop` is ONE number across every pose — the highest row any of
+  them reaches — and deliberately not one per pose. Per-pose tucks in tighter
+  and was built that way first; it also drags the bubble and the chip upward
+  every time the pet celebrates, and chrome that jumps whenever the mood
+  changes is worse than chrome sitting a few points high. The cost is real and
+  worth knowing: on a pet whose `done` reaches row 0 while every other pose
+  starts at row 13, the fixed line buys back only about six points over
+  measuring to the canvas. It buys the whole 23 on a pet that never lifts.
+  And the inset is measured at the RESTING bounce, never the live one, or the
+  chrome breathes along with the pet.
+- **The bubble and the chip ARE vibrancy views; their drawing is a subview.**
+  A view's own `draw()` runs before every one of its subviews, so an
+  `NSVisualEffectView` added *under* a painting view lands on top of the text
+  and the panel comes out a featureless grey slab — which is what the
+  offscreen render showed, and it is not a harness artifact. Apple's own
+  guidance is the same: compose vibrancy with subviews, never override its
+  drawing. Three things follow. Vibrancy has no notion of shape, so both
+  carry a `maskImage`, and its geometry comes from the same `bodyPath()` the
+  painter strokes — a one-pixel disagreement leaves a frosted edge beside a
+  drawn one. (Both masks are constants now. They were rebuilt on every move
+  while the bubble had a tail chasing the pet's midline; the tail is gone,
+  along with the pet-to-bubble connector it drew.) `appearance` is pinned to
+  `.darkAqua`: the chrome sits on the
+  wallpaper, not inside an app window, so the system's light mode says
+  nothing about what is behind it, and following it turns the panel white
+  under cream text. And the effect view is hidden outright when the mood is
+  idle, because the painter draws nothing then and the frost would otherwise
+  sit there as an empty panel — a failure a plain alpha fill could not have.
+- **`CHROME_TINT` is a tint over the frost, not the panel.** The frost
+  supplies the darkening and the legibility; the tint only pulls
+  `.hudWindow`'s neutral grey toward the pet's warm brown, which is why 0.38
+  looks far too transparent in any offscreen render and is right on screen.
+  `.behindWindow` blending draws NOTHING through `cacheDisplay` — there is no
+  window behind it — so the harness can verify the mask, the tint and the
+  hide/show, and cannot verify the blur. Judge that one on a desktop.
+- **A manifest carries pixels, and the one thing it can say about them is
+  where the eyes are.** Custom pets get one static frame per mood, so anything
+  that cuts between two eye SHAPES — the doze-and-peek cycle, the startle — is
+  renderer-only and stays that way; a manifest has no second frame to cut to.
+  The optional `eyes` block (`box`, `socket`, and optional `range`/`lid`) is
+  the exception, and it buys two things: gaze, by shifting the box's contents
+  and refilling the vacated pixels with `socket`, and blink, from a frame
+  synthesised once at load. Everything about that block exists because
+  the eyes cannot be FOUND: on a soft-shaded sprite the brightest inks inside
+  the screen are the bezel's own rim highlights, so every detector returns a
+  second copy of the bezel and shifting it smears the frame. Two consequences
+  worth not rediscovering. The box's border has to sit on flat colour, because
+  a shift rewrites the whole box and a border crossing a gradient leaves a
+  seam — verify with a difference map against the unshifted frame, where a
+  correct shift changes exactly `box` pixels and nothing outside it. And
+  `blink` is not guaranteed by declaring a box: synthesis needs pixels inside
+  it brighter than `socket`, and `--validate` says `blink UNAVAILABLE` rather
+  than failing when there are none.
+- **The startle is built-in-only, and it is a timed burst rather than a hover
+  state.** `mouseEntered` arms `startledUntil = tick + 16` and there is no
+  `mouseExited`: it reverts after 0.8s whether or not the cursor is still on
+  the pet. Both ends check `custom == nil` — the deadline is never armed for a
+  pose that cannot be drawn, and `custom` can change under a running process.
+  A single drawn `hover` grid was built and removed: the reaction Codex plays
+  on hover is its five-frame `jumping` row, so a one-frame version is the wrong
+  shape, and the manifest has no notion of a frame sequence to hold the right
+  one. Synthesising it by opening the declared eye box was also built and
+  removed — it keeps the pose's own lids and merely widens them, where the
+  built-in swaps the eye SHAPE outright.
+- **Anything added to the manifest goes at the TOP LEVEL, never inside
+  `moods`.** The mood loop rejects any key that is not one of the five, so a
+  new grid parked in `moods` makes the whole file unloadable on every older
+  perchling — the pet falls back to the built-in and its row greys out in the
+  Pets menu, with no error anywhere the user can see. Unknown top-level keys
+  are ignored by every version. Found the hard way, in one afternoon, by a
+  single misplaced key.
+- **Gaze rides a different unit for each kind of pet.** The built-in measures
+  it in bounce units, because its eye rects are in design cells; a manifest
+  measures it in its own `eyes.range` pixels, because the box is the only
+  thing that knows how much headroom the eyes have. `Pose.dx` moves the whole
+  sprite, so the eye offset needs its own `eyeDX`/`eyeDY` — reusing `dx` drags
+  the body along with the glance. `gazeVector()` returns a DIRECTION, one of
+  sixteen sectors with a deadzone dead ahead; callers scale x and y by
+  different amounts because the glass is wider than it is tall. Sixteen
+  survives the rounding even at a two-pixel radius — all sixteen sectors land
+  on distinct integer offsets — so the resolution is not decorative.
+- **The side margin is one bounce unit and the twitch already spends all of
+  it.** `sidePad()` is what keeps a shifted sprite from being sliced, and the
+  twitch moves a custom pet by a full unit, so nothing else may move the body
+  sideways at the same time. That is why the drag lean zeroes `dx` rather than
+  adding to it: the two share one budget. Widening the budget is a
+  `canvasSize()` change, and it drags `docs/moods.gif`'s dimensions and the
+  README's `width=` along with it — the hero is sized `(canvas + 8) * 6`.
+- **The drag lean is a shear, not a pose, which is why every pet has it.** The
+  top of the sprite lags the direction of travel and the bottom stays planted;
+  `fill()` applies it so the base, eyes, tear, sparkle and custom blit all
+  inherit it from one place, exactly as they inherit `xpad`. Two things it
+  must not become: state read inside `pose()`, which has to stay pure because
+  `draw()` and `repaintIfChanged()` both call it — the decay belongs in the
+  tick loop next to `tick += 1`, where Reduce Motion already gates it; and a
+  uniform offset, which reads as the window sliding rather than the creature
+  resisting. Codex spends two whole atlas rows (`running-left`/`running-right`)
+  on this reaction; a shear is what it costs when a manifest has no second
+  pose to cut to, and at true size it reads as a sway, not a run.
 - **The active pet is a symlink, and its target is the only record of which
   pet is active.** There is no config file and must not be one: a "selected
   pet" setting would be a second source of truth that can disagree with the

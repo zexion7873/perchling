@@ -64,24 +64,26 @@ launch — a few seconds, once.
 | 😢 | **error** | an API failure ended the turn | droops, and a tear rolls down its screen |
 | 💤 | **idle** | nothing happening | breathes slowly, dozes, peeks now and then |
 
-When its eyes are open they follow your cursor. Hover it and it startles. Click it and it hops,
-then throws you back to Claude — the desktop app if that's running, otherwise
-whatever was frontmost when the pet launched.
+When its eyes are open they follow your cursor, sixteen directions of it. Hover
+it and it startles. Drag it and it leans into the pull, feet planted, and rights
+itself when you let go. Click it and it hops, then throws you back to Claude —
+the desktop app if that's running, otherwise whatever was frontmost when the pet
+launched.
 
 Drag it anywhere; the position sticks. Right-click for **Tuck away** (hides
 until something needs you), **Disable**, or **Quit**.
 
 ### 💬 The speech bubble
 
-A pixel bubble above its head shows what it's doing over a line of context:
-your prompt while it works, then a snippet of Claude's reply once the turn
-ends. The status words are translated for Chinese and Japanese systems and read
-English everywhere else. It's a click-through overlay, so it never steals a
-click, and it vanishes when things go idle.
+A bubble above its head shows what it's doing over a line of context: your
+prompt while it works, then a snippet of Claude's reply once the turn ends. The
+status words are translated for Chinese and Japanese systems and read English
+everywhere else. It's a frosted, click-through overlay, so it never steals a
+click, and it stays up through idle rather than folding itself away.
 
-A small disc perches on the pet's shoulder while there is anything to say.
-Click it to fold the bubble away or bring it back — the choice sticks across
-restarts. When something happened while you were looking elsewhere, the disc
+A small disc sits beside the top of its head, right edge flush with the
+bubble's above it. Click it to fold the bubble away or bring it back — the
+choice sticks across restarts. When something happened while you were looking elsewhere, the disc
 turns into a count of how much you missed; coming back to Claude, or opening
 the bubble, clears it.
 
@@ -137,6 +139,19 @@ live within a second. No rebuild, no restart, no image files.
 }
 ```
 
+Add an optional `eyes` block and the pet stops staring straight ahead: its eyes
+drift toward the cursor while it waits, and blink on their own.
+
+```json
+"eyes": { "box": [32, 44, 39, 24], "socket": "i" }
+```
+
+`box` is `[x, y, width, height]` around the eyes and `socket` the palette key
+behind them — the color the vacated pixels take when the eyes move, so the box
+has to sit on a flat field. `range` (default 2) is how far they travel and
+`lid` overrides the blink color, which is otherwise picked from the box.
+`perchling --validate` reports the box it read and what it could build from it.
+
 A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
@@ -163,9 +178,13 @@ Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
 live — which is exactly what the menu's **Built-in perchling** row does.
 
 > [!WARNING]
-> A manifest carries pixels, not behaviour. An exported pet loses the default's
-> cursor-following pupils and its doze-and-peek cycle, and its sideways twitch
-> moves the whole body rather than just the eyes.
+> A manifest carries pixels, and the only thing it can say about them is where
+> the eyes are. Declare `eyes` and a custom pet gets the cursor-following gaze
+> and a blink; without it, neither. The doze-and-peek cycle and the hover
+> startle stay built-in-only whatever you declare — both cut between two drawn
+> eye shapes, and that is animation a manifest has no frames for — and a custom
+> pet's sideways twitch moves the whole body rather than just the eyes.
+> The drag lean works on any pet — it bends the pixels that are already there.
 
 ---
 

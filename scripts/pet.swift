@@ -223,14 +223,51 @@ struct PetError: Error, CustomStringConvertible {
     init(_ m: String) { description = m }
 }
 
+// A manifest's eyes are baked into its pixels, indistinguishable from the body,
+// which is why gaze and blink were built-in-only: the renderer knows where the
+// built-in's eyes are because they are rects in `eyeRects`, and knows nothing
+// about a manifest's. Finding them by colour does not work — on a soft-shaded
+// sprite the brightest inks inside the screen include the screen's own rim
+// highlights, so the "eyes" come out as a second copy of the bezel and shifting
+// them smears the frame. The author has to say. `socket` is the flat colour the
+// vacated pixels take, so the box has to sit inside a flat field.
+struct EyeBox {
+    let x0: Int, y0: Int, x1: Int, y1: Int
+    let socket: NSColor
+    let range: Int
+
+    func contains(_ x: Int, _ y: Int) -> Bool { x >= x0 && x <= x1 && y >= y0 && y <= y1 }
+}
+
 struct CustomPet {
     let name: String
     let width: Int
     let height: Int
     let scale: CGFloat
     let frames: [Mood: [[NSColor?]]]
+    let eyes: EyeBox?
+    // The highest row any pose reaches. The chrome hangs off this rather than
+    // off the canvas edge: `canvasSize` reserves headroom for the bounce and a
+    // manifest pads its own grid on top of that, so a bubble pinned to the
+    // window floats 23 points clear of a pet whose art starts at row 13. One
+    // number across every pose, not one per pose — following each pose tucks
+    // in tighter, but then the celebration drags the bubble and the chip up
+    // with it every time the pet finishes something, and chrome that jumps
+    // whenever the mood changes is worse than chrome that sits a few points
+    // high. This is the position no pose reaches.
+    let inkTop: Int
+    // Synthesised once at load: the waiting frame with the eye box wiped to
+    // `socket` and one lid bar per eye. Blinking then costs the draw path a
+    // frame swap rather than per-tick pixel work, and a manifest that ships a
+    // real blink frame later can replace this without the drawing changing.
+    let blinkFrame: [[NSColor?]]?
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
+}
+
+func srgbLuma(_ c: NSColor) -> CGFloat {
+    guard let s = c.usingColorSpace(.sRGB) else { return 0 }
+    return 0.2126 * s.redComponent + 0.7152 * s.greenComponent + 0.0722 * s.blueComponent
 }
 
 func parseHex(_ s: String) -> NSColor? {
@@ -244,6 +281,59 @@ func parseHex(_ s: String) -> NSColor? {
     return NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255,
                    green: CGFloat((v >> 8) & 0xff) / 255,
                    blue: CGFloat(v & 0xff) / 255, alpha: 1)
+}
+
+// The lid spans the lit runs, not the whole box: a box wide enough to gaze in
+// is wider than the eyes, and a bar across all of it reads as a letterbox
+// rather than a shut eye.
+func synthBlinkFrame(_ rows: [[Character]], _ pal: [Character: NSColor],
+                     _ e: EyeBox, _ socketCh: Character, _ lidCh: Character?) -> [[NSColor?]]? {
+    guard let socketColor = pal[socketCh] else { return nil }
+    let socketLuma = srgbLuma(socketColor)
+    var counts: [Character: Int] = [:]
+    for y in e.y0...e.y1 {
+        for x in e.x0...e.x1 where rows[y][x] != socketCh { counts[rows[y][x], default: 0] += 1 }
+    }
+    let area = (e.x1 - e.x0 + 1) * (e.y1 - e.y0 + 1)
+    // The 3% floor is what stops a single specular pixel winning: the very
+    // brightest ink inside a screen is usually one cell of catchlight, and a
+    // lid drawn in it comes out white instead of the eye's own colour.
+    let auto = counts.filter { $0.value * 100 >= area * 3 }
+        .max(by: { srgbLuma(pal[$0.key]!) < srgbLuma(pal[$1.key]!) })?.key
+    guard let lid = lidCh ?? auto, let lidColor = pal[lid] else { return nil }
+
+    func lit(_ x: Int, _ y: Int) -> Bool {
+        guard let c = pal[rows[y][x]] else { return false }
+        return srgbLuma(c) > socketLuma + 0.16
+    }
+    var cols: [Int] = []
+    for x in e.x0...e.x1 {
+        for y in e.y0...e.y1 where lit(x, y) { cols.append(x); break }
+    }
+    var lines: [Int] = []
+    for y in e.y0...e.y1 {
+        for x in e.x0...e.x1 where lit(x, y) { lines.append(y); break }
+    }
+    guard let first = cols.first, let top = lines.first, let bottom = lines.last else { return nil }
+    var runs: [(Int, Int)] = []
+    var start = first, prev = first
+    for x in cols.dropFirst() {
+        if x > prev + 2 { runs.append((start, prev)); start = x }
+        prev = x
+    }
+    runs.append((start, prev))
+
+    var out: [[NSColor?]] = rows.map { $0.map { ch in ch == "0" || ch == "." ? nil : pal[ch] } }
+    for y in e.y0...e.y1 {
+        for x in e.x0...e.x1 { out[y][x] = socketColor }
+    }
+    let mid = (top + bottom) / 2
+    for (a, b) in runs {
+        for y in mid...min(mid + 1, e.y1) {
+            for x in a...b { out[y][x] = lidColor }
+        }
+    }
+    return out
 }
 
 func loadCustomPet(_ url: URL) throws -> CustomPet {
@@ -310,8 +400,51 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         }
         scale = n
     }
+    var eyes: EyeBox?
+    var blinkFrame: [[NSColor?]]?
+    if let raw = top["eyes"] {
+        guard let spec = raw as? [String: Any] else {
+            throw PetError("\"eyes\" must be an object with \"box\" and \"socket\"")
+        }
+        guard let b = spec["box"] as? [Int], b.count == 4 else {
+            throw PetError("eyes.box must be [x, y, width, height] in pixels")
+        }
+        guard b[2] > 0, b[3] > 0, b[0] >= 0, b[1] >= 0,
+              b[0] + b[2] <= dims.w, b[1] + b[3] <= dims.h else {
+            throw PetError("eyes.box \(b[0]),\(b[1]) \(b[2])x\(b[3]) does not fit the \(dims.w)x\(dims.h) canvas")
+        }
+        guard let sk = spec["socket"] as? String, sk.count == 1,
+              let socketCh = sk.first, let socket = pal[socketCh] else {
+            throw PetError("eyes.socket must be a palette key — the flat color behind the eyes")
+        }
+        var range = 2
+        if let r = spec["range"] {
+            guard let n = r as? Int, (0...8).contains(n) else {
+                throw PetError("eyes.range must be an integer 0...8 (pixels of travel)")
+            }
+            range = n
+        }
+        var lidCh: Character?
+        if let l = spec["lid"] {
+            guard let s = l as? String, s.count == 1, let ch = s.first, pal[ch] != nil else {
+                throw PetError("eyes.lid must be a palette key")
+            }
+            lidCh = ch
+        }
+        let box = EyeBox(x0: b[0], y0: b[1], x1: b[0] + b[2] - 1, y1: b[1] + b[3] - 1,
+                         socket: socket, range: range)
+        eyes = box
+        // Blink is waiting's, so it is waiting's frame that gets a lid. A pet
+        // with no waiting frame falls back to idle the same way drawing does.
+        let src = (moodsRaw["waiting"] ?? moodsRaw["idle"]!).map(Array.init)
+        blinkFrame = synthBlinkFrame(src, pal, box, socketCh, lidCh)
+    }
+    let inkTop = frames.values
+        .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
+        .min() ?? 0
     return CustomPet(name: (top["name"] as? String) ?? "custom",
-                     width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames)
+                     width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
+                     eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame)
 }
 
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
@@ -642,6 +775,14 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
+    // Drag inertia, in sprite pixels of top-row offset. A lean is a transform
+    // of whatever pixels are already there, which is why it is the one drag
+    // reaction a manifest can have without shipping a pose for it — the Codex
+    // pets spend two atlas rows on running-left/running-right to get this.
+    var lean: CGFloat = 0
+    // Set once per draw so `fill` can shear without every call site — the base,
+    // the eyes, the tear, the sparkle and the custom blit — passing it along.
+    private var drawLean = 0
 
     override var isFlipped: Bool { true }
 
@@ -653,8 +794,11 @@ final class PetView: NSView {
     // of the process. Both ends have to check.
     var startled: Bool { custom == nil && motionOK && tick < startledUntil }
 
-    // Hovering the pet startles it. The tracking area is rebuilt on resize
-    // because installing a custom pet changes the window's bounds.
+    // Hovering the BUILT-IN pet startles it. The startle swaps the eye shape,
+    // and a manifest has one frame per mood with no second frame to cut to, so
+    // a custom pet cannot have the reaction at all. The tracking area is still
+    // built for it — it is rebuilt on resize anyway, because installing a
+    // custom pet changes the window's bounds.
     private var tracking: NSTrackingArea?
 
     override func updateTrackingAreas() {
@@ -667,21 +811,35 @@ final class PetView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        if motionOK { startledUntil = tick + 16 }
+        // Same two conditions `startled` reads, so the deadline is never armed
+        // for a pose that cannot be drawn. `custom` can change under a running
+        // process, which is the reason to check it here as well as there: a
+        // pet swapped mid-hover would otherwise inherit a deadline armed for
+        // the creature before it.
+        if custom == nil && motionOK { startledUntil = tick + 16 }
     }
 
     // Pupils drift toward the cursor (waiting, and idle's open-eyed peeks) —
     // the feature OpenAI built for Codex pets and left Statsig-gated off.
-    private func gaze() -> (Int, Int) {
+    //
+    // Sixteen sectors, which is the resolution their own atlas devotes two
+    // whole rows to. The three-value version this replaced could not tell a
+    // cursor above from one above-and-left, so half the screen produced the
+    // same two poses. The vector is a direction only — callers scale it, and
+    // they scale x and y differently because the glass is wider than it is
+    // tall and the eyes have about twice the sideways headroom.
+    private func gazeVector() -> (CGFloat, CGFloat) {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return (0, 0) }
         guard let w = window else { return (0, 0) }
         let m = NSEvent.mouseLocation
-        let dx = m.x - w.frame.midX
-        let dy = m.y - w.frame.midY
-        let gx = dx < -30 ? -1 : (dx > 30 ? 1 : 0)
+        let dx = m.x - w.frame.midX, dy = m.y - w.frame.midY
+        // Dead ahead is not a direction. Without this the eyes chase the
+        // sub-pixel jitter of a resting cursor and read as a nervous tic.
+        guard hypot(dx, dy) > 40 else { return (0, 0) }
+        let step = CGFloat.pi / 8
+        let a = (atan2(dy, dx) / step).rounded() * step
         // Screen coords are y-up, the grid is y-down: cursor above → pupils up.
-        let gy = dy > 80 ? -1 : (dy < -40 ? 1 : 0)
-        return (gx, gy)
+        return (cos(a), -sin(a))
     }
 
     // Proximity peek: approach wakes the pet before hover startles it.
@@ -693,11 +851,22 @@ final class PetView: NSView {
         return hypot(m.x - w.frame.midX, m.y - w.frame.midY) < 150
     }
 
+    // The top of the sprite lags the direction of travel and the feet stay
+    // planted, because the feet are what it is being dragged BY — a uniform
+    // offset would read as the window sliding rather than the creature
+    // resisting. Rects spanning several rows take their top row's shear; the
+    // tallest of them is three rows, so the error never reaches a pixel.
+    private func leanShift(_ y: Int) -> Int {
+        guard drawLean != 0 else { return 0 }
+        let h = CGFloat(custom?.height ?? GH)
+        return Int((CGFloat(drawLean) * (1 - CGFloat(y) / h)).rounded())
+    }
+
     // Every draw goes through here, so the side margin is applied once rather
     // than at each of the base / eyes / tear / sparkle / custom call sites.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
         color.setFill()
-        let r = NSRect(x: CGFloat(x0 + xpad) * scale,
+        let r = NSRect(x: CGFloat(x0 + xpad + leanShift(y0)) * scale,
                        y: CGFloat(y0 + off) * scale,
                        width: CGFloat(x1 - x0 + 1) * scale,
                        height: CGFloat(y1 - y0 + 1) * scale)
@@ -727,6 +896,12 @@ final class PetView: NSView {
         let startled: Bool
         let peeking: Bool
         let blinking: Bool
+        // Custom pets only. `dx` moves the whole sprite, so the eye shift needs
+        // its own pair or a glance would drag the body with it.
+        let eyeDX: Int
+        let eyeDY: Int
+        // Quantised here so the repaint decision sees the shear settle.
+        let lean: Int
         let tearRow: Int?
         let sparkleLeft: Bool
         let spriteGen: Int
@@ -761,7 +936,6 @@ final class PetView: NSView {
         let peek = mood == .idle && custom == nil && motionOK && (nearCursor() || tick % 132 < 16)
         var off = 2
         var dx = 0
-        var gy = 0
         // Gaze rides half the bounce unit, not the whole thing: the glass
         // gives waiting's eyes 6px of sideways headroom and 3px vertical, and
         // the twitch below already spends up to 4 of those 6 sideways on its
@@ -773,6 +947,11 @@ final class PetView: NSView {
         // stacked on top, so the full unit fits.
         var gazeDX = 0
         var gazeGY = 0
+        // A manifest declares one eye box, so its gaze is measured in that
+        // box's own pixels rather than in bounce units: the box is the only
+        // thing that knows how much headroom the eyes actually have.
+        var eyeDX = 0
+        var eyeDY = 0
         switch mood {
         case .running:
             off = 2 + (tick / 4) % 2
@@ -780,9 +959,13 @@ final class PetView: NSView {
         case .waiting:
             dx = (tick % 30 < 2) ? 1 : 0
             if custom == nil {
-                let g = gaze()
-                gazeDX = g.0 * (u / 2)
-                gazeGY = g.1 * (u / 2)
+                let g = gazeVector()
+                gazeDX = Int((g.0 * CGFloat(u) / 2).rounded())
+                gazeGY = Int((g.1 * CGFloat(u) / 2).rounded())
+            } else if let e = custom?.eyes {
+                let g = gazeVector()
+                eyeDX = Int((g.0 * CGFloat(e.range)).rounded())
+                eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
             }
             // Attention beat: the fold ranks waiting above everything, so it
             // cannot be the stillest thing on screen — two hops every ~3s.
@@ -795,11 +978,33 @@ final class PetView: NSView {
             // Breath, not bounce: the resting state stops spending the
             // attention budget the alert moods need to rise above.
             off = (tick % 64 < 56) ? 2 : 3
-            if peek { let g = gaze(); dx = g.0; gy = g.1 }
+            // Straight into the gaze pair rather than through `dx`, which is
+            // measured in whole cells and would collapse sixteen sectors back
+            // to the three the old three-value gaze had.
+            if peek {
+                let g = gazeVector()
+                gazeDX = Int((g.0 * CGFloat(u)).rounded())
+                gazeGY = Int((g.1 * CGFloat(u)).rounded())
+            }
+            // The doze cycle cuts between two eye shapes, and a manifest has
+            // only one idle frame to cut between — so proximity moves the eyes
+            // it already has instead. The pet still notices you approaching;
+            // it just cannot open eyes it has no art for.
+            else if let e = custom?.eyes, motionOK, nearCursor() {
+                let g = gazeVector()
+                eyeDX = Int((g.0 * CGFloat(e.range)).rounded())
+                eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
+            }
         }
         // The hop outranks the mood's resting bob, and now fires on a tap in
         // any mood rather than only on the switch into done.
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
+
+        // The side margin is one bounce unit and the twitch already spends all
+        // of it, so the two cannot both run — and a nervous tic while the pet
+        // is being held in a fist is not a thing worth reserving canvas for.
+        let ln = motionOK ? Int(lean.rounded()) : 0
+        if ln != 0 { dx = 0 }
 
         let st = startled
 
@@ -807,13 +1012,15 @@ final class PetView: NSView {
         // the one extra that sits out Reduce Motion entirely.
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
-        let blink = mood == .waiting && custom == nil && motionOK && tick % 80 < 2
+        let blink = mood == .waiting && motionOK && tick % 80 < 2
+            && (custom == nil || custom?.blinkFrame != nil)
         // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
         // blink %80 — deliberately share none, so overlapping animations read
         // as three mechanisms, not one.
 
-        return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gy * u + gazeGY,
+        return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gazeGY,
                     startled: st, peeking: peek, blinking: blink,
+                    eyeDX: eyeDX, eyeDY: eyeDY, lean: ln,
                     tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen)
@@ -827,15 +1034,31 @@ final class PetView: NSView {
         ctx.imageInterpolation = .none
 
         let p = pose()
+        drawLean = p.lean
 
         // Custom pets swap the whole sprite per mood; bounce (off) and twitch
         // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
         // the manifest knows nothing about eye coordinates.
         if let pet = custom {
-            let grid = pet.frame(for: p.mood)
+            let grid = (p.blinking ? pet.blinkFrame : nil) ?? pet.frame(for: p.mood)
+            let shifting = p.eyeDX != 0 || p.eyeDY != 0
+            // Startle outranks the glance rather than composing with it, the
+            // same way `startledRects` replaces the built-in's eyes outright:
+            // a creature whose eyes have just snapped open is not also
+            // tracking the cursor with them.
+
             for y in 0..<pet.height {
                 for x in 0..<pet.width {
-                    if let c = grid[y][x] { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
+                    var c = grid[y][x]
+                    // Sampled backwards, so every destination pixel is written
+                    // exactly once. Scattering forwards instead leaves a gap
+                    // wherever the shift steps past a source pixel, which is
+                    // the difference between a glance and a torn eye.
+                    if shifting, let e = pet.eyes, e.contains(x, y) {
+                        let sx = x - p.eyeDX, sy = y - p.eyeDY
+                        c = e.contains(sx, sy) ? grid[sy][sx] : e.socket
+                    }
+                    if let c = c { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
                 }
             }
             return
@@ -867,6 +1090,7 @@ final class PetView: NSView {
     var onTap: (() -> Void)?
     private var pressAt: NSPoint?
     private var winAt: NSPoint?
+    private var lastDrag: NSPoint?
     private var dragged = false
 
     // Deliver the activating click too — an accessory app is inactive at
@@ -877,6 +1101,7 @@ final class PetView: NSView {
     override func mouseDown(with event: NSEvent) {
         pressAt = NSEvent.mouseLocation
         winAt = window?.frame.origin
+        lastDrag = nil
         dragged = false
     }
 
@@ -884,6 +1109,14 @@ final class PetView: NSView {
         guard let p0 = pressAt, let w0 = winAt, let w = window else { return }
         let p = NSEvent.mouseLocation
         if abs(p.x - p0.x) + abs(p.y - p0.y) > 2 { dragged = true }
+        // Velocity, not displacement: a slow drag across the whole screen must
+        // not accumulate into a permanent tilt. The blend is what keeps a
+        // single jerky event from snapping the pet to full lean and back.
+        if motionOK, let last = lastDrag {
+            let cap = CGFloat(sidePad(scale))
+            lean = max(-cap, min(cap, lean * 0.5 - (p.x - last.x) * 0.5))
+        }
+        lastDrag = p
         w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))
     }
 
@@ -896,6 +1129,24 @@ final class PetView: NSView {
         }
         pressAt = nil
         winAt = nil
+        lastDrag = nil
+    }
+
+    // Where the art starts, in points below the window's top edge — the same
+    // for every pose, so the chrome never moves when the mood does. Measured
+    // at the RESTING bounce rather than the live one, or it would breathe
+    // along with the pet.
+    var artTopInset: CGFloat {
+        CGFloat((custom?.inkTop ?? 0) + 2 * bounceUnit(scale)) * scale
+    }
+
+    // Called from the tick loop rather than from pose(), which has to stay pure
+    // — draw() and repaintIfChanged() both call it, and a decay in there would
+    // run twice a frame or not at all depending on which of them ran first.
+    func decayLean() {
+        guard lean != 0 else { return }
+        lean *= 0.8
+        if abs(lean) < 0.5 { lean = 0 }
     }
 
     var onTuck: (() -> Void)?
@@ -1000,12 +1251,19 @@ let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .wa
 // makes the row stutter. The bubble draws the status alone, so the collision
 // is invisible from here.
 let moodStatus: [Mood: String] = {
-    let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
+    // Idle earns a line now that the bubble stays up through it. Without one
+    // the panel is a blank slab whenever nothing is happening, which is most
+    // of the time. It says spacing out rather than dozing because the idle
+    // face has open eyes: a manifest has one frame per mood, so there is no
+    // eyes-closed art to cut to, and "dozing" under two open eyes reads as a
+    // caption that lost its picture.
+    let en: [Mood: String] = [.idle: "unbothered…", .running: "thinking…",
+                              .waiting: "waiting for you…",
                               .done: "done!", .error: "oops, error"]
     let tables: [String: [Mood: String]] = [
-        "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
-        "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
-        "ja": [.running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
+        "zh-Hant": [.idle: "懶得動…", .running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
+        "zh-Hans": [.idle: "懒得动…", .running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
+        "ja": [.idle: "やる気なし…", .running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
     ]
     // Region-only Chinese tags carry no script subtag, so map them by hand
     // rather than letting a bare "zh" prefix decide the script.
@@ -1094,7 +1352,20 @@ func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
     return "\(name) — \(s)"
 }
 
-let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
+let BUB_W: CGFloat = 260, BUB_H: CGFloat = 54, BUB_BODY: CGFloat = 52
+
+// The bubble and the chip are the only surfaces that sit over the user's
+// desktop rather than over the pet, so they are the only place the flat palette
+// is used with alpha. A translucent dark panel stops the chrome competing with
+// the creature for attention on a busy wallpaper, where a cream slab read as a
+// second, larger pet. Both windows are already non-opaque with a clear
+// background, so this needs nothing from the window layer.
+//
+// This is a TINT over the blur, not the panel itself, which is why it is so
+// much lighter than the 0.78 a blur-less version needed: the frost supplies the
+// darkening and the legibility, and this only pulls the neutral grey toward the
+// pet's warm brown. Raise it and the blur stops being visible at all.
+let CHROME_TINT: CGFloat = 0.38
 let CHIP: CGFloat = 26
 
 // One control with two jobs: the count of what happened while you were not
@@ -1102,116 +1373,253 @@ let CHIP: CGFloat = 26
 // because `ignoresMouseEvents` is per-window — hanging a button off the bubble
 // would cost the whole 260-point rect the click-through that is the point of
 // a bubble you can leave on screen.
-final class ChipView: NSView {
-    var count = 0
-    var collapsed = false
+final class ChipView: NSVisualEffectView {
+    // The frost is the CONTAINER and the drawing is a subview. A view's own
+    // draw() runs before all of its subviews, so vibrancy added underneath the
+    // painter lands on top of the chevron and the button turns into a grey
+    // disc — which is exactly what the offscreen render showed. Apple's
+    // guidance points the same way: compose NSVisualEffectView with subviews
+    // rather than override its drawing.
+    private final class Face: NSView {
+        var count = 0
+        var collapsed = false
+
+        override var isFlipped: Bool { true }
+        // Clicks belong to the container, which is what carries onTap.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.clear.setFill()
+            dirtyRect.fill()
+            let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4))
+            // A tint over the frost, in one transparency layer so the disc does
+            // not double up with anything drawn after it. Unread is carried by
+            // the numeral's color rather than by flooding the disc: a coral
+            // disc beside a dark bubble read as a detached second creature.
+            let gc = NSGraphicsContext.current!.cgContext
+            gc.setAlpha(CHROME_TINT)
+            gc.beginTransparencyLayer(auxiliaryInfo: nil)
+            palette[.screen]!.setFill()
+            disc.fill()
+            gc.endTransparencyLayer()
+            gc.setAlpha(1)
+            palette[.outline]!.setStroke()
+            disc.lineWidth = 2.5
+            disc.stroke()
+            if count > 0 {
+                // Two glyphs is the whole budget at this size; past nine the
+                // exact number stops being the point anyway.
+                let s = count > 9 ? "9+" : "\(count)"
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
+                    // Amber on the dark disc — the pet's own attention ink, and
+                    // the only thing on this 26-point surface that has to carry.
+                    .foregroundColor: palette[.eye]!,
+                ]
+                let sz = (s as NSString).size(withAttributes: attrs)
+                (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
+            } else {
+                // The chevron points where the bubble is going, not where it is.
+                let mid = CHIP / 2, w: CGFloat = 4.5, h: CGFloat = 2.5
+                let apex = collapsed ? mid - h : mid + h, base = collapsed ? mid + h : mid - h
+                let p = NSBezierPath()
+                p.move(to: NSPoint(x: mid - w, y: base))
+                p.line(to: NSPoint(x: mid, y: apex))
+                p.line(to: NSPoint(x: mid + w, y: base))
+                palette[.glyph]!.setStroke()
+                p.lineWidth = 2.5
+                p.lineCapStyle = .round
+                p.lineJoinStyle = .round
+                p.stroke()
+            }
+        }
+    }
+
+    private let face = Face()
+    var count = 0 { didSet { if count != oldValue { face.count = count; face.needsDisplay = true } } }
+    var collapsed = false { didSet { if collapsed != oldValue { face.collapsed = collapsed; face.needsDisplay = true } } }
     var onTap: (() -> Void)?
 
-    override var isFlipped: Bool { true }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
+        // Pinned dark rather than following the system: this sits on the user's
+        // wallpaper, not inside an app window, so "light mode" says nothing
+        // about what is behind it. Following it turns the disc white and the
+        // cream chevron disappears.
+        appearance = NSAppearance(named: .darkAqua)
+        // A disc, matching the drawn stroke — a square of frost behind a round
+        // button is the same bug the bubble's tail mask exists to avoid.
+        maskImage = NSImage(size: NSSize(width: CHIP, height: CHIP), flipped: true) { _ in
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4)).fill()
+            return true
+        }
+        face.frame = bounds
+        face.autoresizingMask = [.width, .height]
+        addSubview(face)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not loaded from a nib") }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseUp(with event: NSEvent) { onTap?() }
-
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.clear.setFill()
-        dirtyRect.fill()
-        let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4))
-        (count > 0 ? palette[.body]! : palette[.glyph]!).setFill()
-        disc.fill()
-        palette[.outline]!.setStroke()
-        disc.lineWidth = 2.5
-        disc.stroke()
-        if count > 0 {
-            // Two glyphs is the whole budget at this size; past nine the exact
-            // number stops being the point anyway.
-            let s = count > 9 ? "9+" : "\(count)"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
-                // Dark on the warm disc: at 26 points, cream on body colour
-                // turns to mush and the count is the one thing to read.
-                .foregroundColor: palette[.outline]!,
-            ]
-            let sz = (s as NSString).size(withAttributes: attrs)
-            (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
-        } else {
-            // The chevron points where the bubble is going, not where it is.
-            let mid = CHIP / 2, w: CGFloat = 4.5, h: CGFloat = 2.5
-            let apex = collapsed ? mid - h : mid + h, base = collapsed ? mid + h : mid - h
-            let p = NSBezierPath()
-            p.move(to: NSPoint(x: mid - w, y: base))
-            p.line(to: NSPoint(x: mid, y: apex))
-            p.line(to: NSPoint(x: mid + w, y: base))
-            palette[.screen]!.setStroke()
-            p.lineWidth = 2.5
-            p.lineCapStyle = .round
-            p.lineJoinStyle = .round
-            p.stroke()
-        }
-    }
 }
 
-final class BubbleView: NSView {
-    // draw() is a pure function of these three and nothing else — no tick, no
-    // clock, no cursor, and a palette that never varies — so repainting on a
-    // real change is both necessary and sufficient. The poll loop used to mark
-    // the bubble dirty twenty times a second for content that changes a few
-    // times a turn, and text is the expensive thing on this canvas.
-    var mood: Mood = .idle { didSet { if mood != oldValue { needsDisplay = true } } }
-    var prompt: String = "" { didSet { if prompt != oldValue { needsDisplay = true } } }
-    var tailCenter: CGFloat = BUB_W - 64 { didSet { if tailCenter != oldValue { needsDisplay = true } } }
+final class BubbleView: NSVisualEffectView {
+    // Same shape as ChipView and for the same reason: the frost is the
+    // container, the drawing is a subview. A view draws before its subviews, so
+    // vibrancy added under the painter covers the text.
+    private final class Panel: NSView {
+        // draw() is a pure function of these three and nothing else — no tick,
+        // no clock, no cursor, and a palette that never varies — so repainting
+        // on a real change is both necessary and sufficient. The poll loop used
+        // to mark the bubble dirty twenty times a second for content that
+        // changes a few times a turn, and text is the expensive thing here.
+        var mood: Mood = .idle { didSet { if mood != oldValue { needsDisplay = true } } }
+        var prompt: String = "" { didSet { if prompt != oldValue { needsDisplay = true } } }
 
-    override var isFlipped: Bool { true }
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    private func statusText() -> String { moodStatus[mood] ?? "" }
+        private func statusText() -> String { moodStatus[mood] ?? "" }
 
-    private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
-        var t = s
-        if (t as NSString).size(withAttributes: attrs).width <= maxW { return t }
-        while !t.isEmpty && ("\(t)…" as NSString).size(withAttributes: attrs).width > maxW {
-            t = String(t.dropLast())
+        private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
+            var t = s
+            if (t as NSString).size(withAttributes: attrs).width <= maxW { return t }
+            while !t.isEmpty && ("\(t)…" as NSString).size(withAttributes: attrs).width > maxW {
+                t = String(t.dropLast())
+            }
+            return "\(t)…"
         }
-        return "\(t)…"
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.clear.setFill()
+            dirtyRect.fill()
+            let bg = palette[.screen]!, line = palette[.outline]!, textColor = palette[.glyph]!
+
+            let body = BubbleView.bodyPath()
+            // The blur underneath already darkens; this is a tint on top of it,
+            // which is why it is far lighter than the alpha a blur-less panel
+            // needed. It exists at all because `.hudWindow` is a neutral grey
+            // and the pet is warm — untinted, the chrome reads as borrowed
+            // system UI parked beside the creature rather than as part of it.
+            //
+            // One transparency layer, composited once. Filling each piece at
+            // alpha instead stacks the tail's overlap with the body into a
+            // darker seam — an artifact that does not exist while the fills are
+            // opaque. Text stays outside it: a translucent glyph is unreadable
+            // at 11pt.
+            let gc = NSGraphicsContext.current!.cgContext
+            gc.setAlpha(CHROME_TINT)
+            gc.beginTransparencyLayer(auxiliaryInfo: nil)
+            bg.setFill(); body.fill()
+            gc.endTransparencyLayer()
+            gc.setAlpha(1)
+            // The outline is opaque and outside the layer: it is the edge that
+            // makes this a pixel bubble rather than a system panel, and at 3pt
+            // a translucent one just muddies into the blur.
+            line.setStroke(); body.lineWidth = 3; body.stroke()
+
+            let promptAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: textColor,
+            ]
+            let statusAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: textColor.withAlphaComponent(0.72),
+            ]
+            let maxW = BUB_W - 32
+            if prompt.isEmpty {
+                (truncate(statusText(), statusAttrs, maxW) as NSString)
+                    .draw(at: NSPoint(x: 16, y: 19), withAttributes: statusAttrs)
+            } else {
+                (truncate(prompt, promptAttrs, maxW) as NSString)
+                    .draw(at: NSPoint(x: 16, y: 9), withAttributes: promptAttrs)
+                (truncate(statusText(), statusAttrs, maxW) as NSString)
+                    .draw(at: NSPoint(x: 16, y: 28), withAttributes: statusAttrs)
+            }
+        }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.clear.setFill()
-        dirtyRect.fill()
-        guard mood != .idle else { return }
+    private let panel = Panel()
 
-        let bg = palette[.glyph]!, line = palette[.outline]!, textColor = palette[.screen]!
-
-        // Tail steps first so the body sits on top of them. tailCenter tracks
-        // the pet's midline — a fixed inset from the bubble's right edge only
-        // aims at the head for one particular pet width.
-        let c = min(max(tailCenter, 26), BUB_W - 26)
-        let steps = [NSRect(x: c - 11, y: BUB_BODY - 2, width: 22, height: 12),
-                     NSRect(x: c - 5, y: BUB_BODY + 8, width: 12, height: 9)]
-        for s in steps { line.setFill(); s.insetBy(dx: -3, dy: 0).fill() }
-        for s in steps { bg.setFill(); s.fill() }
-
-        let body = NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
-                                xRadius: 7, yRadius: 7)
-        bg.setFill(); body.fill()
-        line.setStroke(); body.lineWidth = 3; body.stroke()
-
-        let promptAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: textColor,
-        ]
-        let statusAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-            .foregroundColor: textColor.withAlphaComponent(0.72),
-        ]
-        let maxW = BUB_W - 32
-        if prompt.isEmpty {
-            (truncate(statusText(), statusAttrs, maxW) as NSString)
-                .draw(at: NSPoint(x: 16, y: 19), withAttributes: statusAttrs)
-        } else {
-            (truncate(prompt, promptAttrs, maxW) as NSString)
-                .draw(at: NSPoint(x: 16, y: 9), withAttributes: promptAttrs)
-            (truncate(statusText(), statusAttrs, maxW) as NSString)
-                .draw(at: NSPoint(x: 16, y: 28), withAttributes: statusAttrs)
-        }
+    var mood: Mood = .idle { didSet { if mood != oldValue { panel.mood = mood } } }
+    var prompt: String = "" { didSet { panel.prompt = prompt } }
+    static func bodyPath() -> NSBezierPath {
+        NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
+                     xRadius: 7, yRadius: 7)
     }
+
+    // Vibrancy has no notion of a shape: unmasked, the whole rect frosts over,
+    // rounded corners included, and the bubble becomes a slab. Fixed now that
+    // the tail is gone — the mask used to be rebuilt every time the tail
+    // chased the pet's midline. Drawn flipped to match the panel, because
+    // NSImage's origin is bottom-left and every coordinate here is top-down.
+    private static let mask = NSImage(size: NSSize(width: BUB_W, height: BUB_H), flipped: true) { _ in
+        NSColor.black.setFill()
+        BubbleView.bodyPath().fill()
+        return true
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
+        // Pinned dark rather than following the system: the chrome sits on the
+        // user's wallpaper, not inside an app window, so "light mode" is not a
+        // statement about what is behind it. Letting it follow turns the panel
+        // white on a light desktop and the cream text vanishes.
+        appearance = NSAppearance(named: .darkAqua)
+        maskImage = BubbleView.mask
+        panel.frame = bounds
+        panel.autoresizingMask = [.width, .height]
+        addSubview(panel)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not loaded from a nib") }
+}
+
+// Where the three pieces sit. A pure function of the pet's frame and where its
+// art actually starts, so the offscreen harness composes the same rects the
+// Controller does rather than a second guess at them.
+//
+// Bubble and chip share one horizontal band above the pet and never overlap:
+// they are separate windows, and two frosted panels crossing would double the
+// tint exactly where they meet. That is also why the chip no longer perches on
+// the pet's shoulder — with the bubble brought down to meet the art there is
+// no shoulder left to perch on.
+struct ChromeLayout {
+    let bubble: NSPoint
+    let chip: NSPoint
+}
+
+let CHROME_GAP: CGFloat = 4
+
+func chromeLayout(pet: NSRect, artTop: CGFloat, screen: NSRect?) -> ChromeLayout {
+    // Everything hangs off where the ink starts, not off the canvas edge.
+    let head = pet.maxY - artTop
+    // Beside the top of the head, biting 10 points into the window so most of
+    // it clears the art — the same corner perch it has always had, now aimed
+    // at the head rather than at the canvas corner above it.
+    var cx = pet.maxX - 10
+    var cy = head - CHIP
+    if let s = screen {
+        cx = min(cx, s.maxX - CHIP)
+        cy = max(cy, s.minY + CHROME_GAP)
+    }
+    // Right edges flush with the chip's, so the two stack on one axis instead
+    // of the bubble ending 16 points short of the thing under it. Derived from
+    // the CLAMPED chip, or a pet shoved against the screen edge moves the chip
+    // and leaves the bubble behind — the one case where the alignment this
+    // exists for is the first thing to break.
+    var x = cx + CHIP - BUB_W
+    let y = head + CHROME_GAP
+    if let s = screen { x = max(x, s.minX + CHROME_GAP) }
+    return ChromeLayout(bubble: NSPoint(x: x, y: y), chip: NSPoint(x: cx, y: cy))
 }
 
 final class Controller: NSObject, NSWindowDelegate {
@@ -1400,26 +1808,18 @@ final class Controller: NSObject, NSWindowDelegate {
     }
 
     func repositionBubble() {
-        let pf = window.frame
-        var x = pf.maxX - BUB_W
-        if let s = window.screen ?? NSScreen.main { x = max(x, s.visibleFrame.minX + 4) }
-        bubbleView.tailCenter = pf.midX - x
-        bubble.setFrameOrigin(NSPoint(x: x, y: pf.maxY + 2))
-        // Perched on the pet's top-right corner, mostly outside the art and
-        // entirely below the bubble — the two never draw over each other.
-        var cx = pf.maxX - 10, cy = pf.maxY - CHIP
-        if let s = window.screen ?? NSScreen.main {
-            cx = min(cx, s.visibleFrame.maxX - CHIP)
-            cy = min(cy, s.visibleFrame.maxY - CHIP)
-        }
-        chip.setFrameOrigin(NSPoint(x: cx, y: cy))
+        let l = chromeLayout(pet: window.frame, artTop: view.artTopInset,
+                             screen: (window.screen ?? NSScreen.main)?.visibleFrame)
+        bubble.setFrameOrigin(l.bubble)
+        chip.setFrameOrigin(l.chip)
     }
 
-    // The chip earns its place only when it has something to say or something
-    // to fold: a count you have not seen, or a bubble that is actually drawn.
-    // An idle pet keeps the desktop clean.
+    // Bubble and chip stay up through idle. They used to fold away with the
+    // mood, on the theory that an idle pet keeps the desktop clean; the cost
+    // was that the one control for the bubble vanished exactly when the bubble
+    // was quiet enough to be in the way. Tuck is the control for "gone".
     func applyChrome() {
-        let wanted = !tucked && (unread > 0 || view.mood != .idle)
+        let wanted = !tucked
         let state = (wanted, unread, collapsed)
         guard lastChip == nil || lastChip! != state else { return }
         lastChip = state
@@ -1604,7 +2004,10 @@ final class Controller: NSObject, NSWindowDelegate {
             clock += 1
             // Reduce Motion freezes the animation clock (static pose), never
             // the polling clock — liveness and mood changes must keep working.
-            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { view.tick += 1 }
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                view.tick += 1
+                view.decayLean()
+            }
             if clock % 8 == 0 {
                 // Manual un-tuck: a tucked pet has no window to right-click,
                 // so `pet.sh wake` drops a flag file for us to find.
@@ -1694,7 +2097,16 @@ if argv.count >= 2 {
         do {
             let pet = try loadCustomPet(target)
             let moods = pet.frames.keys.map { $0.rawValue }.sorted().joined(separator: ", ")
-            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)]")
+            // The eye box is reported because a manifest can declare one and
+            // still get no blink — synthesis needs lit pixels inside the box,
+            // and silently having none is the failure worth naming here.
+            var eyes = "no eyes declared"
+            if let e = pet.eyes {
+                eyes = "eyes \(e.x1 - e.x0 + 1)x\(e.y1 - e.y0 + 1) at \(e.x0),\(e.y0) range \(e.range)"
+                eyes += pet.blinkFrame == nil ? ", blink UNAVAILABLE (no lit pixels in box)" : ", blink ok"
+
+            }
+            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes)")
             exit(0)
         } catch {
             FileHandle.standardError.write(Data("invalid pet manifest: \(error)\n".utf8))
