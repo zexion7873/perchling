@@ -71,7 +71,8 @@ the desktop app if that's running, otherwise whatever was frontmost when the pet
 launched.
 
 Drag it anywhere; the position sticks. Right-click for **Tuck away** (hides
-until something needs you), **Disable**, or **Quit**.
+until something needs you), **Disable**, or **Quit** — Controls below has which
+is which.
 
 ### 💬 The speech bubble
 
@@ -211,6 +212,26 @@ protocol: no IPC, no daemon framework, and no network traffic at runtime.
 ---
 
 ## 🎛️ Controls
+
+Right-click the pet for its menu. Three entries make it go away, and the
+difference is not how firmly you close it — it is how long it stays gone and
+what is allowed to bring it back:
+
+| | The process | What brings it back |
+|---|---|---|
+| **Tuck away** | keeps running, just hidden | **itself**, the moment a session starts waiting on you or hits an error — or `pet.sh wake` |
+| **Quit perchling** | ends | the next session you start |
+| **Disable** | ends, and leaves a marker behind | **only you**, with `pet.sh enable` |
+
+Tuck and Quit look the same on screen and are not: a tucked pet is still
+running and still watching your sessions, which is the only reason it can decide
+to come back on its own. Quit leaves nothing watching, so it waits for the next
+session to start it.
+
+Disable is the one with a memory. Every session start checks for that marker
+first and leaves the pet alone, so it stays gone across restarts, reboots and
+new projects until you take the marker away — `pet.sh wake` will not override
+it either, and says so.
 
 The control script lives inside the installed plugin, and that path changes on
 every update — resolve it once:
