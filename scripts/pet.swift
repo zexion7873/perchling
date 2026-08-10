@@ -246,6 +246,20 @@ struct CustomPet {
     let scale: CGFloat
     let frames: [Mood: [[NSColor?]]]
     let eyes: EyeBox?
+    // The highest row any pose reaches. The chrome hangs off this rather than
+    // off the canvas edge: `canvasSize` reserves headroom for the bounce and a
+    // manifest pads its own grid on top of that, so a bubble pinned to the
+    // window floats 23 points clear of a pet whose art starts at row 13. One
+    // number across every pose, not one per pose — following each pose tucks
+    // in tighter, but then the celebration drags the bubble and the chip up
+    // with it every time the pet finishes something, and chrome that jumps
+    // whenever the mood changes is worse than chrome that sits a few points
+    // high. This is the position no pose reaches.
+    let inkTop: Int
+    // Synthesised once at load: the waiting frame with the eye box wiped to
+    // `socket` and one lid bar per eye. Blinking then costs the draw path a
+    // frame swap rather than per-tick pixel work, and a manifest that ships a
+    // real blink frame later can replace this without the drawing changing.
     let blinkFrame: [[NSColor?]]?
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
@@ -425,9 +439,12 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         let src = (moodsRaw["waiting"] ?? moodsRaw["idle"]!).map(Array.init)
         blinkFrame = synthBlinkFrame(src, pal, box, socketCh, lidCh)
     }
+    let inkTop = frames.values
+        .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
+        .min() ?? 0
     return CustomPet(name: (top["name"] as? String) ?? "custom",
                      width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
-                     eyes: eyes, blinkFrame: blinkFrame)
+                     eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame)
 }
 
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
@@ -1115,6 +1132,14 @@ final class PetView: NSView {
         lastDrag = nil
     }
 
+    // Where the art starts, in points below the window's top edge — the same
+    // for every pose, so the chrome never moves when the mood does. Measured
+    // at the RESTING bounce rather than the live one, or it would breathe
+    // along with the pet.
+    var artTopInset: CGFloat {
+        CGFloat((custom?.inkTop ?? 0) + 2 * bounceUnit(scale)) * scale
+    }
+
     // Called from the tick loop rather than from pose(), which has to stay pure
     // — draw() and repaintIfChanged() both call it, and a decay in there would
     // run twice a frame or not at all depending on which of them ran first.
@@ -1226,12 +1251,19 @@ let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .wa
 // makes the row stutter. The bubble draws the status alone, so the collision
 // is invisible from here.
 let moodStatus: [Mood: String] = {
-    let en: [Mood: String] = [.running: "thinking…", .waiting: "waiting for you…",
+    // Idle earns a line now that the bubble stays up through it. Without one
+    // the panel is a blank slab whenever nothing is happening, which is most
+    // of the time. It says spacing out rather than dozing because the idle
+    // face has open eyes: a manifest has one frame per mood, so there is no
+    // eyes-closed art to cut to, and "dozing" under two open eyes reads as a
+    // caption that lost its picture.
+    let en: [Mood: String] = [.idle: "unbothered…", .running: "thinking…",
+                              .waiting: "waiting for you…",
                               .done: "done!", .error: "oops, error"]
     let tables: [String: [Mood: String]] = [
-        "zh-Hant": [.running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
-        "zh-Hans": [.running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
-        "ja": [.running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
+        "zh-Hant": [.idle: "懶得動…", .running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
+        "zh-Hans": [.idle: "懒得动…", .running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
+        "ja": [.idle: "やる気なし…", .running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
     ]
     // Region-only Chinese tags carry no script subtag, so map them by hand
     // rather than letting a bare "zh" prefix decide the script.
@@ -1320,7 +1352,20 @@ func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
     return "\(name) — \(s)"
 }
 
-let BUB_W: CGFloat = 260, BUB_H: CGFloat = 72, BUB_BODY: CGFloat = 52
+let BUB_W: CGFloat = 260, BUB_H: CGFloat = 54, BUB_BODY: CGFloat = 52
+
+// The bubble and the chip are the only surfaces that sit over the user's
+// desktop rather than over the pet, so they are the only place the flat palette
+// is used with alpha. A translucent dark panel stops the chrome competing with
+// the creature for attention on a busy wallpaper, where a cream slab read as a
+// second, larger pet. Both windows are already non-opaque with a clear
+// background, so this needs nothing from the window layer.
+//
+// This is a TINT over the blur, not the panel itself, which is why it is so
+// much lighter than the 0.78 a blur-less version needed: the frost supplies the
+// darkening and the legibility, and this only pulls the neutral grey toward the
+// pet's warm brown. Raise it and the blur stops being visible at all.
+let CHROME_TINT: CGFloat = 0.38
 let CHIP: CGFloat = 26
 
 // One control with two jobs: the count of what happened while you were not
@@ -1328,116 +1373,253 @@ let CHIP: CGFloat = 26
 // because `ignoresMouseEvents` is per-window — hanging a button off the bubble
 // would cost the whole 260-point rect the click-through that is the point of
 // a bubble you can leave on screen.
-final class ChipView: NSView {
-    var count = 0
-    var collapsed = false
+final class ChipView: NSVisualEffectView {
+    // The frost is the CONTAINER and the drawing is a subview. A view's own
+    // draw() runs before all of its subviews, so vibrancy added underneath the
+    // painter lands on top of the chevron and the button turns into a grey
+    // disc — which is exactly what the offscreen render showed. Apple's
+    // guidance points the same way: compose NSVisualEffectView with subviews
+    // rather than override its drawing.
+    private final class Face: NSView {
+        var count = 0
+        var collapsed = false
+
+        override var isFlipped: Bool { true }
+        // Clicks belong to the container, which is what carries onTap.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.clear.setFill()
+            dirtyRect.fill()
+            let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4))
+            // A tint over the frost, in one transparency layer so the disc does
+            // not double up with anything drawn after it. Unread is carried by
+            // the numeral's color rather than by flooding the disc: a coral
+            // disc beside a dark bubble read as a detached second creature.
+            let gc = NSGraphicsContext.current!.cgContext
+            gc.setAlpha(CHROME_TINT)
+            gc.beginTransparencyLayer(auxiliaryInfo: nil)
+            palette[.screen]!.setFill()
+            disc.fill()
+            gc.endTransparencyLayer()
+            gc.setAlpha(1)
+            palette[.outline]!.setStroke()
+            disc.lineWidth = 2.5
+            disc.stroke()
+            if count > 0 {
+                // Two glyphs is the whole budget at this size; past nine the
+                // exact number stops being the point anyway.
+                let s = count > 9 ? "9+" : "\(count)"
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
+                    // Amber on the dark disc — the pet's own attention ink, and
+                    // the only thing on this 26-point surface that has to carry.
+                    .foregroundColor: palette[.eye]!,
+                ]
+                let sz = (s as NSString).size(withAttributes: attrs)
+                (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
+            } else {
+                // The chevron points where the bubble is going, not where it is.
+                let mid = CHIP / 2, w: CGFloat = 4.5, h: CGFloat = 2.5
+                let apex = collapsed ? mid - h : mid + h, base = collapsed ? mid + h : mid - h
+                let p = NSBezierPath()
+                p.move(to: NSPoint(x: mid - w, y: base))
+                p.line(to: NSPoint(x: mid, y: apex))
+                p.line(to: NSPoint(x: mid + w, y: base))
+                palette[.glyph]!.setStroke()
+                p.lineWidth = 2.5
+                p.lineCapStyle = .round
+                p.lineJoinStyle = .round
+                p.stroke()
+            }
+        }
+    }
+
+    private let face = Face()
+    var count = 0 { didSet { if count != oldValue { face.count = count; face.needsDisplay = true } } }
+    var collapsed = false { didSet { if collapsed != oldValue { face.collapsed = collapsed; face.needsDisplay = true } } }
     var onTap: (() -> Void)?
 
-    override var isFlipped: Bool { true }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
+        // Pinned dark rather than following the system: this sits on the user's
+        // wallpaper, not inside an app window, so "light mode" says nothing
+        // about what is behind it. Following it turns the disc white and the
+        // cream chevron disappears.
+        appearance = NSAppearance(named: .darkAqua)
+        // A disc, matching the drawn stroke — a square of frost behind a round
+        // button is the same bug the bubble's tail mask exists to avoid.
+        maskImage = NSImage(size: NSSize(width: CHIP, height: CHIP), flipped: true) { _ in
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4)).fill()
+            return true
+        }
+        face.frame = bounds
+        face.autoresizingMask = [.width, .height]
+        addSubview(face)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not loaded from a nib") }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseUp(with event: NSEvent) { onTap?() }
-
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.clear.setFill()
-        dirtyRect.fill()
-        let disc = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4))
-        (count > 0 ? palette[.body]! : palette[.glyph]!).setFill()
-        disc.fill()
-        palette[.outline]!.setStroke()
-        disc.lineWidth = 2.5
-        disc.stroke()
-        if count > 0 {
-            // Two glyphs is the whole budget at this size; past nine the exact
-            // number stops being the point anyway.
-            let s = count > 9 ? "9+" : "\(count)"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
-                // Dark on the warm disc: at 26 points, cream on body colour
-                // turns to mush and the count is the one thing to read.
-                .foregroundColor: palette[.outline]!,
-            ]
-            let sz = (s as NSString).size(withAttributes: attrs)
-            (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
-        } else {
-            // The chevron points where the bubble is going, not where it is.
-            let mid = CHIP / 2, w: CGFloat = 4.5, h: CGFloat = 2.5
-            let apex = collapsed ? mid - h : mid + h, base = collapsed ? mid + h : mid - h
-            let p = NSBezierPath()
-            p.move(to: NSPoint(x: mid - w, y: base))
-            p.line(to: NSPoint(x: mid, y: apex))
-            p.line(to: NSPoint(x: mid + w, y: base))
-            palette[.screen]!.setStroke()
-            p.lineWidth = 2.5
-            p.lineCapStyle = .round
-            p.lineJoinStyle = .round
-            p.stroke()
-        }
-    }
 }
 
-final class BubbleView: NSView {
-    // draw() is a pure function of these three and nothing else — no tick, no
-    // clock, no cursor, and a palette that never varies — so repainting on a
-    // real change is both necessary and sufficient. The poll loop used to mark
-    // the bubble dirty twenty times a second for content that changes a few
-    // times a turn, and text is the expensive thing on this canvas.
-    var mood: Mood = .idle { didSet { if mood != oldValue { needsDisplay = true } } }
-    var prompt: String = "" { didSet { if prompt != oldValue { needsDisplay = true } } }
-    var tailCenter: CGFloat = BUB_W - 64 { didSet { if tailCenter != oldValue { needsDisplay = true } } }
+final class BubbleView: NSVisualEffectView {
+    // Same shape as ChipView and for the same reason: the frost is the
+    // container, the drawing is a subview. A view draws before its subviews, so
+    // vibrancy added under the painter covers the text.
+    private final class Panel: NSView {
+        // draw() is a pure function of these three and nothing else — no tick,
+        // no clock, no cursor, and a palette that never varies — so repainting
+        // on a real change is both necessary and sufficient. The poll loop used
+        // to mark the bubble dirty twenty times a second for content that
+        // changes a few times a turn, and text is the expensive thing here.
+        var mood: Mood = .idle { didSet { if mood != oldValue { needsDisplay = true } } }
+        var prompt: String = "" { didSet { if prompt != oldValue { needsDisplay = true } } }
 
-    override var isFlipped: Bool { true }
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    private func statusText() -> String { moodStatus[mood] ?? "" }
+        private func statusText() -> String { moodStatus[mood] ?? "" }
 
-    private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
-        var t = s
-        if (t as NSString).size(withAttributes: attrs).width <= maxW { return t }
-        while !t.isEmpty && ("\(t)…" as NSString).size(withAttributes: attrs).width > maxW {
-            t = String(t.dropLast())
+        private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
+            var t = s
+            if (t as NSString).size(withAttributes: attrs).width <= maxW { return t }
+            while !t.isEmpty && ("\(t)…" as NSString).size(withAttributes: attrs).width > maxW {
+                t = String(t.dropLast())
+            }
+            return "\(t)…"
         }
-        return "\(t)…"
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.clear.setFill()
+            dirtyRect.fill()
+            let bg = palette[.screen]!, line = palette[.outline]!, textColor = palette[.glyph]!
+
+            let body = BubbleView.bodyPath()
+            // The blur underneath already darkens; this is a tint on top of it,
+            // which is why it is far lighter than the alpha a blur-less panel
+            // needed. It exists at all because `.hudWindow` is a neutral grey
+            // and the pet is warm — untinted, the chrome reads as borrowed
+            // system UI parked beside the creature rather than as part of it.
+            //
+            // One transparency layer, composited once. Filling each piece at
+            // alpha instead stacks the tail's overlap with the body into a
+            // darker seam — an artifact that does not exist while the fills are
+            // opaque. Text stays outside it: a translucent glyph is unreadable
+            // at 11pt.
+            let gc = NSGraphicsContext.current!.cgContext
+            gc.setAlpha(CHROME_TINT)
+            gc.beginTransparencyLayer(auxiliaryInfo: nil)
+            bg.setFill(); body.fill()
+            gc.endTransparencyLayer()
+            gc.setAlpha(1)
+            // The outline is opaque and outside the layer: it is the edge that
+            // makes this a pixel bubble rather than a system panel, and at 3pt
+            // a translucent one just muddies into the blur.
+            line.setStroke(); body.lineWidth = 3; body.stroke()
+
+            let promptAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: textColor,
+            ]
+            let statusAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: textColor.withAlphaComponent(0.72),
+            ]
+            let maxW = BUB_W - 32
+            if prompt.isEmpty {
+                (truncate(statusText(), statusAttrs, maxW) as NSString)
+                    .draw(at: NSPoint(x: 16, y: 19), withAttributes: statusAttrs)
+            } else {
+                (truncate(prompt, promptAttrs, maxW) as NSString)
+                    .draw(at: NSPoint(x: 16, y: 9), withAttributes: promptAttrs)
+                (truncate(statusText(), statusAttrs, maxW) as NSString)
+                    .draw(at: NSPoint(x: 16, y: 28), withAttributes: statusAttrs)
+            }
+        }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.clear.setFill()
-        dirtyRect.fill()
-        guard mood != .idle else { return }
+    private let panel = Panel()
 
-        let bg = palette[.glyph]!, line = palette[.outline]!, textColor = palette[.screen]!
-
-        // Tail steps first so the body sits on top of them. tailCenter tracks
-        // the pet's midline — a fixed inset from the bubble's right edge only
-        // aims at the head for one particular pet width.
-        let c = min(max(tailCenter, 26), BUB_W - 26)
-        let steps = [NSRect(x: c - 11, y: BUB_BODY - 2, width: 22, height: 12),
-                     NSRect(x: c - 5, y: BUB_BODY + 8, width: 12, height: 9)]
-        for s in steps { line.setFill(); s.insetBy(dx: -3, dy: 0).fill() }
-        for s in steps { bg.setFill(); s.fill() }
-
-        let body = NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
-                                xRadius: 7, yRadius: 7)
-        bg.setFill(); body.fill()
-        line.setStroke(); body.lineWidth = 3; body.stroke()
-
-        let promptAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: textColor,
-        ]
-        let statusAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-            .foregroundColor: textColor.withAlphaComponent(0.72),
-        ]
-        let maxW = BUB_W - 32
-        if prompt.isEmpty {
-            (truncate(statusText(), statusAttrs, maxW) as NSString)
-                .draw(at: NSPoint(x: 16, y: 19), withAttributes: statusAttrs)
-        } else {
-            (truncate(prompt, promptAttrs, maxW) as NSString)
-                .draw(at: NSPoint(x: 16, y: 9), withAttributes: promptAttrs)
-            (truncate(statusText(), statusAttrs, maxW) as NSString)
-                .draw(at: NSPoint(x: 16, y: 28), withAttributes: statusAttrs)
-        }
+    var mood: Mood = .idle { didSet { if mood != oldValue { panel.mood = mood } } }
+    var prompt: String = "" { didSet { panel.prompt = prompt } }
+    static func bodyPath() -> NSBezierPath {
+        NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
+                     xRadius: 7, yRadius: 7)
     }
+
+    // Vibrancy has no notion of a shape: unmasked, the whole rect frosts over,
+    // rounded corners included, and the bubble becomes a slab. Fixed now that
+    // the tail is gone — the mask used to be rebuilt every time the tail
+    // chased the pet's midline. Drawn flipped to match the panel, because
+    // NSImage's origin is bottom-left and every coordinate here is top-down.
+    private static let mask = NSImage(size: NSSize(width: BUB_W, height: BUB_H), flipped: true) { _ in
+        NSColor.black.setFill()
+        BubbleView.bodyPath().fill()
+        return true
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
+        // Pinned dark rather than following the system: the chrome sits on the
+        // user's wallpaper, not inside an app window, so "light mode" is not a
+        // statement about what is behind it. Letting it follow turns the panel
+        // white on a light desktop and the cream text vanishes.
+        appearance = NSAppearance(named: .darkAqua)
+        maskImage = BubbleView.mask
+        panel.frame = bounds
+        panel.autoresizingMask = [.width, .height]
+        addSubview(panel)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not loaded from a nib") }
+}
+
+// Where the three pieces sit. A pure function of the pet's frame and where its
+// art actually starts, so the offscreen harness composes the same rects the
+// Controller does rather than a second guess at them.
+//
+// Bubble and chip share one horizontal band above the pet and never overlap:
+// they are separate windows, and two frosted panels crossing would double the
+// tint exactly where they meet. That is also why the chip no longer perches on
+// the pet's shoulder — with the bubble brought down to meet the art there is
+// no shoulder left to perch on.
+struct ChromeLayout {
+    let bubble: NSPoint
+    let chip: NSPoint
+}
+
+let CHROME_GAP: CGFloat = 4
+
+func chromeLayout(pet: NSRect, artTop: CGFloat, screen: NSRect?) -> ChromeLayout {
+    // Everything hangs off where the ink starts, not off the canvas edge.
+    let head = pet.maxY - artTop
+    // Beside the top of the head, biting 10 points into the window so most of
+    // it clears the art — the same corner perch it has always had, now aimed
+    // at the head rather than at the canvas corner above it.
+    var cx = pet.maxX - 10
+    var cy = head - CHIP
+    if let s = screen {
+        cx = min(cx, s.maxX - CHIP)
+        cy = max(cy, s.minY + CHROME_GAP)
+    }
+    // Right edges flush with the chip's, so the two stack on one axis instead
+    // of the bubble ending 16 points short of the thing under it. Derived from
+    // the CLAMPED chip, or a pet shoved against the screen edge moves the chip
+    // and leaves the bubble behind — the one case where the alignment this
+    // exists for is the first thing to break.
+    var x = cx + CHIP - BUB_W
+    let y = head + CHROME_GAP
+    if let s = screen { x = max(x, s.minX + CHROME_GAP) }
+    return ChromeLayout(bubble: NSPoint(x: x, y: y), chip: NSPoint(x: cx, y: cy))
 }
 
 final class Controller: NSObject, NSWindowDelegate {
@@ -1626,26 +1808,18 @@ final class Controller: NSObject, NSWindowDelegate {
     }
 
     func repositionBubble() {
-        let pf = window.frame
-        var x = pf.maxX - BUB_W
-        if let s = window.screen ?? NSScreen.main { x = max(x, s.visibleFrame.minX + 4) }
-        bubbleView.tailCenter = pf.midX - x
-        bubble.setFrameOrigin(NSPoint(x: x, y: pf.maxY + 2))
-        // Perched on the pet's top-right corner, mostly outside the art and
-        // entirely below the bubble — the two never draw over each other.
-        var cx = pf.maxX - 10, cy = pf.maxY - CHIP
-        if let s = window.screen ?? NSScreen.main {
-            cx = min(cx, s.visibleFrame.maxX - CHIP)
-            cy = min(cy, s.visibleFrame.maxY - CHIP)
-        }
-        chip.setFrameOrigin(NSPoint(x: cx, y: cy))
+        let l = chromeLayout(pet: window.frame, artTop: view.artTopInset,
+                             screen: (window.screen ?? NSScreen.main)?.visibleFrame)
+        bubble.setFrameOrigin(l.bubble)
+        chip.setFrameOrigin(l.chip)
     }
 
-    // The chip earns its place only when it has something to say or something
-    // to fold: a count you have not seen, or a bubble that is actually drawn.
-    // An idle pet keeps the desktop clean.
+    // Bubble and chip stay up through idle. They used to fold away with the
+    // mood, on the theory that an idle pet keeps the desktop clean; the cost
+    // was that the one control for the bubble vanished exactly when the bubble
+    // was quiet enough to be in the way. Tuck is the control for "gone".
     func applyChrome() {
-        let wanted = !tucked && (unread > 0 || view.mood != .idle)
+        let wanted = !tucked
         let state = (wanted, unread, collapsed)
         guard lastChip == nil || lastChip! != state else { return }
         lastChip = state

@@ -75,15 +75,15 @@ until something needs you), **Disable**, or **Quit**.
 
 ### 💬 The speech bubble
 
-A pixel bubble above its head shows what it's doing over a line of context:
-your prompt while it works, then a snippet of Claude's reply once the turn
-ends. The status words are translated for Chinese and Japanese systems and read
-English everywhere else. It's a click-through overlay, so it never steals a
-click, and it vanishes when things go idle.
+A bubble above its head shows what it's doing over a line of context: your
+prompt while it works, then a snippet of Claude's reply once the turn ends. The
+status words are translated for Chinese and Japanese systems and read English
+everywhere else. It's a frosted, click-through overlay, so it never steals a
+click, and it stays up through idle rather than folding itself away.
 
-A small disc perches on the pet's shoulder while there is anything to say.
-Click it to fold the bubble away or bring it back — the choice sticks across
-restarts. When something happened while you were looking elsewhere, the disc
+A small disc sits beside the top of its head, right edge flush with the
+bubble's above it. Click it to fold the bubble away or bring it back — the
+choice sticks across restarts. When something happened while you were looking elsewhere, the disc
 turns into a count of how much you missed; coming back to Claude, or opening
 the bubble, clears it.
 
