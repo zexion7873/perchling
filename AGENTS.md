@@ -381,8 +381,31 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   terminal that ran `claude`. A dead owner retires the session on the next
   poll, which is what makes a force-quit (where no `SessionEnd` ever fires)
   survivable. A missing owner file means unknown, never dead: it falls back to
-  the one-hour staleness window. Whatever writes a session file owes it an
-  owner file, and owes both a removal.
+  the one-hour staleness window.
+
+  **Only `cmd_up` ever writes an owner file, and absence is a normal state with
+  two different causes.** `cmd_up` writes the pair at `SessionStart` and
+  deliberately writes NO owner when the process tree is unclimbable or resolves
+  to itself — there, absence means "cannot be known". `state.sh` is the other
+  writer of session files, on every prompt and every tool batch, and it never
+  touches `owners/` by design: resolving an owner costs a whole-process-table
+  `ps`, and that file is the hot path. So `pet.sh stop`, which wipes both
+  directories, leaves a session whose very next hook restores the refcount
+  alone — there, absence means "was known, then erased", and that session runs
+  ownerless until it ends. Reproduced deterministically; the only cost is that
+  a force-quit after a manual `stop` is retired by the one-hour window instead
+  of immediately, and it self-heals.
+
+  Do not "fix" that by having `state.sh` fill in the missing owner. The two
+  causes of absence are indistinguishable on disk, so the unclimbable case
+  would re-run `ps` on every hook forever and could write the very pid
+  `cmd_up`'s `!= "$$"` guard exists to reject. Closing it properly means
+  inventing a third state, which buys back a self-healing hour.
+
+  What DOES hold, and is worth keeping: removal is symmetric. `cmd_down`
+  removes both halves at `SessionEnd` whatever the owner situation was, and
+  `cmd_up` prunes owner files whose session is already gone, so neither
+  directory leaks.
 - **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
   the pause between one session ending and the next starting — a resume, a
   `/clear`, a new window. Both ways of losing every session skip it: refcounts
