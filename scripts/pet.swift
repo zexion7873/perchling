@@ -258,6 +258,11 @@ struct PetSequence {
     var totalTicks: Int { frames.count * ticksPerFrame }
 }
 
+// A tuple will not synthesise Equatable, and Pose's equality IS the repaint
+// contract — without the frame index in there, repaintIfChanged() reads two
+// consecutive sequence frames as the same pose and the animation never paints.
+struct SeqRef: Equatable { let kind: SeqKind; let index: Int }
+
 struct CustomPet {
     let name: String
     let width: Int
@@ -860,6 +865,10 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
+    // Custom pets only. `-1` is disarmed, matching hopUntil and startledUntil.
+    // Hover is one-shot and expires by elapsing; drag loops until mouseUp.
+    var hoverSeqStart = -1
+    var dragSeqStart = -1
     // Drag inertia, in sprite pixels of top-row offset. A lean is a transform
     // of whatever pixels are already there, which is why it is the one drag
     // reaction a manifest can have without shipping a pose for it — the Codex
@@ -902,6 +911,9 @@ final class PetView: NSView {
         // pet swapped mid-hover would otherwise inherit a deadline armed for
         // the creature before it.
         if custom == nil && motionOK { startledUntil = tick + 16 }
+        // A custom pet has no startle to swap to; it gets the burst only if it
+        // shipped the frames for one.
+        else if motionOK, custom?.sequences[.hover] != nil { hoverSeqStart = tick }
     }
 
     // Pupils drift toward the cursor (waiting, and idle's open-eyed peeks) —
@@ -990,6 +1002,7 @@ final class PetView: NSView {
         let tearRow: Int?
         let sparkleLeft: Bool
         let spriteGen: Int
+        let seq: SeqRef?
     }
 
     // Which creature, as opposed to how it is posed. Swapping pet.json changes
@@ -1085,6 +1098,36 @@ final class PetView: NSView {
         // any mood rather than only on the switch into done.
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
 
+        // Drag outranks hover: the cursor sitting on a pet you are already
+        // holding is not new information. Both are gated on motionOK because
+        // `tick` freezes under Reduce Motion, so an index derived from
+        // `tick - start` would stick on one frame forever.
+        var seq: SeqRef?
+        if motionOK, let pet = custom {
+            if dragSeqStart >= 0, let s = pet.sequences[.drag] {
+                seq = SeqRef(kind: .drag,
+                             index: ((tick - dragSeqStart) / s.ticksPerFrame) % s.frames.count)
+            } else if hoverSeqStart >= 0, let s = pet.sequences[.hover] {
+                let i = (tick - hoverSeqStart) / s.ticksPerFrame
+                if i < s.frames.count { seq = SeqRef(kind: .hover, index: i) }
+            }
+        }
+        // The frames own their own motion. The bounce would double-count a
+        // jump's lift, the twitch shares the one-bounce-unit side budget with
+        // the shear, and the eye box is declared against the mood frames — on a
+        // real pet `done` already lands 37.5% of it on the shell, and a lifted
+        // frame is worse. The shear is NOT reset: it is applied inside fill(),
+        // which the custom blit already goes through, and it is what tells the
+        // viewer which way the pet is being dragged.
+        if seq != nil {
+            off = 2
+            dx = 0
+            gazeDX = 0
+            gazeGY = 0
+            eyeDX = 0
+            eyeDY = 0
+        }
+
         // The side margin is one bounce unit and the twitch already spends all
         // of it, so the two cannot both run — and a nervous tic while the pet
         // is being held in a fist is not a thing worth reserving canvas for.
@@ -1098,7 +1141,7 @@ final class PetView: NSView {
         let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
 
         let blink = mood == .waiting && motionOK && tick % 80 < 2
-            && (custom == nil || custom?.blinkFrame != nil)
+            && (custom == nil || custom?.blinkFrame != nil) && seq == nil
         // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
         // blink %80 — deliberately share none, so overlapping animations read
         // as three mechanisms, not one.
@@ -1108,7 +1151,7 @@ final class PetView: NSView {
                     eyeDX: eyeDX, eyeDY: eyeDY, lean: ln,
                     tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
-                    spriteGen: spriteGen)
+                    spriteGen: spriteGen, seq: seq)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1188,12 +1231,17 @@ final class PetView: NSView {
         winAt = window?.frame.origin
         lastDrag = nil
         dragged = false
+        dragSeqStart = -1
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let p0 = pressAt, let w0 = winAt, let w = window else { return }
         let p = NSEvent.mouseLocation
         if abs(p.x - p0.x) + abs(p.y - p0.y) > 2 { dragged = true }
+        if dragSeqStart < 0, motionOK, custom?.sequences[.drag] != nil {
+            dragSeqStart = tick
+            hoverSeqStart = -1
+        }
         // Velocity, not displacement: a slow drag across the whole screen must
         // not accumulate into a permanent tilt. The blend is what keeps a
         // single jerky event from snapping the pet to full lean and back.
@@ -1215,6 +1263,7 @@ final class PetView: NSView {
         pressAt = nil
         winAt = nil
         lastDrag = nil
+        dragSeqStart = -1
     }
 
     // Where the art starts, in points below the window's top edge — the same
