@@ -292,6 +292,11 @@ struct CustomPet {
     let unknownSequenceKeys: [String]
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
+
+    func sequenceGrid(_ ref: SeqRef?) -> [[NSColor?]]? {
+        guard let r = ref, let s = sequences[r.kind], r.index < s.frames.count else { return nil }
+        return s.frames[r.index]
+    }
 }
 
 func srgbLuma(_ c: NSColor) -> CGFloat {
@@ -1168,7 +1173,14 @@ final class PetView: NSView {
         // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
         // the manifest knows nothing about eye coordinates.
         if let pet = custom {
-            let grid = (p.blinking ? pet.blinkFrame : nil) ?? pet.frame(for: p.mood)
+            // Sequence outranks both: it replaces the whole sprite for its
+            // duration, which is why the gaze and the blink already bowed out
+            // in pose(). Pixels do not composite, so a pet hovered mid-task
+            // shows the reaction rather than its mood — the same trade Codex
+            // makes (`respondToHover && isHovered ? 'jumping' : state`).
+            let grid = pet.sequenceGrid(p.seq)
+                ?? (p.blinking ? pet.blinkFrame : nil)
+                ?? pet.frame(for: p.mood)
             let shifting = p.eyeDX != 0 || p.eyeDY != 0
             // Startle outranks the glance rather than composing with it, the
             // same way `startledRects` replaces the built-in's eyes outright:
