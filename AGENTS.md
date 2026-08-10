@@ -216,6 +216,24 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   different amounts because the glass is wider than it is tall. Sixteen
   survives the rounding even at a two-pixel radius — all sixteen sectors land
   on distinct integer offsets — so the resolution is not decorative.
+- **The side margin is one bounce unit and the twitch already spends all of
+  it.** `sidePad()` is what keeps a shifted sprite from being sliced, and the
+  twitch moves a custom pet by a full unit, so nothing else may move the body
+  sideways at the same time. That is why the drag lean zeroes `dx` rather than
+  adding to it: the two share one budget. Widening the budget is a
+  `canvasSize()` change, and it drags `docs/moods.gif`'s dimensions and the
+  README's `width=` along with it — the hero is sized `(canvas + 8) * 6`.
+- **The drag lean is a shear, not a pose, which is why every pet has it.** The
+  top of the sprite lags the direction of travel and the bottom stays planted;
+  `fill()` applies it so the base, eyes, tear, sparkle and custom blit all
+  inherit it from one place, exactly as they inherit `xpad`. Two things it
+  must not become: state read inside `pose()`, which has to stay pure because
+  `draw()` and `repaintIfChanged()` both call it — the decay belongs in the
+  tick loop next to `tick += 1`, where Reduce Motion already gates it; and a
+  uniform offset, which reads as the window sliding rather than the creature
+  resisting. Codex spends two whole atlas rows (`running-left`/`running-right`)
+  on this reaction; a shear is what it costs when a manifest has no second
+  pose to cut to, and at true size it reads as a sway, not a run.
 - **The active pet is a symlink, and its target is the only record of which
   pet is active.** There is no config file and must not be one: a "selected
   pet" setting would be a second source of truth that can disagree with the

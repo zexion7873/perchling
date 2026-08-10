@@ -758,6 +758,15 @@ final class PetView: NSView {
     var scale: CGFloat = SCALE
     var xpad = sidePad(SCALE)
     var startledUntil = -1
+    // Drag inertia, in sprite pixels of top-row offset. A lean is a transform
+    // of whatever pixels are already there, which is why it is the one drag
+    // reaction a manifest can have without shipping a pose for it — the Codex
+    // pets spend two atlas rows on running-left/running-right to get this.
+    var lean: CGFloat = 0
+    // Set once per draw so `fill` can shear without every call site — the base,
+    // the eyes, the tear, the sparkle and the custom blit — passing it along.
+    private var drawLean = 0
+
     override var isFlipped: Bool { true }
 
     var motionOK: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -825,11 +834,22 @@ final class PetView: NSView {
         return hypot(m.x - w.frame.midX, m.y - w.frame.midY) < 150
     }
 
+    // The top of the sprite lags the direction of travel and the feet stay
+    // planted, because the feet are what it is being dragged BY — a uniform
+    // offset would read as the window sliding rather than the creature
+    // resisting. Rects spanning several rows take their top row's shear; the
+    // tallest of them is three rows, so the error never reaches a pixel.
+    private func leanShift(_ y: Int) -> Int {
+        guard drawLean != 0 else { return 0 }
+        let h = CGFloat(custom?.height ?? GH)
+        return Int((CGFloat(drawLean) * (1 - CGFloat(y) / h)).rounded())
+    }
+
     // Every draw goes through here, so the side margin is applied once rather
     // than at each of the base / eyes / tear / sparkle / custom call sites.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
         color.setFill()
-        let r = NSRect(x: CGFloat(x0 + xpad) * scale,
+        let r = NSRect(x: CGFloat(x0 + xpad + leanShift(y0)) * scale,
                        y: CGFloat(y0 + off) * scale,
                        width: CGFloat(x1 - x0 + 1) * scale,
                        height: CGFloat(y1 - y0 + 1) * scale)
@@ -863,6 +883,8 @@ final class PetView: NSView {
         // its own pair or a glance would drag the body with it.
         let eyeDX: Int
         let eyeDY: Int
+        // Quantised here so the repaint decision sees the shear settle.
+        let lean: Int
         let tearRow: Int?
         let sparkleLeft: Bool
         let spriteGen: Int
@@ -961,6 +983,12 @@ final class PetView: NSView {
         // any mood rather than only on the switch into done.
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
 
+        // The side margin is one bounce unit and the twitch already spends all
+        // of it, so the two cannot both run — and a nervous tic while the pet
+        // is being held in a fist is not a thing worth reserving canvas for.
+        let ln = motionOK ? Int(lean.rounded()) : 0
+        if ln != 0 { dx = 0 }
+
         let st = startled
 
         // A droplet frozen mid-fall reads as a rendering fault, so the tear is
@@ -975,7 +1003,7 @@ final class PetView: NSView {
 
         return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gazeGY,
                     startled: st, peeking: peek, blinking: blink,
-                    eyeDX: eyeDX, eyeDY: eyeDY,
+                    eyeDX: eyeDX, eyeDY: eyeDY, lean: ln,
                     tearRow: tear,
                     sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen)
@@ -989,6 +1017,7 @@ final class PetView: NSView {
         ctx.imageInterpolation = .none
 
         let p = pose()
+        drawLean = p.lean
 
         // Custom pets swap the whole sprite per mood; bounce (off) and twitch
         // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
@@ -1044,6 +1073,7 @@ final class PetView: NSView {
     var onTap: (() -> Void)?
     private var pressAt: NSPoint?
     private var winAt: NSPoint?
+    private var lastDrag: NSPoint?
     private var dragged = false
 
     // Deliver the activating click too — an accessory app is inactive at
@@ -1054,6 +1084,7 @@ final class PetView: NSView {
     override func mouseDown(with event: NSEvent) {
         pressAt = NSEvent.mouseLocation
         winAt = window?.frame.origin
+        lastDrag = nil
         dragged = false
     }
 
@@ -1061,6 +1092,14 @@ final class PetView: NSView {
         guard let p0 = pressAt, let w0 = winAt, let w = window else { return }
         let p = NSEvent.mouseLocation
         if abs(p.x - p0.x) + abs(p.y - p0.y) > 2 { dragged = true }
+        // Velocity, not displacement: a slow drag across the whole screen must
+        // not accumulate into a permanent tilt. The blend is what keeps a
+        // single jerky event from snapping the pet to full lean and back.
+        if motionOK, let last = lastDrag {
+            let cap = CGFloat(sidePad(scale))
+            lean = max(-cap, min(cap, lean * 0.5 - (p.x - last.x) * 0.5))
+        }
+        lastDrag = p
         w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))
     }
 
@@ -1073,6 +1112,16 @@ final class PetView: NSView {
         }
         pressAt = nil
         winAt = nil
+        lastDrag = nil
+    }
+
+    // Called from the tick loop rather than from pose(), which has to stay pure
+    // — draw() and repaintIfChanged() both call it, and a decay in there would
+    // run twice a frame or not at all depending on which of them ran first.
+    func decayLean() {
+        guard lean != 0 else { return }
+        lean *= 0.8
+        if abs(lean) < 0.5 { lean = 0 }
     }
 
     var onTuck: (() -> Void)?
@@ -1781,7 +1830,10 @@ final class Controller: NSObject, NSWindowDelegate {
             clock += 1
             // Reduce Motion freezes the animation clock (static pose), never
             // the polling clock — liveness and mood changes must keep working.
-            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { view.tick += 1 }
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                view.tick += 1
+                view.decayLean()
+            }
             if clock % 8 == 0 {
                 // Manual un-tuck: a tucked pet has no window to right-click,
                 // so `pet.sh wake` drops a flag file for us to find.

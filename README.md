@@ -65,7 +65,8 @@ launch — a few seconds, once.
 | 💤 | **idle** | nothing happening | breathes slowly, dozes, peeks now and then |
 
 When its eyes are open they follow your cursor, sixteen directions of it. Hover
-it and it startles. Click it and it hops, then throws you back to Claude —
+it and it startles. Drag it and it leans into the pull, feet planted, and rights
+itself when you let go. Click it and it hops, then throws you back to Claude —
 the desktop app if that's running, otherwise whatever was frontmost when the pet
 launched.
 
