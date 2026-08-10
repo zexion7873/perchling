@@ -12,6 +12,10 @@ let SCALE: CGFloat = 1
 // how big a pet's cells are. Expressed in cells so the sprite grid stays the
 // only coordinate system, and the canvas reserves three of those below the
 // art for the motion to happen in.
+// The tick loop's period. Sequence timings quantise to this, so the parser and
+// the timer cannot be allowed to drift apart.
+let TICK_MS = 50
+
 func bounceUnit(_ scale: CGFloat) -> Int { max(1, Int((4.0 / scale).rounded())) }
 func headroom(_ scale: CGFloat) -> Int { 3 * bounceUnit(scale) }
 // The twitch moves a custom pet's whole sprite sideways, so the canvas needs
@@ -239,6 +243,21 @@ struct EyeBox {
     func contains(_ x: Int, _ y: Int) -> Bool { x >= x0 && x <= x1 && y >= y0 && y <= y1 }
 }
 
+// A sequence is several frames on a clock — the one thing a manifest could not
+// say, because a mood is a single grid. `ticksPerFrame` is resolved at load
+// because the tick loop quantises every duration to `TICK_MS`: an author who
+// writes 120 gets 100, and `--validate` says so rather than leaving them to
+// discover it by counting frames.
+enum SeqKind: String, CaseIterable { case hover, drag }
+
+struct PetSequence {
+    let frames: [[[NSColor?]]]
+    let ticksPerFrame: Int
+    let declaredMs: Int
+    var actualMs: Int { ticksPerFrame * TICK_MS }
+    var totalTicks: Int { frames.count * ticksPerFrame }
+}
+
 struct CustomPet {
     let name: String
     let width: Int
@@ -261,6 +280,11 @@ struct CustomPet {
     // frame swap rather than per-tick pixel work, and a manifest that ships a
     // real blink frame later can replace this without the drawing changing.
     let blinkFrame: [[NSColor?]]?
+    let sequences: [SeqKind: PetSequence]
+    // Only --validate reads this. A name it did not recognise is worth saying
+    // out loud once, or a typo is indistinguishable from a sequence that simply
+    // never plays.
+    let unknownSequenceKeys: [String]
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
 }
@@ -336,6 +360,22 @@ func synthBlinkFrame(_ rows: [[Character]], _ pal: [Character: NSColor],
     return out
 }
 
+func parseGrid(_ rows: [String], _ pal: [Character: NSColor], _ w: Int,
+               _ label: String) throws -> [[NSColor?]] {
+    var grid: [[NSColor?]] = []
+    for (y, row) in rows.enumerated() {
+        guard row.count == w else { throw PetError("\(label) row \(y): length \(row.count) != \(w)") }
+        var line: [NSColor?] = []
+        for ch in row {
+            if ch == "0" || ch == "." { line.append(nil) }
+            else if let c = pal[ch] { line.append(c) }
+            else { throw PetError("\(label) row \(y): \"\(ch)\" is not in the palette") }
+        }
+        grid.append(line)
+    }
+    return grid
+}
+
 func loadCustomPet(_ url: URL) throws -> CustomPet {
     guard let data = try? Data(contentsOf: url) else { throw PetError("cannot read \(url.path)") }
     let top: [String: Any]
@@ -377,18 +417,7 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         guard dims == (w, rows.count) else {
             throw PetError("\(key): size \(w)x\(rows.count) differs from \(dims.w)x\(dims.h) — all moods share one canvas")
         }
-        var grid: [[NSColor?]] = []
-        for (y, row) in rows.enumerated() {
-            guard row.count == w else { throw PetError("\(key) row \(y): length \(row.count) != \(w)") }
-            var line: [NSColor?] = []
-            for ch in row {
-                if ch == "0" || ch == "." { line.append(nil) }
-                else if let c = pal[ch] { line.append(c) }
-                else { throw PetError("\(key) row \(y): \"\(ch)\" is not in the palette") }
-            }
-            grid.append(line)
-        }
-        frames[mood] = grid
+        frames[mood] = try parseGrid(rows, pal, w, key)
     }
     guard frames[.idle] != nil else { throw PetError("moods.idle is required") }
     // Finer-grained pets: a big grid at scale 2 beats a small grid at 4 —
@@ -439,12 +468,68 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
         let src = (moodsRaw["waiting"] ?? moodsRaw["idle"]!).map(Array.init)
         blinkFrame = synthBlinkFrame(src, pal, box, socketCh, lidCh)
     }
-    let inkTop = frames.values
+    // Unknown keys are IGNORED here, which is deliberately the opposite of
+    // `moods`. `moods` rejects them, and that is what makes a misplaced grid
+    // silently fatal on an older perchling — the file fails to load, the pet
+    // falls back to the built-in, and its row greys out in the Pets menu with
+    // no error the user can see. A future perchling adding a sequence must not
+    // do that to this one, so an unrecognised name is reported by --validate
+    // and otherwise skipped.
+    var sequences: [SeqKind: PetSequence] = [:]
+    var unknownSequenceKeys: [String] = []
+    if let raw = top["sequences"] {
+        guard let seqs = raw as? [String: Any] else {
+            throw PetError("\"sequences\" must be an object mapping hover/drag to frame lists")
+        }
+        for (name, body) in seqs.sorted(by: { $0.key < $1.key }) {
+            guard let kind = SeqKind(rawValue: name) else {
+                unknownSequenceKeys.append(name)
+                continue
+            }
+            guard let obj = body as? [String: Any] else {
+                throw PetError("sequences.\(name) must be an object with \"frames\"")
+            }
+            guard let rawFrames = obj["frames"] as? [[String]] else {
+                throw PetError("sequences.\(name).frames must be an array of frames, each an array of row strings")
+            }
+            // One frame is a pose, not a sequence — that version was built and
+            // rejected. The ceiling is boundary validation: a frame costs about
+            // 11KB in a 96x112 pet.
+            guard (2...16).contains(rawFrames.count) else {
+                throw PetError("sequences.\(name).frames has \(rawFrames.count) frames — must be 2...16")
+            }
+            var ms = 150
+            if let m = obj["ms"] {
+                guard let n = m as? Int, (50...1000).contains(n) else {
+                    throw PetError("sequences.\(name).ms must be an integer 50...1000 (milliseconds per frame)")
+                }
+                ms = n
+            }
+            var grids: [[[NSColor?]]] = []
+            for (i, rows) in rawFrames.enumerated() {
+                let fw = rows.first?.count ?? 0
+                guard (fw, rows.count) == (dims.w, dims.h) else {
+                    throw PetError("sequences.\(name) frame \(i): size \(fw)x\(rows.count) differs from \(dims.w)x\(dims.h) — sequences share the moods' canvas")
+                }
+                grids.append(try parseGrid(rows, pal, dims.w, "sequences.\(name) frame \(i)"))
+            }
+            sequences[kind] = PetSequence(
+                frames: grids,
+                ticksPerFrame: max(1, Int((Double(ms) / Double(TICK_MS)).rounded())),
+                declaredMs: ms)
+        }
+    }
+    // Sequence frames count: a jump lifts the body above every mood, and the
+    // chrome hangs off this one number. Leaving them out would sit the bubble
+    // where a hovering pet's head goes through it — precisely when the user is
+    // looking, since hover is the cursor being on the pet.
+    let inkTop = (Array(frames.values) + sequences.values.flatMap { $0.frames })
         .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
         .min() ?? 0
     return CustomPet(name: (top["name"] as? String) ?? "custom",
                      width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
-                     eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame)
+                     eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame,
+                     sequences: sequences, unknownSequenceKeys: unknownSequenceKeys)
 }
 
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
@@ -2000,7 +2085,7 @@ final class Controller: NSObject, NSWindowDelegate {
 
     func run() {
         var clock = 0
-        Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [self] _ in
+        Timer.scheduledTimer(withTimeInterval: Double(TICK_MS) / 1000.0, repeats: true) { [self] _ in
             clock += 1
             // Reduce Motion freezes the animation clock (static pose), never
             // the polling clock — liveness and mood changes must keep working.
@@ -2106,7 +2191,33 @@ if argv.count >= 2 {
                 eyes += pet.blinkFrame == nil ? ", blink UNAVAILABLE (no lit pixels in box)" : ", blink ok"
 
             }
-            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes)")
+            var seqs = "no sequences"
+            if !pet.sequences.isEmpty {
+                seqs = SeqKind.allCases.compactMap { k -> String? in
+                    guard let s = pet.sequences[k] else { return nil }
+                    // Saying the rounded duration out loud is the point: an
+                    // author who writes 120 and silently receives 100 has no
+                    // other way to find out.
+                    let msg = s.declaredMs == s.actualMs
+                        ? "@\(s.declaredMs)ms"
+                        : "@\(s.declaredMs)ms -> \(s.actualMs)ms"
+                    let secs = String(format: "%.2fs", Double(s.totalTicks * TICK_MS) / 1000)
+                    let shape = k == .drag ? "loop" : "total"
+                    return "\(k.rawValue) \(s.frames.count) frames \(msg) (\(s.ticksPerFrame) ticks, \(secs) \(shape))"
+                }.joined(separator: "; ")
+            }
+            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes) — \(seqs)")
+            // In grid rows, not points: the on-screen distance is rows * scale,
+            // so the same manifest at scale 2 moves the chrome twice as far.
+            let moodTop = pet.frames.values
+                .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
+                .min() ?? 0
+            if moodTop != pet.inkTop {
+                print("inkTop: \(pet.inkTop) (moods alone: \(moodTop) — sequences reach higher, chrome moves up \(moodTop - pet.inkTop) rows)")
+            }
+            for k in pet.unknownSequenceKeys {
+                FileHandle.standardError.write(Data("warning: sequences.\(k) is not a recognised sequence (hover, drag) — ignored\n".utf8))
+            }
             exit(0)
         } catch {
             FileHandle.standardError.write(Data("invalid pet manifest: \(error)\n".utf8))
