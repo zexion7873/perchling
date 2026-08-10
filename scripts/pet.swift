@@ -254,6 +254,14 @@ struct PetSequence {
     let frames: [[[NSColor?]]]
     let ticksPerFrame: Int
     let declaredMs: Int
+    // Consent to being flipped, which the format could not express before and
+    // is the only reason mirroring is safe at all. A rightward run and its
+    // leftward twin are the same pixels reflected — Codex spends a whole atlas
+    // row on the copy, measured byte-identical to a flip of the other — so the
+    // frames are worth reusing, but a flip also reverses any asymmetric detail:
+    // a badge, a logo, lettering. The renderer cannot tell those apart from the
+    // gait, so the author says.
+    let mirror: Bool
     var actualMs: Int { ticksPerFrame * TICK_MS }
     var totalTicks: Int { frames.count * ticksPerFrame }
 }
@@ -261,7 +269,7 @@ struct PetSequence {
 // A tuple will not synthesise Equatable, and Pose's equality IS the repaint
 // contract — without the frame index in there, repaintIfChanged() reads two
 // consecutive sequence frames as the same pose and the animation never paints.
-struct SeqRef: Equatable { let kind: SeqKind; let index: Int }
+struct SeqRef: Equatable { let kind: SeqKind; let index: Int; let flipped: Bool }
 
 struct CustomPet {
     let name: String
@@ -515,6 +523,13 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
                 }
                 ms = n
             }
+            var mirror = false
+            if let mr = obj["mirror"] {
+                guard let b = mr as? Bool else {
+                    throw PetError("sequences.\(name).mirror must be true or false")
+                }
+                mirror = b
+            }
             var grids: [[[NSColor?]]] = []
             for (i, rows) in rawFrames.enumerated() {
                 let fw = rows.first?.count ?? 0
@@ -526,7 +541,7 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
             sequences[kind] = PetSequence(
                 frames: grids,
                 ticksPerFrame: max(1, Int((Double(ms) / Double(TICK_MS)).rounded())),
-                declaredMs: ms)
+                declaredMs: ms, mirror: mirror)
         }
     }
     // Sequence frames count: a jump lifts the body above every mood, and the
@@ -874,6 +889,11 @@ final class PetView: NSView {
     // Hover is one-shot and expires by elapsing; drag loops until mouseUp.
     var hoverSeqStart = -1
     var dragSeqStart = -1
+    // Which way the drag is heading, latched. Only consulted for a sequence
+    // that declared `mirror`. Deliberately NOT derived from `lean`: that decays
+    // to zero the moment the hand stops moving, so a pause mid-drag would spin
+    // the creature back to facing right.
+    var dragFacingLeft = false
     // Drag inertia, in sprite pixels of top-row offset. A lean is a transform
     // of whatever pixels are already there, which is why it is the one drag
     // reaction a manifest can have without shipping a pose for it — the Codex
@@ -1110,11 +1130,16 @@ final class PetView: NSView {
         var seq: SeqRef?
         if motionOK, let pet = custom {
             if dragSeqStart >= 0, let s = pet.sequences[.drag] {
+                // Frames as drawn face RIGHT; the flip is what leftward travel
+                // looks like. A pet that did not declare `mirror` never flips,
+                // whichever way it is dragged.
                 seq = SeqRef(kind: .drag,
-                             index: ((tick - dragSeqStart) / s.ticksPerFrame) % s.frames.count)
+                             index: ((tick - dragSeqStart) / s.ticksPerFrame) % s.frames.count,
+                             flipped: s.mirror && dragFacingLeft)
             } else if hoverSeqStart >= 0, let s = pet.sequences[.hover] {
                 let i = (tick - hoverSeqStart) / s.ticksPerFrame
-                if i < s.frames.count { seq = SeqRef(kind: .hover, index: i) }
+                // A burst has no direction of travel, so it never flips.
+                if i < s.frames.count { seq = SeqRef(kind: .hover, index: i, flipped: false) }
             }
         }
         // The frames own their own motion. The bounce would double-count a
@@ -1187,9 +1212,10 @@ final class PetView: NSView {
             // a creature whose eyes have just snapped open is not also
             // tracking the cursor with them.
 
+            let flip = p.seq?.flipped == true
             for y in 0..<pet.height {
                 for x in 0..<pet.width {
-                    var c = grid[y][x]
+                    var c = grid[y][flip ? pet.width - 1 - x : x]
                     // Sampled backwards, so every destination pixel is written
                     // exactly once. Scattering forwards instead leaves a gap
                     // wherever the shift steps past a source pixel, which is
@@ -1260,6 +1286,11 @@ final class PetView: NSView {
         if motionOK, let last = lastDrag {
             let cap = CGFloat(sidePad(scale))
             lean = max(-cap, min(cap, lean * 0.5 - (p.x - last.x) * 0.5))
+            // Latched with a deadzone, the same four points Codex uses. A facing
+            // that follows every jitter flickers, and one that resets on a pause
+            // spins the creature round while the hand is simply still.
+            if p.x - last.x >= 4 { dragFacingLeft = false }
+            else if p.x - last.x <= -4 { dragFacingLeft = true }
         }
         lastDrag = p
         w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))
@@ -2265,6 +2296,7 @@ if argv.count >= 2 {
                     let secs = String(format: "%.2fs", Double(s.totalTicks * TICK_MS) / 1000)
                     let shape = k == .drag ? "loop" : "total"
                     return "\(k.rawValue) \(s.frames.count) frames \(msg) (\(s.ticksPerFrame) ticks, \(secs) \(shape))"
+                        + (s.mirror ? ", mirrors when dragged left" : "")
                 }.joined(separator: "; ")
             }
             print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes) — \(seqs)")
@@ -2275,6 +2307,11 @@ if argv.count >= 2 {
                 .min() ?? 0
             if moodTop != pet.inkTop {
                 print("inkTop: \(pet.inkTop) (moods alone: \(moodTop) — sequences reach higher, chrome moves up \(moodTop - pet.inkTop) rows)")
+            }
+            // Silently ignoring it would be indistinguishable from a mirror that
+            // simply never triggers, which is an afternoon nobody should spend.
+            if pet.sequences[.hover]?.mirror == true {
+                FileHandle.standardError.write(Data("warning: sequences.hover.mirror is ignored — a one-shot burst has no direction of travel\n".utf8))
             }
             for k in pet.unknownSequenceKeys {
                 FileHandle.standardError.write(Data("warning: sequences.\(k) is not a recognised sequence (hover, drag) — ignored\n".utf8))

@@ -260,12 +260,24 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   because it is applied inside `fill()`, which every blit including the
   sequence's already passes through, and because it is the only thing telling
   the viewer which way the pet is being dragged: a manifest ships ONE
-  direction-agnostic `drag` sequence, deliberately. Render-time mirroring is
-  not the missing half — the offline conversion pipeline restamps a face on
-  every frame and the renderer does not, so a mirror flips the face, the chest
-  mark and anything else asymmetric, and a manifest has no way to say which
-  pixels must not flip. Sequence frames also count toward `inkTop`, so a lifted
-  frame moves the chrome for every mood, permanently, not only while it plays.
+  direction-agnostic `drag` sequence, and mirroring is what gives it a second
+  facing. Sequence frames also count toward `inkTop`, so a lifted frame moves
+  the chrome for every mood, permanently, not only while it plays.
+- **A sequence is mirrored only if it says it may be.** `mirror: true` on
+  `drag` makes the renderer draw the frames flipped while the drag heads left;
+  the frames as drawn always face right. The flag exists because the reflection
+  is free and the consent is not: Codex spends a whole atlas row on
+  `running-left`, and every one of its columns is a byte-exact flip of
+  `running-right` — measured, max channel delta 0 — so shipping both directions
+  is six grids of pure redundancy. But a flip also reverses any asymmetric
+  detail: a badge, a logo, lettering. The renderer cannot tell those from the
+  gait, and before this flag a manifest had no way to say so, which is why
+  render-time mirroring was rejected outright. Now the author says. Two
+  consequences: `mirror` on `hover` is meaningless (a one-shot burst has no
+  direction of travel) and `--validate` warns rather than failing, and the
+  facing is a LATCHED value with a four-point deadzone, never derived from
+  `lean` — the lean decays to zero the moment the hand pauses, which would spin
+  the creature round mid-drag.
 - **Anything added to the manifest goes at the TOP LEVEL, never inside
   `moods`.** The mood loop rejects any key that is not one of the five, so a
   new grid parked in `moods` makes the whole file unloadable on every older

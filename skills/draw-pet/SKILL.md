@@ -76,8 +76,14 @@ Rules the loader enforces:
   ticks every 50ms, so the number rounds to a multiple of 50 — write 120 and
   you get 100, and `perchling --validate` prints what you actually got. Ship
   either one without the other. Neither plays while macOS Reduce Motion is on.
-  Do not draw a left and a right `drag`: the lean every pet already gets is
-  what shows which way it is being pulled.
+  Do not draw a left and a right `drag`. Draw it facing RIGHT and add
+  `"mirror": true` to that sequence if your pet may be reflected — the renderer
+  then draws the frames flipped while the drag heads left, which buys a second
+  facing for no extra pixels. Leave `mirror` off (the default) when something on
+  the pet must not reverse: a badge, a logo, lettering. Either way the lean every
+  pet gets for free is already showing which way it is being pulled. `mirror` on
+  `hover` does nothing — a burst has no direction of travel — and `--validate`
+  says so rather than leaving you to wonder.
 - A sequence frame that reaches higher than any mood raises the pet's ink line,
   and the speech bubble and chip hang off that line — permanently, in every
   mood, not just while the sequence plays. A big jump buys a reaction and costs
