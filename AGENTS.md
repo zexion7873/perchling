@@ -216,7 +216,9 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   looks far too transparent in any offscreen render and is right on screen.
   `.behindWindow` blending draws NOTHING through `cacheDisplay` — there is no
   window behind it — so the harness can verify the mask, the tint and the
-  hide/show, and cannot verify the blur. Judge that one on a desktop.
+  hide/show, and cannot verify the blur. Judge that one on a desktop, as 0.38
+  was: it looks far too transparent in every offscreen render and is right on
+  screen, so a future reader who only has the harness should not "fix" it.
 - **A manifest carries pixels, and the one thing it can say about them is
   where the eyes are.** Custom pets get one static frame per mood, so anything
   that cuts between two eye SHAPES — the doze-and-peek cycle, the startle — is
