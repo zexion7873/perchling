@@ -1702,13 +1702,28 @@ final class BubbleView: NSVisualEffectView {
         // on a real change is both necessary and sufficient. The poll loop used
         // to mark the bubble dirty twenty times a second for content that
         // changes a few times a turn, and text is the expensive thing here.
-        var mood: Mood = .idle { didSet { if mood != oldValue { needsDisplay = true } } }
+        // The status arrives already chosen. Deriving it here from a mood and the
+        // global wording table would mean the rule under test and the rule on
+        // screen are two pieces of code that merely agree today.
+        var status: String = "" { didSet { if status != oldValue { needsDisplay = true } } }
+        var name: String? = nil { didSet { if name != oldValue { needsDisplay = true } } }
         var prompt: String = "" { didSet { if prompt != oldValue { needsDisplay = true } } }
 
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        private func statusText() -> String { moodStatus[mood] ?? "" }
+        // The status is the part that must never vanish, so the NAME gets
+        // whatever room is left after it and the separator — not the other way
+        // round, and not a character budget. A character count is not a width:
+        // the line holds about 34 monospace advances, the longest shipped status
+        // is "waiting for you…" at 16, and a name in CJK spends two advances per
+        // character.
+        private func statusLine(_ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
+            guard let n = name, !n.isEmpty else { return status }
+            let sep = " — "
+            let tail = ("\(sep)\(status)" as NSString).size(withAttributes: attrs).width
+            return "\(truncate(n, attrs, max(0, maxW - tail)))\(sep)\(status)"
+        }
 
         private func truncate(_ s: String, _ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
             var t = s
@@ -1757,12 +1772,12 @@ final class BubbleView: NSVisualEffectView {
             ]
             let maxW = BUB_W - 32
             if prompt.isEmpty {
-                (truncate(statusText(), statusAttrs, maxW) as NSString)
+                (truncate(statusLine(statusAttrs, maxW), statusAttrs, maxW) as NSString)
                     .draw(at: NSPoint(x: 16, y: 19), withAttributes: statusAttrs)
             } else {
                 (truncate(prompt, promptAttrs, maxW) as NSString)
                     .draw(at: NSPoint(x: 16, y: 9), withAttributes: promptAttrs)
-                (truncate(statusText(), statusAttrs, maxW) as NSString)
+                (truncate(statusLine(statusAttrs, maxW), statusAttrs, maxW) as NSString)
                     .draw(at: NSPoint(x: 16, y: 28), withAttributes: statusAttrs)
             }
         }
@@ -1770,7 +1785,8 @@ final class BubbleView: NSVisualEffectView {
 
     private let panel = Panel()
 
-    var mood: Mood = .idle { didSet { if mood != oldValue { panel.mood = mood } } }
+    var status: String = "" { didSet { panel.status = status } }
+    var name: String? = nil { didSet { panel.name = name } }
     var prompt: String = "" { didSet { panel.prompt = prompt } }
     static func bodyPath() -> NSBezierPath {
         NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
@@ -1860,6 +1876,9 @@ final class Controller: NSObject, NSWindowDelegate {
     let sayURL: URL
     let petURL: URL
     var lastSayStamp: Date?
+    // The global say is only a fallback now, for a new binary running against an
+    // installed state.sh that does not write line 3 yet.
+    var globalSay = ""
     var lastPetStamp: Date?
     var emptySince: Date?
     var homeApp: NSRunningApplication?
@@ -2136,7 +2155,7 @@ final class Controller: NSObject, NSWindowDelegate {
         s = s.replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\t", with: " ")
         s = s.replacingOccurrences(of: "\\\"", with: "\"")
         s = String(String.UnicodeScalarView(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }))
-        bubbleView.prompt = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        globalSay = s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // Inputs: every live session file (mood as content) plus the plain state
@@ -2264,8 +2283,14 @@ final class Controller: NSObject, NSWindowDelegate {
                 pollPet()
                 pollSay()
                 // A prompt snippet from hours ago is noise, not context.
-                if let s = lastSayStamp, Date().timeIntervalSince(s) > 3600,
-                   !bubbleView.prompt.isEmpty { bubbleView.prompt = "" }
+                if let s = lastSayStamp, Date().timeIntervalSince(s) > 3600 { globalSay = "" }
+                // One place decides all three, after both inputs have been
+                // refreshed: a caption taken from one poll and a name from the
+                // next would name the wrong session for a tick.
+                let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus)
+                bubbleView.name = t.name
+                bubbleView.status = t.status
+                bubbleView.prompt = t.prompt
                 // The grace period rides out the gap between one session
                 // ending and the next starting — a resume, a /clear, a new
                 // window. Nothing can arrive to fill that gap once every owner
@@ -2280,7 +2305,6 @@ final class Controller: NSObject, NSWindowDelegate {
                     if Date().timeIntervalSince(emptySince!) > 30 { NSApp.terminate(nil) }
                 }
             }
-            bubbleView.mood = view.mood
             view.repaintIfChanged()
         }
     }
