@@ -1424,6 +1424,7 @@ final class PetView: NSView {
     var petList: (() -> [PetChoice])?
     var onPickPet: ((PetChoice?) -> Void)?   // nil picks the built-in
     var sessionList: (() -> [SessionRow])?
+    var labelList: (() -> [String: String])?
 
     @objc private func tuckAction() { onTuck?() }
     @objc private func disableAction() { onDisable?() }
@@ -1443,8 +1444,10 @@ final class PetView: NSView {
         // The fold's other half. The face can only ever show the maximum, so
         // this is the only place that says which session it belongs to.
         let sessions = sessionList?() ?? []
+        let labels = labelList?() ?? [:]
         for r in sessions {
-            let item = NSMenuItem(title: sessionTitle(r, moodStatus),
+            let item = NSMenuItem(title: sessionTitle(labels[r.sid] ?? sessionName(r),
+                                                      r.mood, moodStatus),
                                   action: #selector(focusSessionAction), keyEquivalent: "")
             item.target = self
             // Two projects can share a basename; the full path is the only
@@ -1698,11 +1701,12 @@ func sessionLabels(_ rows: [SessionRow]) -> [String: String] {
 }
 
 // `status` is passed rather than read off the global so the wording under test
-// is not whatever language the machine happens to be set to.
-func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
-    let name = sessionName(r)
-    guard let s = status[r.mood], !s.isEmpty else { return name }
-    return "\(name) — \(s)"
+// is not whatever language the machine happens to be set to. The label is passed
+// for the same reason and one more: resolving it needs the whole row set, which
+// a single row cannot see.
+func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String]) -> String {
+    guard let s = status[mood], !s.isEmpty else { return label }
+    return "\(label) — \(s)"
 }
 
 // What the bubble says, and whose it is. A free function taking the wording
@@ -1722,11 +1726,12 @@ func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
 // Composition of the name and the status is NOT done here. It needs measured
 // widths to decide what to truncate, and fonts belong to the view.
 func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
-                _ wording: [Mood: String]) -> (name: String?, status: String, prompt: String) {
+                _ wording: [Mood: String],
+                _ labels: [String: String]) -> (name: String?, status: String, prompt: String) {
     guard let top = rows.first else {
         return (nil, wording[display] ?? "", globalSay)
     }
-    return (rows.count > 1 ? sessionName(top) : nil,
+    return (rows.count > 1 ? labels[top.sid] ?? sessionName(top) : nil,
             wording[top.mood] ?? "",
             top.say ?? globalSay)
 }
@@ -2028,6 +2033,9 @@ final class Controller: NSObject, NSWindowDelegate {
     let stateURL: URL
     let sessionsURL: URL
     let ownersURL: URL
+    // The host CLI's session registry. Not under `root`: it belongs to the CLI,
+    // and PERCHLING_HOME may point at a directory that has no registry in it.
+    let registryURL: URL
     let sayURL: URL
     let petURL: URL
     var lastSayStamp: Date?
@@ -2048,9 +2056,13 @@ final class Controller: NSObject, NSWindowDelegate {
     // poll left here. NSMenu tracking runs its own run-loop mode, so an open
     // menu shows the snapshot it opened with — the same as the Pets submenu.
     var sessionRows: [SessionRow] = []
+    // Resolved with sessionRows, in the same poll: a label taken from one poll
+    // and a row from the next can disagree about which session is which.
+    var sessionLabelsBySid: [String: String] = [:]
 
-    init(root: URL) {
+    init(root: URL, registry: URL) {
         self.root = root
+        registryURL = registry
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
         ownersURL = root.appendingPathComponent("owners")
@@ -2122,6 +2134,7 @@ final class Controller: NSObject, NSWindowDelegate {
             petChoices(root: self.root, examples: examplesRoot)
         }
         view.sessionList = { [unowned self] in self.sessionRows }
+        view.labelList = { [unowned self] in self.sessionLabelsBySid }
         view.onPickPet = { [unowned self] choice in
             do {
                 if let c = choice {
@@ -2335,8 +2348,10 @@ final class Controller: NSObject, NSWindowDelegate {
         }
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
-        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive, names: [:])
+        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive,
+                                names: registryNames(registryURL, alive: alive))
         sessionRows = menuRows(live)
+        sessionLabelsBySid = sessionLabels(sessionRows)
         inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
 
         var display = Mood.idle
@@ -2447,7 +2462,8 @@ final class Controller: NSObject, NSWindowDelegate {
                 // One place decides all three, after both inputs have been
                 // refreshed: a caption taken from one poll and a name from the
                 // next would name the wrong session for a tick.
-                let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus)
+                let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus,
+                                   sessionLabelsBySid)
                 bubbleView.name = t.name
                 bubbleView.status = t.status
                 bubbleView.prompt = t.prompt
@@ -2472,14 +2488,14 @@ final class Controller: NSObject, NSWindowDelegate {
 
 // Runtime home: PERCHLING_HOME (set by pet.sh) > $CLAUDE_CONFIG_DIR/perchling > ~/.claude/perchling.
 let env = ProcessInfo.processInfo.environment
-let root: URL
-if let p = env["PERCHLING_HOME"] {
-    root = URL(fileURLWithPath: p)
-} else {
-    let cfg = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
-    root = cfg.appendingPathComponent("perchling")
-}
+// The host CLI's config directory, resolved on its own rather than derived from
+// `root`: the session registry inside it belongs to the CLI, and PERCHLING_HOME
+// may point anywhere — a harness scratch directory included.
+let configDir = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
+    ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+let root = env["PERCHLING_HOME"].map { URL(fileURLWithPath: $0) }
+    ?? configDir.appendingPathComponent("perchling")
+let registryURL = configDir.appendingPathComponent("sessions")
 try? FileManager.default.createDirectory(at: root.appendingPathComponent("sessions"),
                                          withIntermediateDirectories: true)
 
@@ -2588,6 +2604,6 @@ if argv.count >= 2 {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let controller = Controller(root: root)
+let controller = Controller(root: root, registry: registryURL)
 controller.run()
 app.run()

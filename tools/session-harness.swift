@@ -80,22 +80,29 @@ do {
 
 // MARK: - sessionTitle
 
-check("a title joins the name to the status",
-      sessionTitle(row("s1", .running, cwd: "/p/alpha"), words),
-      "alpha — running")
+check("a title joins the label to the status",
+      sessionTitle("alpha", .running, words), "alpha — running")
+check("a title with no wording is the bare label",
+      sessionTitle("alpha", .running, [:]), "alpha")
+check("a suffixed label reaches the tray intact",
+      sessionTitle("perchling · s1", .waiting, words), "perchling · s1 — waiting")
 
 // MARK: - bubbleText
 
 do {
     let one = [row("s1", .running, cwd: "/p/alpha", say: "hi")]
-    let two = [row("s1", .running, cwd: "/p/alpha", say: "hi"),
-               row("s2", .idle, cwd: "/p/beta")]
-    check("one session needs no name", bubbleText(one, .running, "", words).name, nil)
-    check("two sessions name the top one", bubbleText(two, .running, "", words).name, "alpha")
+    let two = menuRows([row("s1", .running, cwd: "/p/alpha", say: "hi"),
+                        row("s2", .idle, cwd: "/p/alpha")])
+    check("one session needs no name",
+          bubbleText(one, .running, "", words, sessionLabels(one)).name, nil)
+    check("two sessions name the top one with its resolved label",
+          bubbleText(two, .running, "", words, sessionLabels(two)).name, "alpha · s1")
     check("the caption is the top session's own line",
-          bubbleText(two, .running, "global", words).prompt, "hi")
+          bubbleText(two, .running, "global", words, sessionLabels(two)).prompt, "hi")
     check("no rows falls back to the global say",
-          bubbleText([], .done, "global", words).prompt, "global")
+          bubbleText([], .done, "global", words, [:]).prompt, "global")
+    check("a row missing from the label table still gets a name",
+          bubbleText(two, .running, "", words, [:]).name, "alpha")
 }
 
 // MARK: - registryNames
