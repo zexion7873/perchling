@@ -95,5 +95,57 @@ do {
           bubbleText([], .done, "global", words).prompt, "global")
 }
 
+// MARK: - registryNames
+
+func regFile(_ dir: URL, _ pid: Int, _ sid: String, _ name: String?, extra: String = "") {
+    let nameKey = name.map { ",\"name\":\"\($0)\"" } ?? ""
+    writeFile(dir, "\(pid).json",
+              "{\"pid\":\(pid),\"sessionId\":\"\(sid)\",\"cwd\":\"/p/x\"\(nameKey)\(extra)}")
+}
+
+do {
+    let dir = tempDir("registry")
+    regFile(dir, 101, "s1", "my session")
+    regFile(dir, 102, "s2", nil)                       // every non-interactive kind
+    regFile(dir, 103, "s3", "")                        // empty is absent
+    regFile(dir, 104, "s4", "line\\nbreak")            // control character
+    regFile(dir, 105, "s5", String(repeating: "x", count: 200))
+    writeFile(dir, "106.json", "{not json")
+    writeFile(dir, "107.json", "{\"pid\":107,\"name\":\"orphan\"}")   // no sessionId
+    writeFile(dir, "notes.txt", "ignored")
+
+    let m = registryNames(dir, alive: { _ in true })
+    check("a named session is read", m["s1"], "my session")
+    check("a nameless session has no entry", m["s2"], nil)
+    check("an empty name is absent", m["s3"], nil)
+    check("control characters are stripped", m["s4"], "linebreak")
+    check("a long name is capped", m["s5"]?.count, 64)
+    // s1, s4 and s5 survive; s2, s3, the unparseable file, the one with no
+    // sessionId and the .txt do not.
+    check("bad JSON is skipped, not fatal", m.count, 3)
+    check("a dead pid drops its entry",
+          registryNames(dir, alive: { _ in false }).count, 0)
+}
+
+do {
+    let dir = tempDir("registry-dup")
+    regFile(dir, 201, "same", "older")
+    Thread.sleep(forTimeInterval: 0.02)
+    regFile(dir, 202, "same", "newer")
+    check("two files for one session: the newer wins",
+          registryNames(dir, alive: { _ in true })["same"], "newer")
+}
+
+do {
+    let dir = tempDir("registry-nopid")
+    writeFile(dir, "301.json", "{\"sessionId\":\"s9\",\"name\":\"unknown pid\"}")
+    check("a missing pid is unknown, never dead",
+          registryNames(dir, alive: { _ in false })["s9"], "unknown pid")
+}
+
+check("a missing registry is an empty map, not a crash",
+      registryNames(URL(fileURLWithPath: "/nonexistent/perchling-harness"),
+                    alive: { _ in true }).count, 0)
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

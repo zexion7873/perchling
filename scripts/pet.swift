@@ -1588,6 +1588,60 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow
     return out
 }
 
+// The registry is written by another program, so this is a trust boundary. A
+// newline would split an NSMenuItem title in two. The cap is not a layout
+// concern — statusLine truncates by measured width and the menu truncates its
+// own titles — it is there so a pathological string is not moved every 0.4s.
+func cleanName(_ s: String) -> String {
+    let stripped = String(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+    return String(stripped.trimmingCharacters(in: .whitespaces).prefix(64))
+}
+
+// The host CLI's own session registry: one JSON file per live session, keyed by
+// pid, carrying the session id it belongs to and the name the app shows for it.
+// Undocumented and not ours, so every failure here is a missing entry rather
+// than an error — an older CLI, a format that moved, and a background job that
+// legitimately has no name are the same thing from the outside, and all three
+// are correctly answered by falling back to the project directory.
+//
+// `nameSource` is deliberately not read. It distinguishes a name derived from
+// the cwd from one a rename set, but which of those a session carries depends
+// on host policy that cannot be pinned down from a minified bundle — and being
+// wrong about it would be silent. `sessionLabels` guarantees distinguishable
+// rows without knowing.
+//
+// `alive` is injected for the same reason `liveSessions` injects it: a harness
+// has no pids to point at.
+func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
+    let fm = FileManager.default
+    let items = (try? fm.contentsOfDirectory(at: dir,
+                                             includingPropertiesForKeys: [.contentModificationDateKey],
+                                             options: [.skipsHiddenFiles])) ?? []
+    var out: [String: String] = [:]
+    var stamps: [String: Date] = [:]
+    for url in items where url.pathExtension == "json" {
+        // The try? is parenthesised on purpose: `try? x as? T` parses as
+        // `try? (x as? T)` and yields a double optional, which then needs an
+        // optional chain on every lookup below.
+        guard let data = try? Data(contentsOf: url),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let sid = obj["sessionId"] as? String,
+              let raw = obj["name"] as? String else { continue }
+        let name = cleanName(raw)
+        if name.isEmpty { continue }
+        // A missing pid is unknown, never dead — the same rule ownerAlive
+        // follows for a session with no owner file. Dead pids are dropped here,
+        // so everything that survives is live and mtime alone breaks a tie.
+        if let pid = obj["pid"] as? Int, !alive(pid_t(pid)) { continue }
+        let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? .distantPast
+        if let prev = stamps[sid], prev > stamp { continue }
+        stamps[sid] = stamp
+        out[sid] = name
+    }
+    return out
+}
+
 // The project directory is a session's identity. One whose cwd never arrived
 // gets its raw id instead — deliberately unfriendly, because that is a real
 // state (a file written before the label existed) and a made-up name would
