@@ -222,12 +222,15 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   hide/show, and cannot verify the blur. Judge that one on a desktop, as 0.38
   was: it looks far too transparent in every offscreen render and is right on
   screen, so a future reader who only has the harness should not "fix" it.
-- **A manifest carries pixels, and the one thing it can say about them is
-  where the eyes are.** Custom pets get one static frame per mood, so anything
-  that cuts between two eye SHAPES — the doze-and-peek cycle, the startle — is
-  renderer-only and stays that way; a manifest has no second frame to cut to.
-  The optional `eyes` block (`box`, `socket`, and optional `range`/`lid`) is
-  the exception, and it buys two things: gaze, by shifting the box's contents
+- **A manifest carries pixels, and the two things it can say about them are
+  where the eyes are and which frames animate.** A mood is one grid unless
+  `sequences` gives that mood a clock, so the doze-and-peek cycle stays
+  renderer-only whatever a manifest declares — it cuts between two drawn eye
+  SHAPES and synthesising the second one was built and removed. The two
+  declarations do not compose: a mood loop suppresses the eye box, so a pet is
+  choosing per mood between eyes that track and frames that move.
+  The optional `eyes` block (`box`, `socket`, and optional `range`/`lid`)
+  buys two things: gaze, by shifting the box's contents
   and refilling the vacated pixels with `socket`, and blink, from a frame
   synthesised once at load. Everything about that block exists because
   the eyes cannot be FOUND: on a soft-shaded sprite the brightest inks inside
@@ -254,12 +257,42 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   still has no hover reaction at all. Synthesising it by opening the declared
   eye box was also built and removed — it keeps the pose's own lids and merely
   widens them, where the built-in swaps the eye SHAPE outright.
+- **A sequence is either a reaction or a resting state, and the difference is
+  when it stops.** `hover` and `drag` arrive and get out of the way; the five
+  mood names loop for as long as the pet is in that mood and restart when it
+  changes, because `done`'s frames are an arc and a celebration joined halfway
+  through lands before it jumps. `moods` is still required and is still what
+  Reduce Motion shows. Priority is drag > hover > mood loop, and the mood loop
+  is reached by testing whether a reaction produced a frame rather than by
+  chaining another `else`: `hoverSeqStart` stays armed after its burst is spent
+  — only a drag clears it — so an `else if` on it swallows every mood loop from
+  the first hover onward. That regression is one line away at all times and has
+  a harness assertion pinning it.
+- **`plays` repeats a one-shot; it does not lengthen a loop.** A double hop is
+  the same frames run twice — the index wraps, the deadline does not — because
+  storing the arc twice costs ~11KB per duplicated grid AND puts byte-identical
+  cells inside a sequence, which the pipeline has an assertion against precisely
+  so an accidentally padded row cannot get in. It is the exact dual of `mirror`:
+  both are declared, both are meaningless on kinds that cannot use them, and
+  both make `--validate` warn rather than fail. And in both cases the OK line
+  must not print what the warning just called ignored — a repeat count or a
+  "mirrors when dragged left" beside its own contradiction is worse than
+  silence. `totalTicks` is therefore ONE pass, and the caller multiplies.
 - **A playing sequence owns the body, and the shear is the one thing it does
   not take.** While a sequence plays, `pose()` pins the bounce to its resting
   value and zeroes the twitch, the gaze and the blink: the frames carry their
   own motion, so a bounce added on top double-counts a jump's lift, and the eye
   box is declared against the MOOD frames — on a real pet `done` already lands
-  37.5% of it on the shell, and a lifted frame is worse. The lean stays,
+  37.5% of it on the shell, and a lifted frame is worse. A mood loop therefore
+  TRADES that mood's gaze and blink away, permanently rather than for a burst,
+  and `waiting` is the only mood that had either — so animating `waiting` is the
+  one that costs something, and a pet that animates it never blinks again,
+  `blinkFrame` and all. The one exception is the tap hop, which outranks a mood
+  loop and nothing else: a resting state is not a reaction, and a poke that
+  visibly does nothing reads as a dead window. The arrival hop is the other
+  half of that rule and goes the other way — it is not armed at all when `done`
+  has a sequence, because those frames already are the celebration. The lean
+  stays,
   because it is applied inside `fill()`, which every blit including the
   sequence's already passes through, and because it is the only thing telling
   the viewer which way the pet is being dragged: a manifest ships ONE
@@ -276,8 +309,10 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   detail: a badge, a logo, lettering. The renderer cannot tell those from the
   gait, and before this flag a manifest had no way to say so, which is why
   render-time mirroring was rejected outright. Now the author says. Two
-  consequences: `mirror` on `hover` is meaningless (a one-shot burst has no
-  direction of travel) and `--validate` warns rather than failing, and the
+  consequences: `mirror` means something on `drag` and nowhere else — a burst
+  and a resting state both have no direction of travel — so `--validate` warns
+  rather than failing and deliberately does not print "mirrors when dragged
+  left" on a kind it just called ignored, and the
   facing is latched off **accumulated signed travel**, never off a single
   `mouseDragged` delta and never off `lean`. Both alternatives were written and
   are wrong in opposite ways: a per-event threshold is a velocity gate, because
@@ -295,9 +330,14 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   Pets menu, with no error anywhere the user can see. Unknown top-level keys
   are ignored by every version. Found the hard way, in one afternoon, by a
   single misplaced key. Inside `sequences` the rule INVERTS: an unrecognised
-  sequence name is ignored rather than rejected, so a later perchling adding a
-  third sequence does not make its manifests unloadable here — `--validate`
-  warns on stderr and the file still loads. `moods` rejects because a mistyped
+  sequence name is ignored rather than rejected, so a later perchling adding an
+  eighth sequence does not make its manifests unloadable here — `--validate`
+  warns on stderr and the file still loads. That inversion is what let the five
+  mood loops ship without a format break: a manifest declaring `sequences.idle`
+  loads on 1.4.0 and simply does not animate. It is also the reason a mood's
+  frames go in `sequences` under the mood's NAME and never as a second key
+  inside `moods`, which would be the unloadable version of the same idea.
+  `moods` rejects because a mistyped
   mood is a mood that silently never shows; `sequences` ignores because a
   mistyped sequence is a reaction that silently never plays, and only one of
   those can take the whole file down with it.

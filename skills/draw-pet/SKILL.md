@@ -65,12 +65,21 @@ Rules the loader enforces:
   overrides the blink color, which is otherwise the brightest color occupying
   at least 3% of the box. `perchling --validate` prints the box it read and
   says `blink UNAVAILABLE` if nothing in the box is bright enough to close.
-- **sequences** (optional) gives the pet the two reactions that need several
-  frames on a clock:
+- **sequences** (optional) puts several frames on a clock:
   `"sequences": { "hover": { "ms": 150, "frames": [ <grid>, <grid> ] } }`.
-  `hover` plays once when the cursor arrives and then stops — it does not hold
-  while the cursor stays, and there is no exit reaction. `drag` loops for as
-  long as the pet is held. Each frame is a grid exactly like a mood's: same
+  Seven names are recognised. Two are reactions: `hover` plays when the cursor
+  arrives and then stops — it does not hold while the cursor stays, and there is
+  no exit reaction — and `drag` loops for as long as the pet is held. `plays`
+  (optional, 1–8, default 1) runs a hover burst that many times off one copy of
+  the frames, so a double hop costs a number rather than a second set of grids;
+  it does nothing on `drag` or on a mood, which already run until the drag or
+  the mood ends, and `--validate` says so.
+  The other five are the moods, `idle` `running` `waiting` `done` `error`, and
+  naming one makes that mood animate: the frames loop for as long as the pet is
+  in that mood and start over when it arrives there. A mood you animate still
+  needs its grid in `moods`; that grid is what shows under Reduce Motion, so
+  make it the frame the pet should hold still in. A drag beats a hover and a
+  hover beats a mood loop. Each frame is a grid exactly like a mood's: same
   canvas size, same palette. `frames` takes 2–16 — one frame is a pose, not a
   sequence. `ms` (optional, 50–1000, default 150) is per frame; the renderer
   ticks every 50ms, so the number rounds to a multiple of 50 — write 120 and
@@ -81,9 +90,10 @@ Rules the loader enforces:
   then draws the frames flipped while the drag heads left, which buys a second
   facing for no extra pixels. Leave `mirror` off (the default) when something on
   the pet must not reverse: a badge, a logo, lettering. Either way the lean every
-  pet gets for free is already showing which way it is being pulled. `mirror` on
-  `hover` does nothing — a burst has no direction of travel — and `--validate`
-  says so rather than leaving you to wonder.
+  pet gets for free is already showing which way it is being pulled. `mirror`
+  does nothing anywhere but `drag` — a burst and a resting state have no
+  direction of travel — and `--validate` says so rather than leaving you to
+  wonder.
 - A sequence frame that reaches higher than any mood raises the pet's ink line,
   and the speech bubble and chip hang off that line — permanently, in every
   mood, not just while the sequence plays. A big jump buys a reaction and costs
@@ -93,7 +103,13 @@ Rules the loader enforces:
   the canvas margin those need — draw poses and expressions, not motion, and
   do not pad the grid with blank rows to make room. A playing sequence takes
   the body over: the bounce, the twitch, the gaze and the blink all stand down
-  for its duration, because the frames carry their own motion.
+  for its duration, because the frames carry their own motion. For a reaction
+  that is a moment; for a mood loop it is the whole time the pet is in that
+  mood, so animating a mood trades its gaze and its blink for the frames. Only
+  `waiting` had both, which makes it the one mood where that is a real choice —
+  animate it and the pet stops watching the cursor and never blinks again. A
+  tap still hops a pet off a mood loop, and `done`'s automatic celebration hop
+  stands down when `done` has frames of its own, so a jump is not lifted twice.
 - The doze-and-peek cycle stays renderer-only: it cuts between two drawn eye
   shapes, and a manifest has one frame per mood to cut between. The hover
   startle was the same shape, which is what `sequences.hover` exists to fix —

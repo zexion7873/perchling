@@ -165,32 +165,46 @@ has to sit on a flat field. `range` (default 2) is how far they travel and
 `lid` overrides the blink color, which is otherwise picked from the box.
 `perchling --validate` reports the box it read and what it could build from it.
 
-### 🎞️ Reactions that need more than one frame
+### 🎞️ Anything that needs more than one frame
 
-Two reactions need more than one frame, so they live in a top-level
-`sequences` block of their own rather than inside `moods`:
+A mood is a single grid, so everything that moves lives in a top-level
+`sequences` block of its own rather than inside `moods`:
 
 ```json
 "sequences": {
-  "hover": { "ms": 150, "frames": ["...", "..."] },
-  "drag":  { "ms": 100, "mirror": true, "frames": ["...", "..."] }
+  "hover": { "ms": 150, "plays": 2, "frames": ["...", "..."] },
+  "drag":  { "ms": 100, "mirror": true, "frames": ["...", "..."] },
+  "done":  { "ms": 150, "frames": ["...", "..."] }
 }
 ```
 
-`hover` plays once when the cursor arrives, `drag` loops while the pet is held,
-and either can ship without the other. Draw `drag` facing right and add
-`"mirror": true` only if your pet may be reflected — the renderer then flips
-the frames while the drag heads left, which buys a second facing for no extra
-pixels, but it also reverses a badge or lettering, so it is yours to grant.
+Two of the names are reactions: `hover` plays when the cursor arrives and
+`drag` loops while the pet is held. `"plays": 2` on `hover` runs its frames
+twice — a double hop off one copy of the art — and it means nothing on anything
+that already loops until something else stops it. The other five are the moods themselves —
+`idle`, `running`, `waiting`, `done`, `error` — and naming one makes that mood
+animate, looping for as long as the pet is in it and starting over when it
+arrives. Every one is optional and independent. The mood's own grid in `moods`
+stays required either way: it is what shows while macOS Reduce Motion is on.
+
+Draw `drag` facing right and add `"mirror": true` only if your pet may be
+reflected — the renderer then flips the frames while the drag heads left, which
+buys a second facing for no extra pixels, but it also reverses a badge or
+lettering, so it is yours to grant. On anything else `mirror` does nothing;
+a burst and a resting state have no direction of travel.
 
 > [!WARNING]
 > A manifest carries pixels, and what it can say about them is where the eyes
 > are and which frames animate. Declare `eyes` and a custom pet gets the
 > cursor-following gaze and a blink; without it, neither. Declare `sequences`
-> and it gets the hover burst and the drag loop; a pet that ships no `hover`
-> frames has no hover reaction at all. The doze-and-peek cycle stays
-> built-in-only whatever you declare — it cuts between two drawn eye shapes,
-> and a manifest has one frame per mood to cut between — and a custom pet's
+> and it gets the reactions and mood loops you named; a pet that ships no
+> `hover` frames has no hover reaction at all. The two do not stack: a playing
+> sequence takes the body over, so a mood you animate is a mood that stops
+> tracking the cursor and stops blinking — `waiting` is the only mood that did
+> either, so it is the only one where the choice costs anything. The
+> doze-and-peek cycle stays built-in-only whatever you declare — it cuts
+> between two drawn eye shapes, and a manifest has one frame per mood to cut
+> between — and a custom pet's
 > sideways twitch moves the whole body rather than just the eyes.
 > The drag lean works on any pet — it bends the pixels that are already there.
 
