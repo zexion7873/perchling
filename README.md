@@ -77,10 +77,13 @@ is which.
 ### 💬 The speech bubble
 
 A bubble above its head shows what it's doing over a line of context: your
-prompt while it works, then a snippet of Claude's reply once the turn ends. The
-status words are translated for Chinese and Japanese systems and read English
-everywhere else. It's a frosted, click-through overlay, so it never steals a
-click, and it stays up through idle rather than folding itself away.
+prompt while it works, then a snippet of Claude's reply once the turn ends. With
+more than one session open it names the session it is quoting, and that is
+always the session the face is reporting — the two can never describe different
+windows. The status words are translated for Chinese and Japanese systems and
+read English everywhere else. It's a frosted, click-through overlay, so it
+never steals a click, and it stays up through idle rather than folding itself
+away.
 
 A small disc sits beside the top of its head, right edge flush with the
 bubble's above it. Click it to fold the bubble away or bring it back — the
