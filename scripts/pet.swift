@@ -1516,7 +1516,7 @@ let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .wa
 // for are listed — a wrong translation is worse than English. Shared by the
 // speech bubble and the tray rows so the two never word the same mood
 // differently — which is also why no entry may contain an em dash:
-// `sessionTitle` joins the project name to the status with one, and a second
+// `sessionTitle` joins a label to the status with one, and a second
 // makes the row stutter. `statusLine` joins them the same way once a name is
 // shown, so the ban binds the bubble too.
 let moodStatus: [Mood: String] = {
@@ -1717,8 +1717,8 @@ func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String]) -> St
 // `rows` is the menu's already-sorted list, so its head is the session the face
 // is reporting — the fold and the caption cannot pick different sessions, which
 // is the whole point. The name appears only when there is something to
-// disambiguate; with one session it is a project name the user is looking at
-// already.
+// disambiguate; with one session there is nothing to tell it apart from, so it
+// stays hidden whatever `sessionName` would have returned for it.
 //
 // `display` is passed rather than taken from the head because it can come from
 // the `state` puppet file, which has no row behind it.

@@ -455,14 +455,32 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   for the 30s-empty-grace liveness check, but never touches a mood — it is
   not the second reader this bullet forbids, and adding one that reads a mood
   would be.
+- **The session registry is the host CLI's file, and perchling only ever reads
+  it.** `<config>/sessions/<pid>.json` carries a session's id and the name the
+  app shows for it, which is where a tray row's name now comes from — the
+  project directory is the fallback, not the source. It is undocumented, so
+  `registryNames` treats every failure as a missing entry: a moved format, an
+  older CLI and a background job that never had a name are indistinguishable
+  from outside and all three are correctly answered by falling back. **A name's
+  absence is normal, not a fault** — the CLI writes one only for interactive
+  kinds, so every headless `-p` run and every background job has none. The
+  registry directory is resolved from `CLAUDE_CONFIG_DIR` directly and never
+  from `root`, because `PERCHLING_HOME` can point at a scratch directory with no
+  registry in it. `nameSource` is deliberately not read: it would encode a guess
+  about host naming policy, and `sessionLabels` already guarantees two drawn
+  rows never print the same string without knowing. That guarantee is why the
+  suffix is computed over the MENU rows and applied only on collision — and why
+  it joins with a middle dot, since the em dash is already spent joining a label
+  to its status.
 - **The bubble quotes the session the face is reporting.** `menuRows()` already
   sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
   `bubbleText()` takes its line three and its name. Before this the caption came
   from the global `say`, which every session overwrites unconditionally, so with
   several sessions open the face and the caption could describe different ones
   with nothing on screen saying so. The name is shown only when more than one
-  session is live — with one it is a project name the user is already looking
-  at. The composed status line budgets the NAME by measured width, never a
+  session is live — with one there is nothing to tell it apart from, so it
+  stays hidden whatever `sessionName` would have returned for it. The composed
+  status line budgets the NAME by measured width, never a
   character count: the line holds about 34 monospace advances, the longest
   shipped status is "waiting for you…" at 16, and a CJK name spends two advances
   per character, so any character budget lets the status be the thing that gets
