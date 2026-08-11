@@ -207,9 +207,12 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `.darkAqua`: the chrome sits on the
   wallpaper, not inside an app window, so the system's light mode says
   nothing about what is behind it, and following it turns the panel white
-  under cream text. And the effect view is hidden outright when the mood is
-  idle, because the painter draws nothing then and the frost would otherwise
-  sit there as an empty panel — a failure a plain alpha fill could not have.
+  under cream text. And the frost goes away on tuck or collapse and on nothing
+  else: `applyChrome()` reads `tucked` and `collapsed` and never the mood. It
+  used to fold away with an idle mood, on the theory that an idle pet keeps
+  the desktop clean; the cost was that the one control for the bubble vanished
+  exactly when the bubble was quiet enough to be in the way, and `.idle` now
+  carries its own status wording so the panel is never an empty slab.
 - **`CHROME_TINT` is a tint over the frost, not the panel.** The frost
   supplies the darkening and the legibility; the tint only pulls
   `.hudWindow`'s neutral grey toward the pet's warm brown, which is why 0.38
@@ -427,6 +430,13 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `sessionTitle` does, and `BubbleView` has no `mood`: it is handed the status
   string, because deriving it a second time in the view would leave the rule
   under test and the rule on screen as two pieces of code that merely agree.
+  The guarantee binds the live SESSIONS and stops there: the fold also takes
+  the global `state` file, which has no row behind it and which `cmd_down`
+  never clears, so a session ending on `waiting` can hold the face for up to
+  that file's 300s leash while the caption reports the top live row. A harness
+  that recomputes the face from `liveSessions` alone shares the blind spot and
+  will assert the gap away — take the fold's own inputs, or assert against a
+  literal.
 - **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
   pid of the outermost process the session hangs off — Claude desktop, or the
   terminal that ran `claude`. A dead owner retires the session on the next
