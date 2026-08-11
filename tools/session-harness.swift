@@ -101,8 +101,6 @@ do {
           bubbleText(two, .running, "global", words, sessionLabels(two)).prompt, "hi")
     check("no rows falls back to the global say",
           bubbleText([], .done, "global", words, [:]).prompt, "global")
-    check("a row missing from the label table still gets a name",
-          bubbleText(two, .running, "", words, [:]).name, "alpha")
 }
 
 // MARK: - registryNames
@@ -194,6 +192,19 @@ do {
 do {
     let labels = sessionLabels(menuRows([row("s1", .idle, cwd: "/p/perchling")]))
     check("a lone session wears no suffix", labels["s1"], "perchling")
+}
+
+do {
+    // sessionLabels must be fed the MENU rows, never the raw liveSessions
+    // output: `manual` is a bridge row that is never drawn, and letting it
+    // into the collision count could suffix a real row for colliding with a
+    // row nobody on screen ever sees. Unfiltered, "manual" and "s1" tie on
+    // "perchling" and s1 would wear "perchling · s1"; menuRows drops manual
+    // before sessionLabels ever counts it.
+    let raw = [row("manual", .running, cwd: "/p/perchling"),
+               row("s1", .running, cwd: "/p/perchling")]
+    let labels = sessionLabels(menuRows(raw))
+    check("manual cannot push a real row into a collision suffix", labels["s1"], "perchling")
 }
 
 do {

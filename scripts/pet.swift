@@ -1720,6 +1720,11 @@ func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String]) -> St
 // disambiguate; with one session there is nothing to tell it apart from, so it
 // stays hidden whatever `sessionName` would have returned for it.
 //
+// `labels` is `sessionLabels(rows)` from that same poll, not recomputed in
+// here: the label table and the row list are assigned together in one
+// `pollMoods` pass so the tray can never be naming a session the face has
+// already moved past.
+//
 // `display` is passed rather than taken from the head because it can come from
 // the `state` puppet file, which has no row behind it.
 //

@@ -53,18 +53,24 @@ Verify without launching:
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns nine flat inks into a million.
 - **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
-  `sessionName`, and `sessionTitle` all sit above the runtime-home block, so a
-  harness for them should cut there instead of at `let argv`: cutting at `let
-  argv` still runs that block at load time, which touches
-  `~/.claude/perchling/` — the very directory this file forbids writing to.
-  Cut before `// Runtime home:` and stub the one global a still-included type
-  reaches for: `let examplesRoot: URL? = nil`. The shell side has the same
-  trap: `pet.sh up` ends in `running || ... nohup "$BIN" ...`, so calling it
-  directly starts a real overlay. Point `CLAUDE_CONFIG_DIR` at a scratch
-  directory, then neutralise the launch path by dropping a no-op executable at
-  `<scratch>/perchling/bin/perchling` with a mtime newer than `pet.swift` —
-  `cmd_up` then skips its rebuild check and `nohup` launches the stub, which
-  exits immediately instead of opening a window.
+  `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText` and
+  `registryNames` all sit above the runtime-home block, so a harness for them
+  has to cut there instead of at `let argv`: cutting at `let argv` still runs
+  that block at load time, which touches `~/.claude/perchling/` — the very
+  directory this file forbids writing to. `bash tools/run-session-harness.sh`
+  already does exactly this — it cuts `pet.swift` before `// Runtime home:`,
+  stubs the one global a still-included type reaches for
+  (`let examplesRoot: URL? = nil`), appends `tools/session-harness.swift`, and
+  compiles and runs the result — so reach for it rather than hand-rolling the
+  cut again. The reasoning above is not a one-off justification for that
+  script; it is why any future addition to this layer belongs above that line
+  too. The shell side has the same trap: `pet.sh up` ends in `running || ...
+  nohup "$BIN" ...`, so calling it directly starts a real overlay. Point
+  `CLAUDE_CONFIG_DIR` at a scratch directory, then neutralise the launch path
+  by dropping a no-op executable at `<scratch>/perchling/bin/perchling` with a
+  mtime newer than `pet.swift` — `cmd_up` then skips its rebuild check and
+  `nohup` launches the stub, which exits immediately instead of opening a
+  window.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
@@ -541,13 +547,17 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
+bash tools/run-session-harness.sh  # 39 assertions over the session/tray layer
 ~/.claude/perchling/bin/perchling --validate examples/sprout.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-There is no test suite. "Verified" means: it compiles, the examples still
-validate, `--export` still round-trips, malformed manifests are still rejected,
-and you have looked at a rendered frame.
+There is a harness for the session/tray layer now —
+`bash tools/run-session-harness.sh` — but nothing else here has a test suite.
+"Verified" still means: it compiles, the examples still validate, `--export`
+still round-trips, malformed manifests are still rejected, and you have looked
+at a rendered frame. The harness is one more kind of evidence for the code it
+covers, not a replacement for any of those.
 
 Changing the built-in's art leaves two generated artifacts behind, and both of
 them lie quietly rather than failing: `examples/perchling.json` *is* `--export`

@@ -14,7 +14,7 @@ src="$repo/scripts/pet.swift"
 
 command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)" >&2; exit 1; }
 
-cut=$(grep -n '^// Runtime home:' "$src" | cut -d: -f1)
+cut=$(grep -n '^// Runtime home:' "$src" | head -1 | cut -d: -f1 || true)
 [ -n "$cut" ] || { echo "cannot find the runtime-home block in $src" >&2; exit 1; }
 
 work="$(mktemp -d)"
