@@ -141,6 +141,12 @@ do {
     writeFile(dir, "301.json", "{\"sessionId\":\"s9\",\"name\":\"unknown pid\"}")
     check("a missing pid is unknown, never dead",
           registryNames(dir, alive: { _ in false })["s9"], "unknown pid")
+    // pid_t is Int32 on Darwin; a JSON integer wider than that must not trap
+    // pid_t's failable-less initializer — it has to fall into the same
+    // "unknown" bucket a missing pid does.
+    regFile(dir, 99999999999999, "s10", "huge pid")
+    check("an out-of-range pid is unknown, never dead",
+          registryNames(dir, alive: { _ in false })["s10"], "huge pid")
 }
 
 check("a missing registry is an empty map, not a crash",

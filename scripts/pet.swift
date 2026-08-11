@@ -1620,9 +1620,7 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
     var out: [String: String] = [:]
     var stamps: [String: Date] = [:]
     for url in items where url.pathExtension == "json" {
-        // The try? is parenthesised on purpose: `try? x as? T` parses as
-        // `try? (x as? T)` and yields a double optional, which then needs an
-        // optional chain on every lookup below.
+        // Parenthesised for readability, not semantics.
         guard let data = try? Data(contentsOf: url),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let sid = obj["sessionId"] as? String,
@@ -1632,7 +1630,12 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
         // A missing pid is unknown, never dead — the same rule ownerAlive
         // follows for a session with no owner file. Dead pids are dropped here,
         // so everything that survives is live and mtime alone breaks a tie.
-        if let pid = obj["pid"] as? Int, !alive(pid_t(pid)) { continue }
+        // `pid_t.init(_: Int)` traps on an out-of-range value instead of
+        // failing, so an oversized `pid` — a wider field from a future host
+        // version — has to go through the failable initializer or it takes
+        // the whole overlay down on data this function already treats as a
+        // trust boundary. Out of range is unknown, exactly like absent.
+        if let pidNum = obj["pid"] as? Int, let pid = Int32(exactly: pidNum), !alive(pid_t(pid)) { continue }
         let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate ?? .distantPast
         if let prev = stamps[sid], prev > stamp { continue }
