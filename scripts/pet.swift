@@ -1481,6 +1481,7 @@ struct SessionRow {
     let sid: String
     let cwd: String?    // line 2 of the session file; nil on the one-line form
     let mood: Mood      // effective: already decayed to idle past its own TTL
+    let say: String?    // line 3: this session's caption; nil on the shorter forms
 }
 
 // The one place sessions/ is read for moods. The attention fold and the menu
@@ -1506,10 +1507,12 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow
         let mood = Mood.parse(raw)
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
         let cwd = lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        let say = lines.count > 2 ? lines[2].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let ttl = moodTTL[mood] ?? 0
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
-                              mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood))
+                              mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
+                              say: say.isEmpty ? nil : say))
     }
     return out
 }
