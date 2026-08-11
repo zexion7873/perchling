@@ -37,8 +37,9 @@ func writeFile(_ dir: URL, _ name: String, _ body: String) {
 let words: [Mood: String] = [.idle: "idle", .running: "running",
                              .waiting: "waiting", .done: "done", .error: "error"]
 
-func row(_ sid: String, _ mood: Mood, cwd: String? = nil, say: String? = nil) -> SessionRow {
-    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say)
+func row(_ sid: String, _ mood: Mood, cwd: String? = nil,
+         say: String? = nil, name: String? = nil) -> SessionRow {
+    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name)
 }
 
 // MARK: - sessionName
@@ -56,14 +57,16 @@ do {
     let dir = tempDir("live")
     writeFile(dir, "s1", "running\n/Users/x/Project/perchling\nhello")
     writeFile(dir, "s2", "idle")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true })
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"])
         .sorted { $0.sid < $1.sid }
     check("liveSessions reads both files", rows.count, 2)
     check("liveSessions reads line 2", rows[0].cwd, "/Users/x/Project/perchling")
     check("liveSessions reads line 3", rows[0].say, "hello")
     check("the one-line form stays valid", rows[1].cwd, nil)
+    check("a registry name reaches the row", rows[0].name, "named")
+    check("a session absent from the registry has no name", rows[1].name, nil)
     check("a dead owner drops the row",
-          liveSessions(dir, now: Date(), alive: { _ in false }).count, 0)
+          liveSessions(dir, now: Date(), alive: { _ in false }, names: [:]).count, 0)
 }
 
 // MARK: - menuRows
@@ -152,6 +155,22 @@ do {
 check("a missing registry is an empty map, not a crash",
       registryNames(URL(fileURLWithPath: "/nonexistent/perchling-harness"),
                     alive: { _ in true }).count, 0)
+
+// MARK: - the three-layer chain
+
+check("a registry name wins over the project directory",
+      sessionName(row("abcdef0123456789", .idle, cwd: "/Users/x/Project/perchling",
+                      name: "the refactor")),
+      "the refactor")
+check("an empty registry name is not a name",
+      sessionName(row("abcdef0123456789", .idle, cwd: "/Users/x/Project/perchling", name: "")),
+      "perchling")
+check("no name falls through to the project directory",
+      sessionName(row("abcdef0123456789", .idle, cwd: "/Users/x/Project/perchling")),
+      "perchling")
+check("neither falls through to the sid prefix",
+      sessionName(row("abcdef0123456789", .idle)),
+      "abcdef01")
 
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

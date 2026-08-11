@@ -1553,13 +1553,15 @@ struct SessionRow {
     let cwd: String?    // line 2 of the session file; nil on the one-line form
     let mood: Mood      // effective: already decayed to idle past its own TTL
     let say: String?    // line 3: this session's caption; nil on the shorter forms
+    let name: String?   // the host CLI's own name for it; nil when it has none
 }
 
 // The one place sessions/ is read for moods. The attention fold and the menu
 // both take their sessions from here, so the face and the list cannot disagree
 // about who is live or what they are doing. `alive` is injected because a
 // harness has no pids to point at.
-func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow] {
+func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
+                  names: [String: String]) -> [SessionRow] {
     let fm = FileManager.default
     let cutoff = now.addingTimeInterval(-3600)
     let items = (try? fm.contentsOfDirectory(at: dir,
@@ -1583,7 +1585,8 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
                               mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
-                              say: say.isEmpty ? nil : say))
+                              say: say.isEmpty ? nil : say,
+                              name: names[sid]))
     }
     return out
 }
@@ -1645,15 +1648,16 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
     return out
 }
 
-// The project directory is a session's identity. One whose cwd never arrived
-// gets its raw id instead — deliberately unfriendly, because that is a real
-// state (a file written before the label existed) and a made-up name would
-// hide it.
+// A session's identity, most specific first: the name the host CLI keeps for it,
+// then the project directory, then its raw id — deliberately unfriendly, because
+// a session with neither is a real state and a made-up name would hide it.
 func sessionName(_ r: SessionRow) -> String {
+    if let n = r.name, !n.isEmpty { return n }
     // isDirectory:true is a lie the path is never asked to prove — it skips a
     // filesystem stat that would otherwise run on every poll-loop comparator
     // call and block the main-thread Timer if cwd sits on an unresponsive mount.
-    r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent } ?? String(r.sid.prefix(8))
+    return r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent }
+        ?? String(r.sid.prefix(8))
 }
 
 // What the human sees, which is not what the fold sees: `manual` is a bridge
@@ -2308,7 +2312,7 @@ final class Controller: NSObject, NSWindowDelegate {
         }
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
-        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive)
+        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive, names: [:])
         sessionRows = menuRows(live)
         inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
 
