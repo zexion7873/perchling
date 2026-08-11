@@ -1550,6 +1550,32 @@ func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
     return "\(name) — \(s)"
 }
 
+// What the bubble says, and whose it is. A free function taking the wording
+// table for the same reason `sessionTitle` does: the real table is chosen from
+// `Locale.preferredLanguages`, so anything asserting against the global passes
+// or fails by machine rather than by behaviour.
+//
+// `rows` is the menu's already-sorted list, so its head is the session the face
+// is reporting — the fold and the caption cannot pick different sessions, which
+// is the whole point. The name appears only when there is something to
+// disambiguate; with one session it is a project name the user is looking at
+// already.
+//
+// `display` is passed rather than taken from the head because it can come from
+// the `state` puppet file, which has no row behind it.
+//
+// Composition of the name and the status is NOT done here. It needs measured
+// widths to decide what to truncate, and fonts belong to the view.
+func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
+                _ wording: [Mood: String]) -> (name: String?, status: String, prompt: String) {
+    guard let top = rows.first else {
+        return (nil, wording[display] ?? "", globalSay)
+    }
+    return (rows.count > 1 ? sessionName(top) : nil,
+            wording[top.mood] ?? "",
+            top.say ?? globalSay)
+}
+
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 54, BUB_BODY: CGFloat = 52
 
 // The bubble and the chip are the only surfaces that sit over the user's
