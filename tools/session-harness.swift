@@ -172,5 +172,38 @@ check("neither falls through to the sid prefix",
       sessionName(row("abcdef0123456789", .idle)),
       "abcdef01")
 
+// MARK: - sessionLabels
+
+do {
+    let rows = menuRows([row("s1", .running, cwd: "/p/perchling"),
+                         row("s2", .idle, cwd: "/p/perchling"),
+                         row("s3", .idle, cwd: "/p/alpha")])
+    let labels = sessionLabels(rows)
+    check("a collision suffixes the first row", labels["s1"], "perchling · s1")
+    check("a collision suffixes the second row", labels["s2"], "perchling · s2")
+    check("a name that does not collide is untouched", labels["s3"], "alpha")
+}
+
+do {
+    let labels = sessionLabels(menuRows([row("s1", .idle, cwd: "/p/perchling")]))
+    check("a lone session wears no suffix", labels["s1"], "perchling")
+}
+
+do {
+    // Two rows can only reach the sid layer with different ids, so this only
+    // fires when two ids share their first eight characters — and the label must
+    // not double into "abcdef01 · abcdef01".
+    let labels = sessionLabels([row("abcdef0111", .idle), row("abcdef0122", .idle)])
+    check("a sid-prefix label is never doubled", labels["abcdef0111"], "abcdef01")
+}
+
+do {
+    // The suffix is a middle dot, never an em dash: sessionTitle joins the label
+    // to the status with one, and a second makes the row stutter.
+    let labels = sessionLabels(menuRows([row("s1", .idle, cwd: "/p/x"),
+                                         row("s2", .idle, cwd: "/p/x")]))
+    check("the separator is not an em dash", labels["s1"]!.contains("—"), false)
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

@@ -1674,6 +1674,29 @@ func menuRows(_ rows: [SessionRow]) -> [SessionRow] {
     }
 }
 
+// What the tray and the bubble actually print. It takes the whole set rather
+// than one row because the suffix exists for exactly one purpose: telling two
+// identical names apart. Which rows collide is not knowable from any single one.
+//
+// Fed the MENU rows, after `manual` is gone — a bridge row that is never drawn
+// must not be able to push a real row into wearing a suffix.
+//
+// The separator is a middle dot and must stay one. `sessionTitle` and
+// `statusLine` both join a label to a status with an em dash, and a second one
+// makes the line stutter — the same rule that bans em dashes from the mood
+// wording table.
+func sessionLabels(_ rows: [SessionRow]) -> [String: String] {
+    var counts: [String: Int] = [:]
+    for r in rows { counts[sessionName(r), default: 0] += 1 }
+    var out: [String: String] = [:]
+    for r in rows {
+        let name = sessionName(r), short = String(r.sid.prefix(8))
+        // A label that already IS the id prefix would double into "abc · abc".
+        out[r.sid] = counts[name]! > 1 && name != short ? "\(name) · \(short)" : name
+    }
+    return out
+}
+
 // `status` is passed rather than read off the global so the wording under test
 // is not whatever language the machine happens to be set to.
 func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
