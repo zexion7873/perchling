@@ -78,12 +78,12 @@ is which.
 
 A bubble above its head shows what it's doing over a line of context: your
 prompt while it works, then a snippet of Claude's reply once the turn ends. With
-more than one session open it names the session it is quoting, and that is
-always the session the face is reporting — the two can never describe different
-windows. The status words are translated for Chinese and Japanese systems and
-read English everywhere else. It's a frosted, click-through overlay, so it
-never steals a click, and it stays up through idle rather than folding itself
-away.
+more than one session open it names the session it is quoting, and that is the
+same session the face picked among the live ones, so the two cannot describe
+different windows. The status words are translated for Chinese and Japanese
+systems and read English everywhere else. It's a frosted, click-through
+overlay, so it never steals a click, and it stays up through idle rather than
+folding itself away.
 
 A small disc sits beside the top of its head, right edge flush with the
 bubble's above it. Click it to fold the bubble away or bring it back — the
@@ -111,7 +111,7 @@ first.
 ```
 perchling — waiting for you…
 dotfiles — thinking…
-scratch
+scratch — unbothered…
 ```
 
 Clicking a row brings Claude forward, the same as tapping the pet — individual
@@ -181,13 +181,31 @@ mkdir -p ~/.claude/perchling/pets
 Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
 live — which is exactly what the menu's **Built-in perchling** row does.
 
+Two reactions need more than one frame, so they live in a top-level
+`sequences` block of their own rather than inside `moods`:
+
+```json
+"sequences": {
+  "hover": { "ms": 150, "frames": ["...", "..."] },
+  "drag":  { "ms": 100, "mirror": true, "frames": ["...", "..."] }
+}
+```
+
+`hover` plays once when the cursor arrives, `drag` loops while the pet is held,
+and either can ship without the other. Draw `drag` facing right and add
+`"mirror": true` only if your pet may be reflected — the renderer then flips
+the frames while the drag heads left, which buys a second facing for no extra
+pixels, but it also reverses a badge or lettering, so it is yours to grant.
+
 > [!WARNING]
-> A manifest carries pixels, and the only thing it can say about them is where
-> the eyes are. Declare `eyes` and a custom pet gets the cursor-following gaze
-> and a blink; without it, neither. The doze-and-peek cycle and the hover
-> startle stay built-in-only whatever you declare — both cut between two drawn
-> eye shapes, and that is animation a manifest has no frames for — and a custom
-> pet's sideways twitch moves the whole body rather than just the eyes.
+> A manifest carries pixels, and what it can say about them is where the eyes
+> are and which frames animate. Declare `eyes` and a custom pet gets the
+> cursor-following gaze and a blink; without it, neither. Declare `sequences`
+> and it gets the hover burst and the drag loop; a pet that ships no `hover`
+> frames has no hover reaction at all. The doze-and-peek cycle stays
+> built-in-only whatever you declare — it cuts between two drawn eye shapes,
+> and a manifest has one frame per mood to cut between — and a custom pet's
+> sideways twitch moves the whole body rather than just the eyes.
 > The drag lean works on any pet — it bends the pixels that are already there.
 
 ---
@@ -255,6 +273,10 @@ bash "$pet" wake      # un-tuck a tucked pet
 ```bash
 echo -n waiting > ~/.claude/perchling/state   # puppeteer it yourself
 ```
+
+That file drives the face only, and no session owns it, so it expires on a
+short leash of its own rather than when a session ends. The bubble keeps
+quoting a real session throughout.
 
 ---
 
