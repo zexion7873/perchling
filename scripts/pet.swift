@@ -257,7 +257,20 @@ struct EyeBox {
 // because the tick loop quantises every duration to `TICK_MS`: an author who
 // writes 120 gets 100, and `--validate` says so rather than leaving them to
 // discover it by counting frames.
-enum SeqKind: String, CaseIterable { case hover, drag }
+//
+// hover and drag are reactions, which arrive and expire. The five mood names
+// are resting states, which loop until the mood changes — a mood is one grid,
+// and this is how a manifest puts a clock on it. Their rawValues are `Mood`'s
+// own, so a mood reaches its sequence by name instead of through a table that
+// can fall out of step with the enum beside it.
+enum SeqKind: String, CaseIterable {
+    case hover, drag
+    case idle, running, waiting, done, error
+
+    // nil for the two reactions, which is how a caller tells a state that runs
+    // forever from a reaction that gets out of the way again.
+    var mood: Mood? { Mood(rawValue: rawValue) }
+}
 
 struct PetSequence {
     let frames: [[[NSColor?]]]
@@ -271,7 +284,16 @@ struct PetSequence {
     // a badge, a logo, lettering. The renderer cannot tell those apart from the
     // gait, so the author says.
     let mirror: Bool
+    // How many times a ONE-SHOT runs before it gets out of the way. A double
+    // hop is the frames twice, not ten frames — a repeat costs a number where
+    // duplicated grids cost about 11KB each, and duplicates in `frames` would
+    // also be indistinguishable from a row accidentally padded with copies,
+    // which is a hazard the pipeline has an assertion against. Meaningless on
+    // anything that already loops forever, where `--validate` says so.
+    let plays: Int
     var actualMs: Int { ticksPerFrame * TICK_MS }
+    // ONE pass through the frames. `plays` multiplies it only where it applies,
+    // which the caller knows and this does not.
     var totalTicks: Int { frames.count * ticksPerFrame }
 }
 
@@ -309,6 +331,14 @@ struct CustomPet {
     let unknownSequenceKeys: [String]
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
+
+    // A mood animates only if it declared frames for itself. There is no
+    // fallback to idle's sequence the way `frame(for:)` falls back to idle's
+    // grid: a missing mood still has to be drawn as something, where a missing
+    // sequence just means that state does not move.
+    func sequence(for mood: Mood) -> PetSequence? {
+        SeqKind(rawValue: mood.rawValue).flatMap { sequences[$0] }
+    }
 
     func sequenceGrid(_ ref: SeqRef?) -> [[NSColor?]]? {
         guard let r = ref, let s = sequences[r.kind], r.index < s.frames.count else { return nil }
@@ -506,7 +536,7 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
     var unknownSequenceKeys: [String] = []
     if let raw = top["sequences"] {
         guard let seqs = raw as? [String: Any] else {
-            throw PetError("\"sequences\" must be an object mapping hover/drag to frame lists")
+            throw PetError("\"sequences\" must be an object mapping a sequence name — hover, drag, or a mood — to frame lists")
         }
         for (name, body) in seqs.sorted(by: { $0.key < $1.key }) {
             guard let kind = SeqKind(rawValue: name) else {
@@ -539,6 +569,13 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
                 }
                 mirror = b
             }
+            var plays = 1
+            if let p = obj["plays"] {
+                guard let n = p as? Int, (1...8).contains(n) else {
+                    throw PetError("sequences.\(name).plays must be an integer 1...8 (how many times a one-shot runs)")
+                }
+                plays = n
+            }
             var grids: [[[NSColor?]]] = []
             for (i, rows) in rawFrames.enumerated() {
                 let fw = rows.first?.count ?? 0
@@ -550,7 +587,7 @@ func loadCustomPet(_ url: URL) throws -> CustomPet {
             sequences[kind] = PetSequence(
                 frames: grids,
                 ticksPerFrame: max(1, Int((Double(ms) / Double(TICK_MS)).rounded())),
-                declaredMs: ms, mirror: mirror)
+                declaredMs: ms, mirror: mirror, plays: plays)
         }
     }
     // Sequence frames count: a jump lifts the body above every mood, and the
@@ -887,7 +924,13 @@ func exportBuiltin() -> String {
 }
 
 final class PetView: NSView {
-    var mood: Mood = .idle
+    // A mood loop restarts when the mood does, rather than free-running off
+    // `tick`: `done`'s frames are an arc with a takeoff and a landing, and a
+    // celebration joined halfway through is a pet that lands before it jumps.
+    // In the setter and not in `pose()`, which has to stay pure — `draw()` and
+    // `repaintIfChanged()` both call it.
+    var mood: Mood = .idle { didSet { if mood != oldValue { moodSeqStart = tick } } }
+    var moodSeqStart = 0
     var tick: Int = 0
     var hopUntil: Int = -1
     var custom: CustomPet?
@@ -1160,8 +1203,25 @@ final class PetView: NSView {
                              flipped: s.mirror && dragFacingLeft)
             } else if hoverSeqStart >= 0, let s = pet.sequences[.hover] {
                 let i = (tick - hoverSeqStart) / s.ticksPerFrame
-                // A burst has no direction of travel, so it never flips.
-                if i < s.frames.count { seq = SeqRef(kind: .hover, index: i, flipped: false) }
+                // A burst has no direction of travel, so it never flips. It
+                // may run more than once: the index wraps, the deadline does
+                // not, which is what makes a double hop the same five frames
+                // rather than ten.
+                if i < s.frames.count * s.plays {
+                    seq = SeqRef(kind: .hover, index: i % s.frames.count, flipped: false)
+                }
+            }
+            // The mood loop is the floor: it plays whenever no reaction is,
+            // which includes after a hover burst has elapsed. Reached by
+            // testing `seq` rather than by chaining another `else`, because
+            // `hoverSeqStart` stays armed once set — it is cleared only by a
+            // drag — so an `else if` on it would swallow every mood loop from
+            // the first hover onward. It never flips: a resting state has no
+            // direction of travel, which is also why `mirror` only warns here.
+            if seq == nil, let k = SeqKind(rawValue: mood.rawValue), let s = pet.sequences[k] {
+                seq = SeqRef(kind: k,
+                             index: ((tick - moodSeqStart) / s.ticksPerFrame) % s.frames.count,
+                             flipped: false)
             }
         }
         // The frames own their own motion. The bounce would double-count a
@@ -1178,6 +1238,17 @@ final class PetView: NSView {
             gazeGY = 0
             eyeDX = 0
             eyeDY = 0
+            // A poke still lands, though. A mood loop is a resting state, not
+            // a reaction: a tap that visibly does nothing reads as a dead
+            // window, and the loop is the one thing on this list a tap is
+            // allowed to outrank. Hover and drag are reactions themselves and
+            // already outrank the loop, so their frames keep their own motion
+            // untouched. The arrival hop does NOT come back this way — it is
+            // armed only when `done` has no sequence of its own, which is what
+            // stops a lift being stacked on a lift.
+            if seq?.kind.mood != nil, motionOK, tick < hopUntil {
+                off = ((tick / 3) % 2 == 0) ? 2 : 0
+            }
         }
 
         // The side margin is one bounce unit and the twitch already spends all
@@ -2266,7 +2337,12 @@ final class Controller: NSObject, NSWindowDelegate {
                 // a second session finishing while done is already on screen
                 // must not be swallowed, so this follows `entered` the same
                 // way the reminder path below does.
-                if (becameDone || entered.contains(.done)) && next == .done && view.motionOK {
+                // Not armed for a pet whose `done` is a sequence: those frames
+                // are already the celebration, and a hop under them stacks a
+                // lift on a lift. A tap still hops it — that one is a reply to
+                // the user, where this one is the pet cheering by itself.
+                if (becameDone || entered.contains(.done)) && next == .done && view.motionOK
+                    && view.custom?.sequence(for: .done) == nil {
                     view.hopUntil = view.tick + 12
                 }
                 // Reminders and tuck-wake follow per-input events, not the
@@ -2364,10 +2440,21 @@ if argv.count >= 2 {
                     let msg = s.declaredMs == s.actualMs
                         ? "@\(s.declaredMs)ms"
                         : "@\(s.declaredMs)ms -> \(s.actualMs)ms"
-                    let secs = String(format: "%.2fs", Double(s.totalTicks * TICK_MS) / 1000)
-                    let shape = k == .drag ? "loop" : "total"
-                    return "\(k.rawValue) \(s.frames.count) frames \(msg) (\(s.ticksPerFrame) ticks, \(secs) \(shape))"
-                        + (s.mirror ? ", mirrors when dragged left" : "")
+                    // Only where it does something, exactly as `mirror` below:
+                    // printing a repeat count on a kind the warning calls
+                    // ignored is one line contradicting the next.
+                    let plays = k == .hover ? s.plays : 1
+                    let secs = String(format: "%.2fs", Double(s.totalTicks * plays * TICK_MS) / 1000)
+                    // A reaction is over when its frames run out; a mood plays
+                    // for as long as the pet is in that mood, so the number
+                    // worth printing is its cycle, not its lifetime.
+                    let shape = (k == .drag || k.mood != nil) ? "loop" : "total"
+                    let runs = plays > 1 ? " x\(plays)" : ""
+                    return "\(k.rawValue) \(s.frames.count) frames\(runs) \(msg) (\(s.ticksPerFrame) ticks, \(secs) \(shape))"
+                        // Only where it does something. Saying it on a kind the
+                        // warning below calls ignored is one line contradicting
+                        // the next.
+                        + (s.mirror && k == .drag ? ", mirrors when dragged left" : "")
                 }.joined(separator: "; ")
             }
             print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes) — \(seqs)")
@@ -2381,11 +2468,21 @@ if argv.count >= 2 {
             }
             // Silently ignoring it would be indistinguishable from a mirror that
             // simply never triggers, which is an afternoon nobody should spend.
-            if pet.sequences[.hover]?.mirror == true {
-                FileHandle.standardError.write(Data("warning: sequences.hover.mirror is ignored — a one-shot burst has no direction of travel\n".utf8))
+            for k in SeqKind.allCases where k != .drag && pet.sequences[k]?.mirror == true {
+                let why = k == .hover ? "a one-shot burst" : "a resting state"
+                FileHandle.standardError.write(Data("warning: sequences.\(k.rawValue).mirror is ignored — \(why) has no direction of travel\n".utf8))
             }
+            // The mirror image of the rule above: `plays` counts runs of
+            // something that ends, and only the hover burst ends on its own.
+            for k in SeqKind.allCases where k != .hover && (pet.sequences[k]?.plays ?? 1) > 1 {
+                let why = k == .drag ? "a drag loops until you let go" : "a mood loops until the mood changes"
+                FileHandle.standardError.write(Data("warning: sequences.\(k.rawValue).plays is ignored — \(why)\n".utf8))
+            }
+            // Listed off the enum rather than spelled out, so the message
+            // cannot name a set of sequences the parser no longer agrees with.
+            let known = SeqKind.allCases.map { $0.rawValue }.joined(separator: ", ")
             for k in pet.unknownSequenceKeys {
-                FileHandle.standardError.write(Data("warning: sequences.\(k) is not a recognised sequence (hover, drag) — ignored\n".utf8))
+                FileHandle.standardError.write(Data("warning: sequences.\(k) is not a recognised sequence (\(known)) — ignored\n".utf8))
             }
             exit(0)
         } catch {
