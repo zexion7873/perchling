@@ -382,11 +382,18 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `cmd_up` when nothing is running. This is easy to get backwards — and was, in
   advice given to the user — because the next prompt visibly does re-stamp
   `sessions/<sid>`, so the refcount returns without the process.
-- **Session files are mood, refcount, and label.** Line one is the mood; an
-  optional line two is that session's `cwd`, which the tray rows show and the
-  fold ignores. `Mood.parse` reads line one, so the one-line form stays valid
-  forever — `pet.sh up` writes it whenever there is no payload behind the
-  launch (`manual`, `enable`, `wake`). Writing a session file re-stamps
+- **Session files are mood, refcount, label, and caption.** Line one is the
+  mood; an optional line two is that session's `cwd`, which the tray rows show
+  and the fold ignores; an optional line three is the caption the bubble quotes.
+  `Mood.parse` reads line one, so the one- and two-line forms stay valid
+  forever — `pet.sh up` writes the one-line form whenever there is no payload
+  behind the launch (`manual`, `enable`, `wake`). **`state.sh` carries line
+  three forward when it has nothing new to say**: only a prompt and a `done`
+  reply produce text, a tool batch produces none, and a session file is
+  rewritten whole on every hook — so writing the empty value would blank the
+  bubble halfway through a turn. The global `say` never had that problem
+  because it is only written when non-empty, which is exactly why the session
+  file has to re-read its own line 3 first. Writing a session file re-stamps
   liveness; never `touch` one, because that resurrects a stale mood with a
   full TTL. The `manual` entry is a bridge for launches with no session behind
   them, retired by the first real session or by the last `SessionEnd` — it is
@@ -405,6 +412,21 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   for the 30s-empty-grace liveness check, but never touches a mood — it is
   not the second reader this bullet forbids, and adding one that reads a mood
   would be.
+- **The bubble quotes the session the face is reporting.** `menuRows()` already
+  sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
+  `bubbleText()` takes its line three and its name. Before this the caption came
+  from the global `say`, which every session overwrites unconditionally, so with
+  several sessions open the face and the caption could describe different ones
+  with nothing on screen saying so. The name is shown only when more than one
+  session is live — with one it is a project name the user is already looking
+  at. The composed status line budgets the NAME by measured width, never a
+  character count: the line holds about 34 monospace advances, the longest
+  shipped status is "waiting for you…" at 16, and a CJK name spends two advances
+  per character, so any character budget lets the status be the thing that gets
+  cut. `bubbleText` takes the wording table as a parameter for the same reason
+  `sessionTitle` does, and `BubbleView` has no `mood`: it is handed the status
+  string, because deriving it a second time in the view would leave the rule
+  under test and the rule on screen as two pieces of code that merely agree.
 - **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
   pid of the outermost process the session hangs off — Claude desktop, or the
   terminal that ran `claude`. A dead owner retires the session on the next

@@ -18,18 +18,6 @@ if [ ! -t 0 ]; then
   # own "cwd" key would win and put a wrong directory name on one menu row
   # until the next hook fires, which is not worth a second parser.
   cwd=$(printf '%s' "$payload" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-  if [ -n "$sid" ]; then
-    mkdir -p "$d/sessions" 2>/dev/null
-    # Line 1 mood, line 2 cwd. One write, one file: the mood and its label are
-    # published by the same atomic mv and removed by the same rm, so they can
-    # never disagree.
-    if [ -n "$cwd" ]; then
-      printf '%s\n%s' "${1:-idle}" "$cwd" > "$d/.sess.$$" 2>/dev/null
-    else
-      printf '%s' "${1:-idle}" > "$d/.sess.$$" 2>/dev/null
-    fi
-    mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
-  fi
   # UserPromptSubmit payloads carry the prompt; snippet it for the speech
   # bubble. Stops at the first escaped quote — it's a teaser, not a transcript.
   snippet=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | head -c 300 | sed 's/\\*$//')
@@ -74,6 +62,27 @@ if [ ! -t 0 ]; then
   fi
   if [ -n "$snippet" ]; then
     printf '%s' "$snippet" > "$d/.say.$$" 2>/dev/null && mv -f "$d/.say.$$" "$d/say" 2>/dev/null
+  fi
+  # Written LAST, because line 3 is the caption and the caption is not known
+  # until the `done` branch above has had its chance to replace the prompt with
+  # the reply.
+  if [ -n "$sid" ]; then
+    mkdir -p "$d/sessions" 2>/dev/null
+    # An empty snippet must not erase the last one. Only a prompt and a reply
+    # produce text; a tool batch produces none, and a session file is rewritten
+    # whole on every hook, so writing the empty value would blank the bubble
+    # halfway through a turn. The global `say` never had this problem because it
+    # is only written when non-empty. The read costs one fork, and only on the
+    # hooks that have nothing to say.
+    [ -n "$snippet" ] || snippet=$(sed -n 3p "$d/sessions/$sid" 2>/dev/null)
+    # Line 1 mood, line 2 cwd, line 3 caption. One write, one file: all three are
+    # published by the same atomic mv and removed by the same rm, so the mood,
+    # the label and the text can never disagree about whose they are. Always
+    # three lines, empty ones included — `Mood.parse` reads line one and the
+    # reader maps an empty line to nil, so the shorter forms `pet.sh` writes
+    # stay valid.
+    printf '%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" > "$d/.sess.$$" 2>/dev/null
+    mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
 fi
 exit 0
