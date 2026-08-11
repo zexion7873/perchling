@@ -143,6 +143,15 @@ live within a second. No rebuild, no restart, no image files.
 }
 ```
 
+> [!TIP]
+> `scale` is the sharpness dial. A small grid at `"scale": 4` gives the chunky
+> retro look; a grid twice as wide at `"scale": 2` fills about the same corner
+> of your screen with four times the detail.
+
+The format lives in [`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
+
+### 👁️ Eyes that follow
+
 Add an optional `eyes` block and the pet stops staring straight ahead: its eyes
 drift toward the cursor while it waits, and blink on their own.
 
@@ -156,30 +165,7 @@ has to sit on a flat field. `range` (default 2) is how far they travel and
 `lid` overrides the blink color, which is otherwise picked from the box.
 `perchling --validate` reports the box it read and what it could build from it.
 
-A pet is one JSON file, so sharing one is sending one file. Your pets live in
-`~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
-active — **right-click the pet and open Pets** to switch, or to go back to the
-built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Three worked examples
-ship in [`examples/`](examples/): a leafy slime, the retired first mascot
-(`classic`), and the built-in creature itself.
-The format lives in [`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
-
-> [!TIP]
-> `scale` is the sharpness dial. A small grid at `"scale": 4` gives the chunky
-> retro look; a grid twice as wide at `"scale": 2` fills about the same corner
-> of your screen with four times the detail.
-
-Remix the default instead of starting from a blank grid. Writing it straight
-into the library puts it in the menu:
-
-```bash
-mkdir -p ~/.claude/perchling/pets
-~/.claude/perchling/bin/perchling --export > ~/.claude/perchling/pets/mine.json
-```
-
-Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
-live — which is exactly what the menu's **Built-in perchling** row does.
+### 🎞️ Reactions that need more than one frame
 
 Two reactions need more than one frame, so they live in a top-level
 `sequences` block of their own rather than inside `moods`:
@@ -207,6 +193,27 @@ pixels, but it also reverses a badge or lettering, so it is yours to grant.
 > and a manifest has one frame per mood to cut between — and a custom pet's
 > sideways twitch moves the whole body rather than just the eyes.
 > The drag lean works on any pet — it bends the pixels that are already there.
+
+### 📚 Your pet library
+
+A pet is one JSON file, so sharing one is sending one file. Your pets live in
+`~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
+active — **right-click the pet and open Pets** to switch, or to go back to the
+built-in. The examples that ship with the plugin are listed there too, and get
+copied into your library the first time you pick one. Three worked examples
+ship in [`examples/`](examples/): a leafy slime, the retired first mascot
+(`classic`), and the built-in creature itself.
+
+Remix the default instead of starting from a blank grid. Writing it straight
+into the library puts it in the menu:
+
+```bash
+mkdir -p ~/.claude/perchling/pets
+~/.claude/perchling/bin/perchling --export > ~/.claude/perchling/pets/mine.json
+```
+
+Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
+live — which is exactly what the menu's **Built-in perchling** row does.
 
 ---
 
