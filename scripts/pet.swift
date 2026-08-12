@@ -1557,6 +1557,7 @@ struct SessionRow {
     let mood: Mood      // effective: already decayed to idle past its own TTL
     let say: String?    // line 3: this session's caption; nil on the shorter forms
     let name: String?   // the host CLI's own name for it; nil when it has none
+    let title: String?  // the desktop app's title for it; nil when it has none
 }
 
 // The one place sessions/ is read for moods. The attention fold and the menu
@@ -1564,7 +1565,7 @@ struct SessionRow {
 // about who is live or what they are doing. `alive` is injected because a
 // harness has no pids to point at.
 func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
-                  names: [String: String]) -> [SessionRow] {
+                  names: [String: String], titles: [String: String]) -> [SessionRow] {
     let fm = FileManager.default
     let cutoff = now.addingTimeInterval(-3600)
     let items = (try? fm.contentsOfDirectory(at: dir,
@@ -1589,7 +1590,8 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
                               cwd: cwd.isEmpty ? nil : cwd,
                               mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
                               say: say.isEmpty ? nil : say,
-                              name: names[sid]))
+                              name: names[sid],
+                              title: titles[sid]))
     }
     return out
 }
@@ -1726,10 +1728,16 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
     return out
 }
 
-// A session's identity, most specific first: the name the host CLI keeps for it,
-// then the project directory, then its raw id — deliberately unfriendly, because
-// a session with neither is a real state and a made-up name would hide it.
+// A session's identity, most specific first: the title the desktop app shows
+// for it, then the name the CLI keeps for it, then the project directory, then
+// its raw id — deliberately unfriendly, because a session with none of the
+// three is a real state and a made-up name would hide it.
+//
+// The title outranks the name rather than backstopping it because every
+// interactive session is given a `derived` registry name, so a name always
+// answers and a title placed below it could never be reached.
 func sessionName(_ r: SessionRow) -> String {
+    if let t = r.title, !t.isEmpty { return t }
     if let n = r.name, !n.isEmpty { return n }
     // isDirectory:true is a lie the path is never asked to prove — it skips a
     // filesystem stat that would otherwise run on every poll-loop comparator
@@ -2116,6 +2124,11 @@ final class Controller: NSObject, NSWindowDelegate {
     // The host CLI's session registry. Not under `root`: it belongs to the CLI,
     // and PERCHLING_HOME may point at a directory that has no registry in it.
     let registryURL: URL
+    // The desktop app's session records. Resolved from the user's home rather
+    // than from `root`, for the same reason the registry is.
+    let titlesURL: URL
+    // Survives across polls on purpose: see TitleEntry.
+    var titleCache: [String: TitleEntry] = [:]
     let sayURL: URL
     let petURL: URL
     var lastSayStamp: Date?
@@ -2140,9 +2153,10 @@ final class Controller: NSObject, NSWindowDelegate {
     // and a row from the next can disagree about which session is which.
     var sessionLabelsBySid: [String: String] = [:]
 
-    init(root: URL, registry: URL) {
+    init(root: URL, registry: URL, titles: URL) {
         self.root = root
         registryURL = registry
+        titlesURL = titles
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
         ownersURL = root.appendingPathComponent("owners")
@@ -2429,7 +2443,8 @@ final class Controller: NSObject, NSWindowDelegate {
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
         let live = liveSessions(sessionsURL, now: now, alive: ownerAlive,
-                                names: registryNames(registryURL, alive: alive))
+                                names: registryNames(registryURL, alive: alive),
+                                titles: desktopTitles(titlesURL, cache: &titleCache))
         sessionRows = menuRows(live)
         sessionLabelsBySid = sessionLabels(sessionRows)
         inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
@@ -2576,6 +2591,11 @@ let configDir = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
 let root = env["PERCHLING_HOME"].map { URL(fileURLWithPath: $0) }
     ?? configDir.appendingPathComponent("perchling")
 let registryURL = configDir.appendingPathComponent("sessions")
+// The desktop app's session records, which carry the title the user sees in the
+// sidebar. Not under the CLI's config directory — it is a different program's
+// state — so this is the one path taken from the home directory directly.
+let titlesURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Application Support/Claude/claude-code-sessions")
 try? FileManager.default.createDirectory(at: root.appendingPathComponent("sessions"),
                                          withIntermediateDirectories: true)
 
@@ -2684,6 +2704,6 @@ if argv.count >= 2 {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let controller = Controller(root: root, registry: registryURL)
+let controller = Controller(root: root, registry: registryURL, titles: titlesURL)
 controller.run()
 app.run()

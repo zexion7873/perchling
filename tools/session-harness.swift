@@ -38,8 +38,8 @@ let words: [Mood: String] = [.idle: "idle", .running: "running",
                              .waiting: "waiting", .done: "done", .error: "error"]
 
 func row(_ sid: String, _ mood: Mood, cwd: String? = nil,
-         say: String? = nil, name: String? = nil) -> SessionRow {
-    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name)
+         say: String? = nil, name: String? = nil, title: String? = nil) -> SessionRow {
+    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name, title: title)
 }
 
 // MARK: - sessionName
@@ -57,7 +57,8 @@ do {
     let dir = tempDir("live")
     writeFile(dir, "s1", "running\n/Users/x/Project/perchling\nhello")
     writeFile(dir, "s2", "idle")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"],
+                            titles: ["s1": "titled"])
         .sorted { $0.sid < $1.sid }
     check("liveSessions reads both files", rows.count, 2)
     check("liveSessions reads line 2", rows[0].cwd, "/Users/x/Project/perchling")
@@ -65,8 +66,10 @@ do {
     check("the one-line form stays valid", rows[1].cwd, nil)
     check("a registry name reaches the row", rows[0].name, "named")
     check("a session absent from the registry has no name", rows[1].name, nil)
+    check("a desktop title reaches the row", rows[0].title, "titled")
+    check("a session with no desktop record has no title", rows[1].title, nil)
     check("a dead owner drops the row",
-          liveSessions(dir, now: Date(), alive: { _ in false }, names: [:]).count, 0)
+          liveSessions(dir, now: Date(), alive: { _ in false }, names: [:], titles: [:]).count, 0)
 }
 
 // MARK: - menuRows
@@ -312,6 +315,21 @@ var missingCache: [String: TitleEntry] = [:]
 check("a missing titles directory is an empty map",
       desktopTitles(URL(fileURLWithPath: "/nonexistent/perchling-titles"),
                     cache: &missingCache).count, 0)
+
+// MARK: - the four-layer chain
+
+check("a desktop title outranks a registry name",
+      sessionName(row("abcdef0123456789", .idle, cwd: "/p/perchling",
+                      name: "perchling-de", title: "the refactor")),
+      "the refactor")
+check("an empty title falls through to the registry name",
+      sessionName(row("abcdef0123456789", .idle, cwd: "/p/perchling",
+                      name: "perchling-de", title: "")),
+      "perchling-de")
+check("no title falls through to the registry name",
+      sessionName(row("abcdef0123456789", .idle, cwd: "/p/perchling",
+                      name: "perchling-de")),
+      "perchling-de")
 
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
