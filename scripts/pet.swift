@@ -1424,6 +1424,7 @@ final class PetView: NSView {
     var petList: (() -> [PetChoice])?
     var onPickPet: ((PetChoice?) -> Void)?   // nil picks the built-in
     var sessionList: (() -> [SessionRow])?
+    var labelList: (() -> [String: String])?
 
     @objc private func tuckAction() { onTuck?() }
     @objc private func disableAction() { onDisable?() }
@@ -1443,8 +1444,15 @@ final class PetView: NSView {
         // The fold's other half. The face can only ever show the maximum, so
         // this is the only place that says which session it belongs to.
         let sessions = sessionList?() ?? []
+        let labels = labelList?() ?? [:]
         for r in sessions {
-            let item = NSMenuItem(title: sessionTitle(r, moodStatus),
+            // `labels` is `sessionLabels(sessions)` from this same poll, which
+            // fills in every sid it is handed — the `?? sessionName(r)` cannot
+            // fire. Kept anyway: it is a correct-value fallback (the
+            // unsuffixed name), not a guard, and the alternative is a
+            // force-unwrap in a process that runs all day.
+            let item = NSMenuItem(title: sessionTitle(labels[r.sid] ?? sessionName(r),
+                                                      r.mood, moodStatus),
                                   action: #selector(focusSessionAction), keyEquivalent: "")
             item.target = self
             // Two projects can share a basename; the full path is the only
@@ -1513,7 +1521,7 @@ let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .wa
 // for are listed — a wrong translation is worse than English. Shared by the
 // speech bubble and the tray rows so the two never word the same mood
 // differently — which is also why no entry may contain an em dash:
-// `sessionTitle` joins the project name to the status with one, and a second
+// `sessionTitle` joins a label to the status with one, and a second
 // makes the row stutter. `statusLine` joins them the same way once a name is
 // shown, so the ban binds the bubble too.
 let moodStatus: [Mood: String] = {
@@ -1553,13 +1561,16 @@ struct SessionRow {
     let cwd: String?    // line 2 of the session file; nil on the one-line form
     let mood: Mood      // effective: already decayed to idle past its own TTL
     let say: String?    // line 3: this session's caption; nil on the shorter forms
+    let name: String?   // the host CLI's own name for it; nil when it has none
+    let title: String?  // the desktop app's title for it; nil when it has none
 }
 
 // The one place sessions/ is read for moods. The attention fold and the menu
 // both take their sessions from here, so the face and the list cannot disagree
 // about who is live or what they are doing. `alive` is injected because a
 // harness has no pids to point at.
-func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow] {
+func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
+                  names: [String: String], titles: [String: String]) -> [SessionRow] {
     let fm = FileManager.default
     let cutoff = now.addingTimeInterval(-3600)
     let items = (try? fm.contentsOfDirectory(at: dir,
@@ -1583,20 +1594,173 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool) -> [SessionRow
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
                               mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
-                              say: say.isEmpty ? nil : say))
+                              say: say.isEmpty ? nil : say,
+                              name: names[sid],
+                              title: titles[sid]))
     }
     return out
 }
 
-// The project directory is a session's identity. One whose cwd never arrived
-// gets its raw id instead — deliberately unfriendly, because that is a real
-// state (a file written before the label existed) and a made-up name would
-// hide it.
+// The registry is written by another program, so this is a trust boundary. A
+// newline would split an NSMenuItem title in two. The cap is not a layout
+// concern — statusLine truncates by measured width and the menu truncates its
+// own titles — it is there so a pathological string is not moved every 0.4s.
+func cleanName(_ s: String) -> String {
+    let stripped = String(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+    return String(stripped.trimmingCharacters(in: .whitespaces).prefix(64))
+}
+
+// The host CLI's own session registry: one JSON file per live session, keyed by
+// pid, carrying the session id it belongs to and the name the app shows for it.
+// Undocumented and not ours, so every failure here is a missing entry rather
+// than an error — an older CLI, a format that moved, and a background job that
+// legitimately has no name are the same thing from the outside, and all three
+// are correctly answered by falling back to the project directory.
+//
+// `nameSource` is deliberately not read. It distinguishes a name derived from
+// the cwd from one a rename set, but which of those a session carries depends
+// on host policy that cannot be pinned down from a minified bundle — and being
+// wrong about it would be silent. `sessionLabels` guarantees distinguishable
+// rows without knowing.
+//
+// `alive` is injected for the same reason `liveSessions` injects it: a harness
+// has no pids to point at.
+func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
+    let fm = FileManager.default
+    let items = (try? fm.contentsOfDirectory(at: dir,
+                                             includingPropertiesForKeys: [.contentModificationDateKey],
+                                             options: [.skipsHiddenFiles])) ?? []
+    var out: [String: String] = [:]
+    var stamps: [String: Date] = [:]
+    for url in items where url.pathExtension == "json" {
+        // Parenthesised for readability, not semantics.
+        guard let data = try? Data(contentsOf: url),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let sid = obj["sessionId"] as? String,
+              let raw = obj["name"] as? String else { continue }
+        let name = cleanName(raw)
+        if name.isEmpty { continue }
+        // A missing pid is unknown, never dead — the same rule ownerAlive
+        // follows for a session with no owner file. Dead pids are dropped here,
+        // so everything that survives is live and mtime alone breaks a tie.
+        // `pid_t.init(_: Int)` traps on an out-of-range value instead of
+        // failing, so an oversized `pid` — a wider field from a future host
+        // version — has to go through the failable initializer or it takes
+        // the whole overlay down on data this function already treats as a
+        // trust boundary. Out of range is unknown, exactly like absent.
+        if let pidNum = obj["pid"] as? Int, let pid = Int32(exactly: pidNum), !alive(pid_t(pid)) { continue }
+        let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? .distantPast
+        if let prev = stamps[sid], prev > stamp { continue }
+        stamps[sid] = stamp
+        out[sid] = name
+    }
+    return out
+}
+
+// One parsed desktop record. Cached because a real one is ~279KB — almost all
+// of it an MCP config block — and re-parsing every record on a 0.4s poll would
+// put over a megabyte a second of JSON through the main thread.
+struct TitleEntry {
+    let stamp: Date
+    // nil when the record parsed but carried no usable title. A session whose
+    // title has not been written yet is a normal state — the desktop app
+    // writes a session's record when it starts and fills in the title later,
+    // once auto-titling has something to summarise — so a title-less record
+    // is not a rare edge case, it is every new session for as long as it
+    // takes the app to name it. Not caching that answer means re-parsing the
+    // full 279KB on every poll, unchanged, until the title lands: exactly the
+    // cost this cache exists to eliminate.
+    let hit: (sid: String, title: String)?
+}
+
+// The desktop app's own session records, which carry the title the user sees in
+// the sidebar. A second foreign file, and a second one perchling only reads:
+// the CLI registry beside it names the same session differently — `derived`
+// there, user- or LLM-written here — and this one is what the human is looking
+// at, so it wins.
+//
+// The join key is the record's `cliSessionId`, which holds the CLI session id
+// that names perchling's own sessions/<sid> file.
+//
+// `titleSource` is deliberately not read, for the same reason `nameSource` is
+// not: `user` and `auto` titles are both what the sidebar shows.
+//
+// Records sit two account-scoped directories below `dir`, so that level is
+// globbed rather than hardcoded. Enumeration asks for NO resource keys and
+// filters by name first: the records share a directory with hundreds of
+// `deleted_` tombstones, and asking for keys up front turns one readdir into a
+// stat per tombstone.
+func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: String] {
+    let fm = FileManager.default
+    func kids(_ u: URL) -> [URL] {
+        (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
+                                     options: [.skipsHiddenFiles])) ?? []
+    }
+    var out: [String: String] = [:]
+    // Two records can claim the same cliSessionId — a stale directory left
+    // behind by an account switch, say — and without a tie-break the winner
+    // would be whichever one contentsOfDirectory happened to enumerate last.
+    // mtime alone breaks the tie, the same rule registryNames follows for a
+    // duplicate sessionId.
+    var stamps: [String: Date] = [:]
+    var seen: Set<String> = []
+    for acct in kids(dir) {
+        for org in kids(acct) {
+            for url in kids(org) where url.lastPathComponent.hasPrefix("local_")
+                                    && url.pathExtension == "json" {
+                let key = url.path
+                let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                seen.insert(key)
+                if let entry = cache[key], entry.stamp == stamp {
+                    if let hit = entry.hit {
+                        if let prev = stamps[hit.sid], prev > stamp { continue }
+                        stamps[hit.sid] = stamp
+                        out[hit.sid] = hit.title
+                    }
+                    continue
+                }
+                guard let data = try? Data(contentsOf: url),
+                      let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let sid = obj["cliSessionId"] as? String,
+                      let raw = obj["title"] as? String else {
+                    cache[key] = TitleEntry(stamp: stamp, hit: nil)
+                    continue
+                }
+                let title = cleanName(raw)
+                guard !title.isEmpty else {
+                    cache[key] = TitleEntry(stamp: stamp, hit: nil)
+                    continue
+                }
+                cache[key] = TitleEntry(stamp: stamp, hit: (sid: sid, title: title))
+                if let prev = stamps[sid], prev > stamp { continue }
+                stamps[sid] = stamp
+                out[sid] = title
+            }
+        }
+    }
+    // A record the app deleted must not keep answering from memory.
+    cache = cache.filter { seen.contains($0.key) }
+    return out
+}
+
+// A session's identity, most specific first: the title the desktop app shows
+// for it, then the name the CLI keeps for it, then the project directory, then
+// its raw id — deliberately unfriendly, because a session with none of the
+// three is a real state and a made-up name would hide it.
+//
+// The title outranks the name rather than backstopping it because every
+// interactive session is given a `derived` registry name, so a name always
+// answers and a title placed below it could never be reached.
 func sessionName(_ r: SessionRow) -> String {
+    if let t = r.title, !t.isEmpty { return t }
+    if let n = r.name, !n.isEmpty { return n }
     // isDirectory:true is a lie the path is never asked to prove — it skips a
     // filesystem stat that would otherwise run on every poll-loop comparator
     // call and block the main-thread Timer if cwd sits on an unresponsive mount.
-    r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent } ?? String(r.sid.prefix(8))
+    return r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent }
+        ?? String(r.sid.prefix(8))
 }
 
 // What the human sees, which is not what the fold sees: `manual` is a bridge
@@ -1613,12 +1777,36 @@ func menuRows(_ rows: [SessionRow]) -> [SessionRow] {
     }
 }
 
+// What the tray and the bubble actually print. It takes the whole set rather
+// than one row because the suffix exists for exactly one purpose: telling two
+// identical names apart. Which rows collide is not knowable from any single one.
+//
+// Fed the MENU rows, after `manual` is gone — a bridge row that is never drawn
+// must not be able to push a real row into wearing a suffix.
+//
+// The separator is a middle dot and must stay one. `sessionTitle` and
+// `statusLine` both join a label to a status with an em dash, and a second one
+// makes the line stutter — the same rule that bans em dashes from the mood
+// wording table.
+func sessionLabels(_ rows: [SessionRow]) -> [String: String] {
+    var counts: [String: Int] = [:]
+    for r in rows { counts[sessionName(r), default: 0] += 1 }
+    var out: [String: String] = [:]
+    for r in rows {
+        let name = sessionName(r), short = String(r.sid.prefix(8))
+        // A label that already IS the id prefix would double into "abc · abc".
+        out[r.sid] = counts[name]! > 1 && name != short ? "\(name) · \(short)" : name
+    }
+    return out
+}
+
 // `status` is passed rather than read off the global so the wording under test
-// is not whatever language the machine happens to be set to.
-func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
-    let name = sessionName(r)
-    guard let s = status[r.mood], !s.isEmpty else { return name }
-    return "\(name) — \(s)"
+// is not whatever language the machine happens to be set to. The label is passed
+// for the same reason and one more: resolving it needs the whole row set, which
+// a single row cannot see.
+func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String]) -> String {
+    guard let s = status[mood], !s.isEmpty else { return label }
+    return "\(label) — \(s)"
 }
 
 // What the bubble says, and whose it is. A free function taking the wording
@@ -1629,8 +1817,13 @@ func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
 // `rows` is the menu's already-sorted list, so its head is the session the face
 // is reporting — the fold and the caption cannot pick different sessions, which
 // is the whole point. The name appears only when there is something to
-// disambiguate; with one session it is a project name the user is looking at
-// already.
+// disambiguate; with one session there is nothing to tell it apart from, so it
+// stays hidden whatever `sessionName` would have returned for it.
+//
+// `labels` is `sessionLabels(rows)` from that same poll, not recomputed in
+// here: the label table and the row list are assigned together in one
+// `pollMoods` pass so the tray can never be naming a session the face has
+// already moved past.
 //
 // `display` is passed rather than taken from the head because it can come from
 // the `state` puppet file, which has no row behind it.
@@ -1638,11 +1831,15 @@ func sessionTitle(_ r: SessionRow, _ status: [Mood: String]) -> String {
 // Composition of the name and the status is NOT done here. It needs measured
 // widths to decide what to truncate, and fonts belong to the view.
 func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
-                _ wording: [Mood: String]) -> (name: String?, status: String, prompt: String) {
+                _ wording: [Mood: String],
+                _ labels: [String: String]) -> (name: String?, status: String, prompt: String) {
     guard let top = rows.first else {
         return (nil, wording[display] ?? "", globalSay)
     }
-    return (rows.count > 1 ? sessionName(top) : nil,
+    // `labels` and `rows` both come from the same `pollMoods` pass (see the
+    // comment above), so `labels[top.sid]` cannot be missing — the `??` is a
+    // correct-value fallback, not a guard against a case that can happen.
+    return (rows.count > 1 ? labels[top.sid] ?? sessionName(top) : nil,
             wording[top.mood] ?? "",
             top.say ?? globalSay)
 }
@@ -1944,6 +2141,14 @@ final class Controller: NSObject, NSWindowDelegate {
     let stateURL: URL
     let sessionsURL: URL
     let ownersURL: URL
+    // The host CLI's session registry. Not under `root`: it belongs to the CLI,
+    // and PERCHLING_HOME may point at a directory that has no registry in it.
+    let registryURL: URL
+    // The desktop app's session records. Resolved from the user's home rather
+    // than from `root`, for the same reason the registry is.
+    let titlesURL: URL
+    // Survives across polls on purpose: see TitleEntry.
+    var titleCache: [String: TitleEntry] = [:]
     let sayURL: URL
     let petURL: URL
     var lastSayStamp: Date?
@@ -1964,9 +2169,14 @@ final class Controller: NSObject, NSWindowDelegate {
     // poll left here. NSMenu tracking runs its own run-loop mode, so an open
     // menu shows the snapshot it opened with — the same as the Pets submenu.
     var sessionRows: [SessionRow] = []
+    // Resolved with sessionRows, in the same poll: a label taken from one poll
+    // and a row from the next can disagree about which session is which.
+    var sessionLabelsBySid: [String: String] = [:]
 
-    init(root: URL) {
+    init(root: URL, registry: URL, titles: URL) {
         self.root = root
+        registryURL = registry
+        titlesURL = titles
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
         ownersURL = root.appendingPathComponent("owners")
@@ -2038,6 +2248,7 @@ final class Controller: NSObject, NSWindowDelegate {
             petChoices(root: self.root, examples: examplesRoot)
         }
         view.sessionList = { [unowned self] in self.sessionRows }
+        view.labelList = { [unowned self] in self.sessionLabelsBySid }
         view.onPickPet = { [unowned self] choice in
             do {
                 if let c = choice {
@@ -2251,8 +2462,11 @@ final class Controller: NSObject, NSWindowDelegate {
         }
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
-        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive)
+        let live = liveSessions(sessionsURL, now: now, alive: ownerAlive,
+                                names: registryNames(registryURL, alive: alive),
+                                titles: desktopTitles(titlesURL, cache: &titleCache))
         sessionRows = menuRows(live)
+        sessionLabelsBySid = sessionLabels(sessionRows)
         inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
 
         var display = Mood.idle
@@ -2363,7 +2577,8 @@ final class Controller: NSObject, NSWindowDelegate {
                 // One place decides all three, after both inputs have been
                 // refreshed: a caption taken from one poll and a name from the
                 // next would name the wrong session for a tick.
-                let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus)
+                let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus,
+                                   sessionLabelsBySid)
                 bubbleView.name = t.name
                 bubbleView.status = t.status
                 bubbleView.prompt = t.prompt
@@ -2388,14 +2603,19 @@ final class Controller: NSObject, NSWindowDelegate {
 
 // Runtime home: PERCHLING_HOME (set by pet.sh) > $CLAUDE_CONFIG_DIR/perchling > ~/.claude/perchling.
 let env = ProcessInfo.processInfo.environment
-let root: URL
-if let p = env["PERCHLING_HOME"] {
-    root = URL(fileURLWithPath: p)
-} else {
-    let cfg = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
-    root = cfg.appendingPathComponent("perchling")
-}
+// The host CLI's config directory, resolved on its own rather than derived from
+// `root`: the session registry inside it belongs to the CLI, and PERCHLING_HOME
+// may point anywhere — a harness scratch directory included.
+let configDir = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
+    ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+let root = env["PERCHLING_HOME"].map { URL(fileURLWithPath: $0) }
+    ?? configDir.appendingPathComponent("perchling")
+let registryURL = configDir.appendingPathComponent("sessions")
+// The desktop app's session records, which carry the title the user sees in the
+// sidebar. Not under the CLI's config directory — it is a different program's
+// state — so this is the one path taken from the home directory directly.
+let titlesURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Application Support/Claude/claude-code-sessions")
 try? FileManager.default.createDirectory(at: root.appendingPathComponent("sessions"),
                                          withIntermediateDirectories: true)
 
@@ -2504,6 +2724,6 @@ if argv.count >= 2 {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let controller = Controller(root: root)
+let controller = Controller(root: root, registry: registryURL, titles: titlesURL)
 controller.run()
 app.run()
