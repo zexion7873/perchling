@@ -251,6 +251,15 @@ do {
     writeFile(nested, "deleted_7", "{\"cliSessionId\":\"s7\",\"title\":\"tombstone\"}")
     writeFile(nested, "notes.txt", "ignored")
 
+    // A second account directory, with its own org level and its own record.
+    // With only one directory at each level under `nested`, an implementation
+    // that took kids(dir).first / kids(acct).first instead of looping every
+    // entry would still satisfy every assertion above — this is the one
+    // fixture that actually exercises "globbed, never hardcoded".
+    let nested2 = root.appendingPathComponent("acct2").appendingPathComponent("org2")
+    try! FileManager.default.createDirectory(at: nested2, withIntermediateDirectories: true)
+    titleFile(nested2, "local_8.json", "s8", "second acct")
+
     var cache: [String: TitleEntry] = [:]
     let m = desktopTitles(root, cache: &cache)
     check("a titled session is read", m["s1"], "my session")
@@ -259,30 +268,40 @@ do {
     check("a record with no cliSessionId is skipped", m.values.contains("orphan"), false)
     check("control characters are stripped from a title", m["s5"], "linebreak")
     check("a deleted_ tombstone is not a record", m["s7"], nil)
-    // Of the six local_*.json fixtures, only s1 and s5 clear both bars (a
-    // parseable cliSessionId and a non-empty cleaned title) — s2 has no title
-    // key, s3's title cleans to empty, s4 has no join key, s6 isn't valid
-    // JSON. The five checks above already pin every other key to absent, so
-    // 2 is the only count consistent with them.
-    check("only local_*.json records are read", m.count, 2)
+    check("a second account directory is found, not just the first", m["s8"], "second acct")
+    // Of the seven local_*.json fixtures (six under acct/org, one under
+    // acct2/org2), only s1, s5 and s8 clear both bars (a parseable
+    // cliSessionId and a non-empty cleaned title) — s2 has no title key, s3's
+    // title cleans to empty, s4 has no join key, s6 isn't valid JSON. The
+    // checks above already pin every other key to absent, so 3 is the only
+    // count consistent with them.
+    check("only local_*.json records are read", m.count, 3)
 
     // The cache exists because a real record is ~279KB. Same mtime must not
-    // re-parse, and a changed file must not be served stale.
-    check("the cache holds one entry per parsed record", cache.count, 2)
+    // re-parse, and a changed file must not be served stale — and a record
+    // with no usable title must not either: the desktop app writes a
+    // session's record before it has a title, so a title-less record is the
+    // normal state of every new session for a while, not a rare failure.
+    // Every examined local_*.json file gets exactly one cache entry whether
+    // it yielded a title or not: 7 files in, 7 entries out (3 hits, 4
+    // misses) — a count of 3 here would mean misses are silently dropped
+    // and re-parsed on every poll forever, the exact bug this cache exists
+    // to prevent.
+    check("the cache holds one entry per examined record, hit or miss", cache.count, 7)
     let again = desktopTitles(root, cache: &cache)
     check("a second call is stable", again["s1"], "my session")
 
     titleFile(nested, "local_1.json", "s1", "renamed")
     check("a rewritten record is re-read", desktopTitles(root, cache: &cache)["s1"], "renamed")
 
-    // local_2.json was never cached (it has no title), so deleting it could
-    // never move cache.count regardless of whether pruning works — that
-    // assertion couldn't fail. local_1.json IS cached at this point (the
-    // rename above put it there under "renamed"), so deleting it is the one
-    // fixture that actually exercises the prune path.
+    // local_1.json IS cached at this point (the rename above put it there
+    // under "renamed"), so deleting it is the fixture that exercises the
+    // prune path — unlike local_2.json, which was never cached before the
+    // negative-caching fix and would have let a broken prune pass by
+    // coincidence.
     try! FileManager.default.removeItem(at: nested.appendingPathComponent("local_1.json"))
     let afterPrune = desktopTitles(root, cache: &cache)
-    check("the cache is pruned when a record goes away", cache.count, 1)
+    check("the cache is pruned when a record goes away", cache.count, 6)
     // The count could look right while a stale entry still answers queries —
     // that's the failure the prune exists to prevent, so assert the map
     // directly, not just its size.

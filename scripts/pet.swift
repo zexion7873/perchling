@@ -1656,8 +1656,15 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
 // put over a megabyte a second of JSON through the main thread.
 struct TitleEntry {
     let stamp: Date
-    let sid: String
-    let title: String
+    // nil when the record parsed but carried no usable title. A session whose
+    // title has not been written yet is a normal state — the desktop app
+    // writes a session's record when it starts and fills in the title later,
+    // once auto-titling has something to summarise — so a title-less record
+    // is not a rare edge case, it is every new session for as long as it
+    // takes the app to name it. Not caching that answer means re-parsing the
+    // full 279KB on every poll, unchanged, until the title lands: exactly the
+    // cost this cache exists to eliminate.
+    let hit: (sid: String, title: String)?
 }
 
 // The desktop app's own session records, which carry the title the user sees in
@@ -1693,17 +1700,23 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
                 let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
                 seen.insert(key)
-                if let hit = cache[key], hit.stamp == stamp {
-                    out[hit.sid] = hit.title
+                if let entry = cache[key], entry.stamp == stamp {
+                    if let hit = entry.hit { out[hit.sid] = hit.title }
                     continue
                 }
                 guard let data = try? Data(contentsOf: url),
                       let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                       let sid = obj["cliSessionId"] as? String,
-                      let raw = obj["title"] as? String else { cache[key] = nil; continue }
+                      let raw = obj["title"] as? String else {
+                    cache[key] = TitleEntry(stamp: stamp, hit: nil)
+                    continue
+                }
                 let title = cleanName(raw)
-                if title.isEmpty { cache[key] = nil; continue }
-                cache[key] = TitleEntry(stamp: stamp, sid: sid, title: title)
+                guard !title.isEmpty else {
+                    cache[key] = TitleEntry(stamp: stamp, hit: nil)
+                    continue
+                }
+                cache[key] = TitleEntry(stamp: stamp, hit: (sid: sid, title: title))
                 out[sid] = title
             }
         }
