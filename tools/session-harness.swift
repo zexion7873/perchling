@@ -311,6 +311,29 @@ do {
     check("a pruned record no longer answers", afterPrune["s1"], nil)
 }
 
+do {
+    // Two records under different account directories claiming the same
+    // cliSessionId — the desktop analogue of registry-dup above.
+    // contentsOfDirectory enumerates acct1 before acct2 here (creation
+    // order), so the older-mtime record is placed in acct2 to be enumerated
+    // LAST: the one arrangement where a missing tie-break — last write into
+    // the dict wins — produces the wrong answer, rather than passing by
+    // enumeration order the way the reverse arrangement did when tried. The
+    // sleep clears the mtime resolution hazard: two files written in the
+    // same instant can carry the same stamp.
+    let dir = tempDir("titles-dup")
+    let a = dir.appendingPathComponent("acct1").appendingPathComponent("org")
+    let b = dir.appendingPathComponent("acct2").appendingPathComponent("org")
+    try! FileManager.default.createDirectory(at: a, withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: b, withIntermediateDirectories: true)
+    titleFile(b, "local_older.json", "dup", "older")
+    Thread.sleep(forTimeInterval: 0.02)
+    titleFile(a, "local_newer.json", "dup", "newer")
+    var dupCache: [String: TitleEntry] = [:]
+    check("two records for one session: the newer wins",
+          desktopTitles(dir, cache: &dupCache)["dup"], "newer")
+}
+
 var missingCache: [String: TitleEntry] = [:]
 check("a missing titles directory is an empty map",
       desktopTitles(URL(fileURLWithPath: "/nonexistent/perchling-titles"),

@@ -1693,6 +1693,12 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
                                      options: [.skipsHiddenFiles])) ?? []
     }
     var out: [String: String] = [:]
+    // Two records can claim the same cliSessionId — a stale directory left
+    // behind by an account switch, say — and without a tie-break the winner
+    // would be whichever one contentsOfDirectory happened to enumerate last.
+    // mtime alone breaks the tie, the same rule registryNames follows for a
+    // duplicate sessionId.
+    var stamps: [String: Date] = [:]
     var seen: Set<String> = []
     for acct in kids(dir) {
         for org in kids(acct) {
@@ -1703,7 +1709,11 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
                     .contentModificationDate ?? .distantPast
                 seen.insert(key)
                 if let entry = cache[key], entry.stamp == stamp {
-                    if let hit = entry.hit { out[hit.sid] = hit.title }
+                    if let hit = entry.hit {
+                        if let prev = stamps[hit.sid], prev > stamp { continue }
+                        stamps[hit.sid] = stamp
+                        out[hit.sid] = hit.title
+                    }
                     continue
                 }
                 guard let data = try? Data(contentsOf: url),
@@ -1719,6 +1729,8 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
                     continue
                 }
                 cache[key] = TitleEntry(stamp: stamp, hit: (sid: sid, title: title))
+                if let prev = stamps[sid], prev > stamp { continue }
+                stamps[sid] = stamp
                 out[sid] = title
             }
         }
