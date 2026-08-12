@@ -218,9 +218,10 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Three worked examples
-ship in [`examples/`](examples/): a leafy slime, the retired first mascot
-(`classic`), and the built-in creature itself.
+copied into your library the first time you pick one. Four worked examples
+ship in [`examples/`](examples/): a leafy slime, the first mascot (`classic`),
+the CRT terminal robot that was the built-in through 1.6 (`robot`), and the
+built-in creature itself.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:
@@ -320,9 +321,9 @@ Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
 Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
 
-The built-in creature is not a drawing at all — it is composed at runtime from
-rounded rectangles and a lathed shell profile, with its shading derived from
-neighbouring pixels. The source code *is* the source art.
+The built-in creature is a manifest, carried in the binary and parsed by the
+same loader a pet you draw goes through. `--export` hands that text back
+verbatim, so the pet you see is exactly the file you can start editing.
 
 ## 📄 License
 

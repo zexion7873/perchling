@@ -125,13 +125,13 @@ Rules the loader enforces:
    bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build
    ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
    ```
-   Tell the user what the snapshot does not carry before they commit to
-   editing it: the export is pixels, so the default's doze-and-peek cycle and
-   typing animation are gone, and the sideways twitch that moves only the
-   default's eyes becomes a whole-body shift. Declaring `eyes` on the copy
-   wins back the gaze and the blink — the export's own eye
-   box is `[22, 15, 52, 27]` with `socket` `"c"` — two pixels wider than the
-   eyes on every side, which is the clearance the gaze needs.
+   The snapshot is a faithful copy: the built-in is itself a manifest, so the
+   export carries everything it has and loses nothing. What it does not have is
+   an `eyes` block, and one cannot simply be declared on it — the two lenses sit
+   far apart with shaded head and outline between them, so any box covering both
+   spans inks other than the socket colour, and a shift rewrites the whole box.
+   Gaze on a remix of the default means redrawing the eye region onto a flat
+   field first, not adding four numbers.
 1. Settle the creature with the user: species, colors, vibe. An outline
    color, 2–3 body colors, and 1–2 face colors is the sweet spot.
 2. Draw the five grids. Design `idle` first, then copy it per mood and
@@ -183,9 +183,12 @@ the user's project as the working directory:
 
 - `sprout.json` — a leafy slime, 48×40 at scale 2, shaded and blushing. Shows
   how the pieces fit together at the fine-detail end.
-- `perchling.json` — the built-in pet, exported: 96×99 at scale 1.
-- `classic.json` — the first mascot, retired when the built-in became the
+- `perchling.json` — the built-in pet, exported: 96×100 at scale 1.
+- `classic.json` — the first mascot, retired when the built-in became the CRT
   terminal robot; same footprint as the export it was frozen from.
+- `robot.json` — that terminal robot, the built-in from 1.0 through 1.6, frozen
+  when the hippo replaced it. The engine that drew it is deleted, so this file
+  is the only record of it.
 
 ## Revert
 
