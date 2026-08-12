@@ -1,17 +1,19 @@
 import AppKit
 
-// The built-in pet is drawn from primitives, not a fixed bitmap, so its
-// resolution is a knob: RES multiplies every grid coordinate while the
-// silhouette stays put. RES 3 at 1 point per cell renders the same creature
-// at 96x99 points with nine times the detail of the original 32x33 at 4.
-let RES = 3
-let GW = 32 * RES, GH = 33 * RES
-let SCALE: CGFloat = 1
-
 // Bounce and twitch are physical: roughly four points of travel regardless of
 // how big a pet's cells are. Expressed in cells so the sprite grid stays the
 // only coordinate system, and the canvas reserves three of those below the
 // art for the motion to happen in.
+// The chrome's own colours. These were borrowed from the pet's ink palette
+// while the built-in was drawn from that enum; the pet is a manifest now and
+// declares a palette of its own, so the two have no reason to move together —
+// and a user's pet swapping in must not repaint the bubble. Hexes unchanged
+// from what shipped, so the panels look identical to 1.6.
+let CHROME_PANEL = NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1)
+let CHROME_EDGE = NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1)
+let CHROME_TEXT = NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1)
+let CHROME_INK = NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1)
+
 // The tick loop's period. Sequence timings quantise to this, so the parser and
 // the timer cannot be allowed to drift apart.
 let TICK_MS = 50
@@ -35,183 +37,6 @@ func canvasSize(_ w: Int, _ h: Int, _ scale: CGFloat) -> NSSize {
     NSSize(width: CGFloat(w + 2 * sidePad(scale)) * scale,
            height: CGFloat(h + headroom(scale)) * scale)
 }
-// Shading band thickness. A proportional band (2 * RES) would just reproduce
-// the old chunky ramp; a third of that is what buys the finer gradient.
-let BAND = RES
-
-func blank() -> [[Int]] { Array(repeating: Array(repeating: 0, count: GW), count: GH) }
-
-func box(_ g: inout [[Int]], _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) {
-    for y in y0...y1 where y >= 0 && y < GH {
-        for x in x0...x1 where x >= 0 && x < GW { g[y][x] = 1 }
-    }
-}
-
-func rrect(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ r: Int) -> [[Int]] {
-    var t = blank()
-    box(&t, x0, y0, x1, y1)
-    for i in 0..<r {
-        for j in 0..<(r - i) {
-            t[y0 + i][x0 + j] = 0; t[y0 + i][x1 - j] = 0
-            t[y1 - i][x0 + j] = 0; t[y1 - i][x1 - j] = 0
-        }
-    }
-    return t
-}
-
-// One column span per design row, drawn at expanded resolution: each span
-// slides linearly toward the next across its RES sub-rows. A pure design-space
-// profile would step 3px at a time and scallop the silhouette; this keeps the
-// 1px grain every other rounded edge in the art already has. A lathe profile
-// rather than unioned rrects because a continuous bulge has no 45-degree
-// corner an rrect cut could produce.
-func lathe(_ profile: [(x0: Int, x1: Int)], from y0: Int = 0) -> [[Int]] {
-    var t = blank()
-    let top = y0 * RES
-    for y in top..<min(GH, top + profile.count * RES) {
-        let d = (y - top) / RES, f = (y - top) % RES
-        let cur = profile[d]
-        let nxt = d + 1 < profile.count ? profile[d + 1] : cur
-        let x0 = cur.x0 * (RES - f) + nxt.x0 * f
-        let x1 = (cur.x1 + 1) * (RES - f) + (nxt.x1 + 1) * f - 1
-        for x in x0...x1 where x >= 0 && x < GW { t[y][x] = 1 }
-    }
-    return t
-}
-
-// A rect written in the original 32x33 design space, expanded to cover the
-// full RES x RES block each source cell now occupies.
-func cell(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) -> (Int, Int, Int, Int) {
-    (x0 * RES, y0 * RES, (x1 + 1) * RES - 1, (y1 + 1) * RES - 1)
-}
-
-// .screen is the glass the amber eyes draw on, .casing the darker ring around
-// it. .eye is the amber phosphor — sleepy arcs and open eyes are all the same
-// ink, keeping the face reading as one lit tube, except catchlights' and
-// sparkles' ivory `.glyph` and `.errorX`, the one non-amber face ink (error's
-// X).
-enum Ink: UInt8 { case none, outline, shade, body, light, casing, screen, eye, glyph, errorX }
-
-let palette: [Ink: NSColor] = [
-    .outline:  NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1),
-    .shade:    NSColor(srgbRed: 0.745, green: 0.349, blue: 0.216, alpha: 1),
-    .body:     NSColor(srgbRed: 0.855, green: 0.467, blue: 0.337, alpha: 1),
-    .light:    NSColor(srgbRed: 0.918, green: 0.635, blue: 0.525, alpha: 1),
-    .casing:   NSColor(srgbRed: 0.329, green: 0.216, blue: 0.165, alpha: 1),
-    .screen:   NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1),
-    .eye:      NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1),
-    .glyph:    NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1),
-    .errorX:   NSColor(srgbRed: 0.969, green: 0.561, blue: 0.561, alpha: 1),
-]
-
-func merge(_ parts: [[[Int]]]) -> [[Int]] {
-    var mass = blank()
-    for p in parts {
-        for y in 0..<GH { for x in 0..<GW where p[y][x] == 1 { mass[y][x] = 1 } }
-    }
-    return mass
-}
-
-// Outline wherever the mass ends, a light band down the top and left edges and
-// a shade band down the bottom and right. Every ink is derived from the mass
-// rather than painted, which is what lets a limb built separately from the body
-// come out shaded like the rest of it.
-func shade(_ mass: [[Int]]) -> [[Ink]] {
-    func solid(_ y: Int, _ x: Int) -> Bool {
-        y >= 0 && y < GH && x >= 0 && x < GW && mass[y][x] == 1
-    }
-
-    var out = Array(repeating: Array(repeating: Ink.none, count: GW), count: GH)
-    for y in 0..<GH {
-        for x in 0..<GW where mass[y][x] == 1 {
-            if !solid(y - 1, x) || !solid(y + 1, x) || !solid(y, x - 1) || !solid(y, x + 1) {
-                out[y][x] = .outline
-            } else if !solid(y - BAND, x) || !solid(y, x - BAND) {
-                out[y][x] = .light
-            } else if !solid(y + BAND, x) || !solid(y, x + BAND) {
-                out[y][x] = .shade
-            } else {
-                out[y][x] = .body
-            }
-        }
-    }
-    return out
-}
-
-func buildBase() -> [[Ink]] {
-    // Head, then a lathed torso rather than a rect: the waist at rows 18-19
-    // is what separates the head from the body, and a curve derived the same
-    // way the head's is will not read as a bolted-on box.
-    let shell = lathe([(10, 21), (7, 24), (5, 26), (4, 27), (3, 28),
-                       (2, 29), (2, 29), (2, 29), (2, 29), (2, 29),
-                       (2, 29), (2, 29), (2, 29), (2, 29), (2, 29),
-                       (3, 28), (4, 27), (6, 25)])
-    let torso = lathe([(10, 21), (8, 23),
-                       (7, 24), (7, 24), (7, 24), (7, 24),
-                       (7, 24), (7, 24), (7, 24), (7, 24),
-                       (8, 23)], from: 18)
-    // Legs are square on purpose — rounding 5x4 pebbles costs them their
-    // planted look, and at this size the outline is most of the leg.
-    let legs = [(9, 29, 13, 32), (18, 29, 22, 32)].map { l -> [[Int]] in
-        let c = cell(l.0, l.1, l.2, l.3)
-        return rrect(c.0, c.1, c.2, c.3, 0)
-    }
-
-    var out = shade(merge([shell, torso] + legs))
-
-    // An arm unioned into the body has no seam along the straight join, and
-    // shade() derives none — the 1.0 answer was a painted crease, which is
-    // one pixel wide at shipping size and lets the arm melt into the torso on
-    // a light desktop. Each arm is its own mask, shaded on its own and
-    // stamped over the base, which gives it a real outline for free.
-    //
-    // One uniform pill, not a shoulder welded to a forearm: those overlapped
-    // at rows 22-23, so the arm was widest in the middle and grew outward as
-    // it descended, which reads as a flexed deltoid. Four cells is the floor —
-    // three is all outline, and reaching past column 4 breaks the weld.
-    for mirrored in [false, true] {
-        let pills = [(4, 19, 7, 26)].map { p -> [[Int]] in
-            let (x0, x1) = mirrored ? (31 - p.2, 31 - p.0) : (p.0, p.2)
-            let c = cell(x0, p.1, x1, p.3)
-            return rrect(c.0, c.1, c.2, c.3, RES)
-        }
-        let arm = shade(merge(pills))
-        for y in 0..<GH { for x in 0..<GW where arm[y][x] != .none { out[y][x] = arm[y][x] } }
-    }
-
-    // The brim, and the only way this head could have got one. Everything
-    // above is merged into a single mask before shade() runs, so shade() can
-    // only ever derive the OUTSIDE contour — five rounds of reshaping the head
-    // profile failed on exactly that, because a lathe is convex and a merged
-    // mass has no interior edges. This borrows the arm's trick instead: its
-    // own mask, its own shade(), stamped over the base, so it lands with an
-    // outline and a light band of its own and the visor reads as set into the
-    // shell rather than painted on it. One band and no more: a second one
-    // starts reading as stripes on a light desktop.
-    let brimCell = cell(5, 2, 26, 4)
-    let brim = shade(rrect(brimCell.0, brimCell.1, brimCell.2, brimCell.3, RES))
-    for y in 0..<GH { for x in 0..<GW where brim[y][x] != .none { out[y][x] = brim[y][x] } }
-
-    // Screen: casing ring, then glass. Stamped after shade() so the face is a
-    // window into the shell, not a shaded lump on it. Nothing else goes on the
-    // glass — 1.1 retired the scanlines and the corner glint, so the eyes are
-    // the whole face.
-    for (rect, ink) in [((5, 4, 26, 14), Ink.casing), ((6, 5, 25, 13), .screen)] {
-        let c = cell(rect.0, rect.1, rect.2, rect.3)
-        let m = rrect(c.0, c.1, c.2, c.3, 2 * RES)
-        for y in 0..<GH { for x in 0..<GW where m[y][x] == 1 { out[y][x] = ink } }
-    }
-
-    // Chest badge: the Claude spark, cream with an amber heart.
-    for (ink, x0, y0, x1, y1) in [(Ink.glyph, 16, 22, 16, 22), (.glyph, 15, 23, 15, 23),
-                                  (.glyph, 17, 23, 17, 23), (.glyph, 16, 24, 16, 24),
-                                  (.eye, 16, 23, 16, 23)] {
-        let c = cell(x0, y0, x1, y1)
-        for y in c.1...c.3 { for x in c.0...c.2 { out[y][x] = ink } }
-    }
-    return out
-}
-
 enum Mood: String {
     case idle, running, waiting, done, error
 
@@ -237,9 +62,8 @@ struct PetError: Error, CustomStringConvertible {
 }
 
 // A manifest's eyes are baked into its pixels, indistinguishable from the body,
-// which is why gaze and blink were built-in-only: the renderer knows where the
-// built-in's eyes are because they are rects in `eyeRects`, and knows nothing
-// about a manifest's. Finding them by colour does not work — on a soft-shaded
+// so a pet gets gaze and blink only by declaring where they are. Finding them
+// by colour does not work — on a soft-shaded
 // sprite the brightest inks inside the screen include the screen's own rim
 // highlights, so the "eyes" come out as a second copy of the bezel and shifting
 // them smears the frame. The author has to say. `socket` is the flat colour the
@@ -435,6 +259,14 @@ func parseGrid(_ rows: [String], _ pal: [Character: NSColor], _ w: Int,
 
 func loadCustomPet(_ url: URL) throws -> CustomPet {
     guard let data = try? Data(contentsOf: url) else { throw PetError("cannot read \(url.path)") }
+    return try loadCustomPet(data)
+}
+
+// Split from the URL form so the built-in pet can go through the same parser a
+// user's pet.json does. Every rule enforced below therefore holds for the
+// shipped pet too — a built-in that took a private path could drift from the
+// format it is meant to be the reference example of.
+func loadCustomPet(_ data: Data) throws -> CustomPet {
     let top: [String: Any]
     do {
         guard let d = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -764,164 +596,11 @@ func useBuiltIn(root: URL) throws {
     try clearPetLink(root: root)
 }
 
-let base = buildBase()
-
-// The rects the built-in pet stamps over `base`. Kept as data rather than
-// draw calls so --export emits exactly the art the app renders.
-// Coordinates stay in the original 32x33 design space; cell() expands them and
-// the dx/gy offsets arrive already in final cells.
-func r(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int,
-       _ ox: Int = 0, _ oy: Int = 0) -> (Ink, Int, Int, Int, Int) {
-    let c = cell(x0, y0, x1, y1)
-    return (ink, c.0 + ox, c.1 + oy, c.2 + ox, c.3 + oy)
-}
-
-// The mood is legible or it is not, and the eyes are where it has to happen:
-// the glass is 22x11 design cells (x5..26, y4..14) and everything else on the
-// face is fixed, so a mood that only moves a small smudge inside it reads as
-// the same picture five times. The five are chosen to differ in OUTLINE, not
-// in area: idle's thick drowsy bowls, running's raised half-lid slits,
-// waiting's wide-with-catchlight, done's lifted arch with a
-// corner sparkle, error's heavy X. Gaze and the twitch shift these by one
-// cell, which the zone's margin inside the glass absorbs.
-//
-// idle's resting face is the sleepy arc — the pet dozes. `peeking` swaps in
-// open eyes for a beat so the cursor-following gaze survives the redesign;
-// with Reduce Motion the tick freezes, peeking stays false, and the static
-// pose is the arcs, which is exactly the frame that should be permanent.
-func eyeRects(_ mood: Mood, _ dx: Int, _ gy: Int, _ peeking: Bool,
-              _ blinking: Bool = false) -> [(Ink, Int, Int, Int, Int)] {
-    switch mood {
-    case .waiting:
-        // Blink slit, 2 ticks on its own clock: liveness for the one mood
-        // that could otherwise hold an unblinking stare for a full hour.
-        if blinking {
-            return [r(.eye, 8, 9, 14, 9, dx, gy), r(.eye, 17, 9, 23, 9, dx, gy)]
-        }
-        // The widest of the five: a 7x7 octagon filling the glass, with one
-        // catchlight per eye in the SAME upper-left corner — one light source,
-        // so this pair is deliberately not mirrored.
-        return [r(.eye, 10, 6, 12, 6, dx, gy), r(.eye, 9, 7, 13, 7, dx, gy),
-                r(.eye, 8, 8, 14, 10, dx, gy), r(.eye, 9, 11, 13, 11, dx, gy),
-                r(.eye, 10, 12, 12, 12, dx, gy),
-                r(.eye, 19, 6, 21, 6, dx, gy), r(.eye, 18, 7, 22, 7, dx, gy),
-                r(.eye, 17, 8, 23, 10, dx, gy), r(.eye, 18, 11, 22, 11, dx, gy),
-                r(.eye, 19, 12, 21, 12, dx, gy),
-                r(.glyph, 9, 8, 10, 9, dx, gy), r(.glyph, 18, 8, 19, 9, dx, gy)]
-    case .done:
-        // A thin lifted arch with the tips thrown up, and a sparkle two clear
-        // rows below it — closer and the pair reads as a mouse cursor.
-        return [r(.eye, 9, 6, 12, 6), r(.eye, 8, 7, 9, 7), r(.eye, 12, 7, 13, 7),
-                r(.eye, 8, 8, 8, 8), r(.eye, 13, 8, 13, 8),
-                r(.eye, 19, 6, 22, 6), r(.eye, 18, 7, 19, 7), r(.eye, 22, 7, 23, 7),
-                r(.eye, 18, 8, 18, 8), r(.eye, 23, 8, 23, 8),
-                r(.glyph, 23, 10, 23, 10), r(.glyph, 22, 11, 24, 11),
-                r(.glyph, 23, 12, 23, 12)]
-    case .error:
-        // A waisted X two cells thick — the waist is what stops it reading as
-        // a block. The one deliberate exception to amber phosphor.
-        return [r(.errorX, 8, 7, 9, 7), r(.errorX, 12, 7, 13, 7),
-                r(.errorX, 9, 8, 12, 8), r(.errorX, 10, 9, 11, 9),
-                r(.errorX, 9, 10, 12, 10),
-                r(.errorX, 8, 11, 9, 11), r(.errorX, 12, 11, 13, 11),
-                r(.errorX, 18, 7, 19, 7), r(.errorX, 22, 7, 23, 7),
-                r(.errorX, 19, 8, 22, 8), r(.errorX, 20, 9, 21, 9),
-                r(.errorX, 19, 10, 22, 10),
-                r(.errorX, 18, 11, 19, 11), r(.errorX, 22, 11, 23, 11)]
-    case .running:
-        // A flat half-lid slab, raised. With the ticker gone this shape is the
-        // ONLY thing separating running from idle, so it sits as high in the
-        // glass as idle's bowl sits low.
-        return [r(.eye, 8, 7, 13, 7, dx), r(.eye, 9, 8, 12, 8, dx),
-                r(.eye, 18, 7, 23, 7, dx), r(.eye, 19, 8, 22, 8, dx)]
-    case .idle:
-        if peeking {
-            // Awake for a beat: rounded amber eyes with a catchlight, gaze on.
-            return [r(.eye, 10, 7, 12, 7, dx, gy), r(.eye, 9, 8, 13, 10, dx, gy),
-                    r(.eye, 10, 11, 12, 11, dx, gy),
-                    r(.eye, 19, 7, 21, 7, dx, gy), r(.eye, 18, 8, 22, 10, dx, gy),
-                    r(.eye, 19, 11, 21, 11, dx, gy),
-                    r(.glyph, 10, 8, 10, 8, dx, gy), r(.glyph, 19, 8, 19, 8, dx, gy)]
-        }
-        // The resting face: thick drowsy bowls sunk to the glass floor.
-        return [r(.eye, 8, 10, 9, 10), r(.eye, 12, 10, 13, 10),
-                r(.eye, 8, 11, 13, 11), r(.eye, 9, 12, 12, 12),
-                r(.eye, 18, 10, 19, 10), r(.eye, 22, 10, 23, 10),
-                r(.eye, 18, 11, 23, 11), r(.eye, 19, 12, 22, 12)]
-    }
-}
-
-// Startle: both eyes blown wide, overriding whatever the mood was drawing.
-// "Wide" is relative to the moods, so this is re-measured whenever they move:
-// its widest row ties waiting's seven-wide octagon, but stands five rows tall
-// where waiting's band is three — height, not width, is what out-sizes it.
-// The pupil shrinks rather than grows because a pinprick in a large eye is
-// what reads as startled. Carries no gaze offset, so it may use the glass to
-// its edges.
-func startledRects() -> [(Ink, Int, Int, Int, Int)] {
-    [r(.eye, 8, 6, 12, 6), r(.eye, 7, 7, 13, 11), r(.eye, 8, 12, 12, 12),
-     r(.eye, 19, 6, 23, 6), r(.eye, 18, 7, 24, 11), r(.eye, 19, 12, 23, 12),
-     r(.screen, 9, 8, 11, 10), r(.screen, 20, 8, 22, 10)]
-}
-
-// A tear wells under the left eye, slides down the glass and off the casing
-// onto the chin, then pauses. The fall resolves to one of six rows, or to
-// nothing during the pause. Taking the row rather than the clock means two
-// ticks that draw the same droplet are the same value, which is what lets a
-// pose be compared instead of re-derived.
-func tearRow(_ tick: Int) -> Int? {
-    let phase = tick % 54
-    guard phase >= 12 else { return nil }
-    return 12 + min(5, (phase - 12) / 6)
-}
-
-func tearRects(_ y: Int) -> [(Ink, Int, Int, Int, Int)] { [r(.glyph, 8, y, 8, y + 1)] }
-
-// Twinkles in the glass's upper corners, alternating so something is always
-// catching the light without both sides flashing in lockstep. They sit ON the
-// sprite rather than in the air beside it: a near-white glyph over transparent
-// pixels is invisible against a light desktop, and `done` is the one mood the
-// product exists to deliver — its signal cannot be background-dependent.
-func sparkleRects(_ left: Bool) -> [(Ink, Int, Int, Int, Int)] {
-    left
-        ? [r(.glyph, 5, 7, 5, 7), r(.glyph, 4, 8, 6, 8), r(.glyph, 5, 9, 5, 9)]
-        : [r(.glyph, 26, 7, 26, 7), r(.glyph, 25, 8, 27, 8), r(.glyph, 26, 9, 26, 9)]
-}
-
-// Snapshot the built-in pet as a manifest, so the default is a starting point
-// for a custom pet instead of something you can only redraw from scratch.
-// A manifest carries pixels, not behavior: the snapshot loses the
-// cursor-following pupils and the doze-and-peek cycle, and because it has no
-// eye coordinates the sideways twitch that moves only these eyes becomes a
-// whole-body shift.
-func exportBuiltin() -> String {
-    let key: [Ink: Character] = [.outline: "o", .shade: "s", .body: "b", .light: "l",
-                                 .casing: "k", .screen: "c",
-                                 .eye: "e", .glyph: "g", .errorX: "x"]
-    func hex(_ c: NSColor) -> String {
-        String(format: "#%02x%02x%02x",
-               Int((c.redComponent * 255).rounded()),
-               Int((c.greenComponent * 255).rounded()),
-               Int((c.blueComponent * 255).rounded()))
-    }
-    var moods: [String: [String]] = [:]
-    for mood in [Mood.idle, .running, .waiting, .done, .error] {
-        var grid = base
-        for (ink, x0, y0, x1, y1) in eyeRects(mood, 0, 0, false) {
-            for y in y0...y1 where y >= 0 && y < GH {
-                for x in x0...x1 where x >= 0 && x < GW { grid[y][x] = ink }
-            }
-        }
-        moods[mood.rawValue] = grid.map { String($0.map { $0 == .none ? "." : key[$0]! }) }
-    }
-    var pal: [String: String] = [:]
-    for (ink, ch) in key { pal[String(ch)] = hex(palette[ink]!) }
-    let doc: [String: Any] = ["name": "perchling", "scale": Int(SCALE),
-                              "palette": pal, "moods": moods]
-    let data = try! JSONSerialization.data(withJSONObject: doc,
-                                           options: [.prettyPrinted, .sortedKeys])
-    return String(decoding: data, as: UTF8.self)
-}
+// The built-in is a manifest, so exporting it is handing the text back rather
+// than reconstructing it from pixels. That is what makes `--export` an exact
+// round-trip now: an author who edits the result and points `pet.json` at it
+// starts from the shipped bytes, not from a re-serialisation of them.
+func exportBuiltin() -> String { BUILTIN_MANIFEST }
 
 final class PetView: NSView {
     // A mood loop restarts when the mood does, rather than free-running off
@@ -934,8 +613,13 @@ final class PetView: NSView {
     var tick: Int = 0
     var hopUntil: Int = -1
     var custom: CustomPet?
-    var scale: CGFloat = SCALE
-    var xpad = sidePad(SCALE)
+    // What is actually drawn. `custom` answers "did the user pick something",
+    // which the Pets menu needs; this answers "what is on screen", which the
+    // draw path needs. Keeping them separate is what stopped the built-in row
+    // losing its checkmark when the built-in became a manifest like any other.
+    var activePet: CustomPet { custom ?? builtinPet }
+    var scale: CGFloat = builtinPet.scale
+    var xpad = sidePad(builtinPet.scale)
     var startledUntil = -1
     // Custom pets only. `-1` is disarmed, matching hopUntil and startledUntil.
     // Hover is one-shot and expires by elapsing; drag loops until mouseUp.
@@ -976,7 +660,6 @@ final class PetView: NSView {
     // being on already, but not being switched on mid-flight — that leaves
     // `tick` parked below the deadline forever and the pose stuck for the life
     // of the process. Both ends have to check.
-    var startled: Bool { custom == nil && motionOK && tick < startledUntil }
 
     // Hovering the BUILT-IN pet startles it. The startle swaps the eye shape,
     // and a manifest has one frame per mood with no second frame to cut to, so
@@ -995,15 +678,10 @@ final class PetView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        // Same two conditions `startled` reads, so the deadline is never armed
-        // for a pose that cannot be drawn. `custom` can change under a running
-        // process, which is the reason to check it here as well as there: a
-        // pet swapped mid-hover would otherwise inherit a deadline armed for
-        // the creature before it.
-        if custom == nil && motionOK { startledUntil = tick + 16 }
-        // A custom pet has no startle to swap to; it gets the burst only if it
-        // shipped the frames for one.
-        else if motionOK, custom?.sequences[.hover] != nil { hoverSeqStart = tick }
+        // A pet reacts to hover only if it shipped the frames for one. The
+        // built-in used to swap in a drawn startle pose instead; that pose was
+        // drawing code, and it left with the rest of it.
+        if motionOK, activePet.sequences[.hover] != nil { hoverSeqStart = tick }
     }
 
     // Pupils drift toward the cursor (waiting, and idle's open-eyed peeks) —
@@ -1045,12 +723,12 @@ final class PetView: NSView {
     // tallest of them is three rows, so the error never reaches a pixel.
     private func leanShift(_ y: Int) -> Int {
         guard drawLean != 0 else { return 0 }
-        let h = CGFloat(custom?.height ?? GH)
+        let h = CGFloat(activePet.height)
         return Int((CGFloat(drawLean) * (1 - CGFloat(y) / h)).rounded())
     }
 
-    // Every draw goes through here, so the side margin is applied once rather
-    // than at each of the base / eyes / tear / sparkle / custom call sites.
+    // Every blit goes through here, so the side margin and the drag shear are
+    // applied in one place rather than at each call site.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
         color.setFill()
         let r = NSRect(x: CGFloat(x0 + xpad + leanShift(y0)) * scale,
@@ -1058,16 +736,6 @@ final class PetView: NSView {
                        width: CGFloat(x1 - x0 + 1) * scale,
                        height: CGFloat(y1 - y0 + 1) * scale)
         r.fill()
-    }
-
-    private func put(_ ink: Ink, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
-        fill(palette[ink]!, x0, y0, x1, y1, off)
-    }
-
-    private func drawEyes(_ p: Pose) {
-        for (ink, x0, y0, x1, y1) in eyeRects(p.mood, p.dx, p.gazeY, p.peeking, p.blinking) {
-            put(ink, x0, y0, x1, y1, p.off)
-        }
     }
 
     // Everything draw() turns into pixels, resolved in one place. Every clock-
@@ -1079,9 +747,6 @@ final class PetView: NSView {
         let mood: Mood
         let off: Int
         let dx: Int
-        let gazeY: Int
-        let startled: Bool
-        let peeking: Bool
         let blinking: Bool
         // Custom pets only. `dx` moves the whole sprite, so the eye shift needs
         // its own pair or a glance would drag the body with it.
@@ -1089,8 +754,6 @@ final class PetView: NSView {
         let eyeDY: Int
         // Quantised here so the repaint decision sees the shear settle.
         let lean: Int
-        let tearRow: Int?
-        let sparkleLeft: Bool
         let spriteGen: Int
         let seq: SeqRef?
     }
@@ -1116,25 +779,9 @@ final class PetView: NSView {
     }
 
     func pose() -> Pose {
-        let u = bounceUnit(custom?.scale ?? SCALE)
-        // The doze cycle: eyes open for a beat every few seconds, and only then
-        // does the gaze apply — closed lids following the cursor read as a
-        // glitch, not a glance. Under Reduce Motion the tick freezes, peek
-        // stays false, and the permanent frame is the resting arcs.
-        let peek = mood == .idle && custom == nil && motionOK && (nearCursor() || tick % 132 < 16)
+        let u = bounceUnit(activePet.scale)
         var off = 2
         var dx = 0
-        // Gaze rides half the bounce unit, not the whole thing: the glass
-        // gives waiting's eyes 6px of sideways headroom and 3px vertical, and
-        // the twitch below already spends up to 4 of those 6 sideways on its
-        // own — a full-unit gaze stacked on top of a full-unit twitch pushes
-        // the widest eye past the casing, and a full-unit vertical gaze alone
-        // already exceeds the 3px it has to work with. Idle's peek gaze skips
-        // the halving: its eyes are narrower and centered, with about 9px of
-        // sideways and 6px of vertical margin inside the glass and no twitch
-        // stacked on top, so the full unit fits.
-        var gazeDX = 0
-        var gazeGY = 0
         // A manifest declares one eye box, so its gaze is measured in that
         // box's own pixels rather than in bounce units: the box is the only
         // thing that knows how much headroom the eyes actually have.
@@ -1146,11 +793,7 @@ final class PetView: NSView {
             dx = ((tick / 10) % 4 == 1) ? -1 : (((tick / 10) % 4 == 3) ? 1 : 0)
         case .waiting:
             dx = (tick % 30 < 2) ? 1 : 0
-            if custom == nil {
-                let g = gazeVector()
-                gazeDX = Int((g.0 * CGFloat(u) / 2).rounded())
-                gazeGY = Int((g.1 * CGFloat(u) / 2).rounded())
-            } else if let e = custom?.eyes {
+            if let e = activePet.eyes {
                 let g = gazeVector()
                 eyeDX = Int((g.0 * CGFloat(e.range)).rounded())
                 eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
@@ -1169,16 +812,9 @@ final class PetView: NSView {
             // Straight into the gaze pair rather than through `dx`, which is
             // measured in whole cells and would collapse sixteen sectors back
             // to the three the old three-value gaze had.
-            if peek {
-                let g = gazeVector()
-                gazeDX = Int((g.0 * CGFloat(u)).rounded())
-                gazeGY = Int((g.1 * CGFloat(u)).rounded())
-            }
-            // The doze cycle cuts between two eye shapes, and a manifest has
-            // only one idle frame to cut between — so proximity moves the eyes
-            // it already has instead. The pet still notices you approaching;
-            // it just cannot open eyes it has no art for.
-            else if let e = custom?.eyes, motionOK, nearCursor() {
+            // Proximity moves the eyes the pet already has. It notices you
+            // approaching; it cannot open eyes it has no art for.
+            if let e = activePet.eyes, motionOK, nearCursor() {
                 let g = gazeVector()
                 eyeDX = Int((g.0 * CGFloat(e.range)).rounded())
                 eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
@@ -1234,8 +870,6 @@ final class PetView: NSView {
         if seq != nil {
             off = 2
             dx = 0
-            gazeDX = 0
-            gazeGY = 0
             eyeDX = 0
             eyeDY = 0
             // A poke still lands, though. A mood loop is a resting state, not
@@ -1257,23 +891,14 @@ final class PetView: NSView {
         let ln = motionOK ? Int(lean.rounded()) : 0
         if ln != 0 { dx = 0 }
 
-        let st = startled
-
-        // A droplet frozen mid-fall reads as a rendering fault, so the tear is
-        // the one extra that sits out Reduce Motion entirely.
-        let tear = (mood == .error && motionOK && !st) ? tearRow(tick) : nil
-
         let blink = mood == .waiting && motionOK && tick % 80 < 2
-            && (custom == nil || custom?.blinkFrame != nil) && seq == nil
+            && activePet.blinkFrame != nil && seq == nil
         // Three clocks, three periods — twinkle /6, waiting beat %60, waiting
         // blink %80 — deliberately share none, so overlapping animations read
         // as three mechanisms, not one.
 
-        return Pose(mood: mood, off: off * u, dx: dx * u + gazeDX, gazeY: gazeGY,
-                    startled: st, peeking: peek, blinking: blink,
+        return Pose(mood: mood, off: off * u, dx: dx * u, blinking: blink,
                     eyeDX: eyeDX, eyeDY: eyeDY, lean: ln,
-                    tearRow: tear,
-                    sparkleLeft: (tick / 6) % 2 == 0,
                     spriteGen: spriteGen, seq: seq)
     }
 
@@ -1287,60 +912,34 @@ final class PetView: NSView {
         let p = pose()
         drawLean = p.lean
 
-        // Custom pets swap the whole sprite per mood; bounce (off) and twitch
-        // (dx) still apply, but eye/gaze/glyph overlays are built-in-only —
-        // the manifest knows nothing about eye coordinates.
-        if let pet = custom {
-            // Sequence outranks both: it replaces the whole sprite for its
-            // duration, which is why the gaze and the blink already bowed out
-            // in pose(). Pixels do not composite, so a pet hovered mid-task
-            // shows the reaction rather than its mood — the same trade Codex
-            // makes (`respondToHover && isHovered ? 'jumping' : state`).
-            let grid = pet.sequenceGrid(p.seq)
-                ?? (p.blinking ? pet.blinkFrame : nil)
-                ?? pet.frame(for: p.mood)
-            let shifting = p.eyeDX != 0 || p.eyeDY != 0
-            // Startle outranks the glance rather than composing with it, the
-            // same way `startledRects` replaces the built-in's eyes outright:
-            // a creature whose eyes have just snapped open is not also
-            // tracking the cursor with them.
-
-            let flip = p.seq?.flipped == true
-            for y in 0..<pet.height {
-                for x in 0..<pet.width {
-                    var c = grid[y][flip ? pet.width - 1 - x : x]
-                    // Sampled backwards, so every destination pixel is written
-                    // exactly once. Scattering forwards instead leaves a gap
-                    // wherever the shift steps past a source pixel, which is
-                    // the difference between a glance and a torn eye.
-                    if shifting, let e = pet.eyes, e.contains(x, y) {
-                        let sx = x - p.eyeDX, sy = y - p.eyeDY
-                        c = e.contains(sx, sy) ? grid[sy][sx] : e.socket
-                    }
-                    if let c = c { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
+        // One sprite per mood, swapped whole. Bounce (off) and twitch (dx) still
+        // apply on top; everything else the frame says is final, because a
+        // manifest carries pixels and the renderer has no second opinion about
+        // them.
+        let pet = activePet
+        // Sequence outranks both: it replaces the whole sprite for its
+        // duration, which is why the gaze and the blink already bowed out
+        // in pose(). Pixels do not composite, so a pet hovered mid-task
+        // shows the reaction rather than its mood — the same trade Codex
+        // makes (`respondToHover && isHovered ? 'jumping' : state`).
+        let grid = pet.sequenceGrid(p.seq)
+            ?? (p.blinking ? pet.blinkFrame : nil)
+            ?? pet.frame(for: p.mood)
+        let shifting = p.eyeDX != 0 || p.eyeDY != 0
+        let flip = p.seq?.flipped == true
+        for y in 0..<pet.height {
+            for x in 0..<pet.width {
+                var c = grid[y][flip ? pet.width - 1 - x : x]
+                // Sampled backwards, so every destination pixel is written
+                // exactly once. Scattering forwards instead leaves a gap
+                // wherever the shift steps past a source pixel, which is
+                // the difference between a glance and a torn eye.
+                if shifting, let e = pet.eyes, e.contains(x, y) {
+                    let sx = x - p.eyeDX, sy = y - p.eyeDY
+                    c = e.contains(sx, sy) ? grid[sy][sx] : e.socket
                 }
+                if let c = c { fill(c, x + p.dx, y, x + p.dx, y, p.off) }
             }
-            return
-        }
-
-        let grid = base
-        for y in 0..<GH {
-            for x in 0..<GW {
-                let ink = grid[y][x]
-                if ink != .none { put(ink, x, y, x, y, p.off) }
-            }
-        }
-        if p.startled {
-            for (ink, x0, y0, x1, y1) in startledRects() { put(ink, x0, y0, x1, y1, p.off) }
-        } else {
-            drawEyes(p)
-        }
-
-        if let y = p.tearRow {
-            for (ink, x0, y0, x1, y1) in tearRects(y) { put(ink, x0, y0, x1, y1, p.off) }
-        }
-        if p.mood == .done {
-            for (ink, x0, y0, x1, y1) in sparkleRects(p.sparkleLeft) { put(ink, x0, y0, x1, y1, p.off) }
         }
     }
 
@@ -1369,7 +968,7 @@ final class PetView: NSView {
         guard let p0 = pressAt, let w0 = winAt, let w = window else { return }
         let p = NSEvent.mouseLocation
         if abs(p.x - p0.x) + abs(p.y - p0.y) > 2 { dragged = true }
-        if dragSeqStart < 0, motionOK, custom?.sequences[.drag] != nil {
+        if dragSeqStart < 0, motionOK, activePet.sequences[.drag] != nil {
             dragSeqStart = tick
             hoverSeqStart = -1
         }
@@ -1403,7 +1002,7 @@ final class PetView: NSView {
     // at the RESTING bounce rather than the live one, or it would breathe
     // along with the pet.
     var artTopInset: CGFloat {
-        CGFloat((custom?.inkTop ?? 0) + 2 * bounceUnit(scale)) * scale
+        CGFloat(activePet.inkTop + 2 * bounceUnit(scale)) * scale
     }
 
     // Called from the tick loop rather than from pose(), which has to stay pure
@@ -1891,11 +1490,11 @@ final class ChipView: NSVisualEffectView {
             let gc = NSGraphicsContext.current!.cgContext
             gc.setAlpha(CHROME_TINT)
             gc.beginTransparencyLayer(auxiliaryInfo: nil)
-            palette[.screen]!.setFill()
+            CHROME_PANEL.setFill()
             disc.fill()
             gc.endTransparencyLayer()
             gc.setAlpha(1)
-            palette[.outline]!.setStroke()
+            CHROME_EDGE.setStroke()
             disc.lineWidth = 2.5
             disc.stroke()
             if count > 0 {
@@ -1906,7 +1505,7 @@ final class ChipView: NSVisualEffectView {
                     .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
                     // Amber on the dark disc — the pet's own attention ink, and
                     // the only thing on this 26-point surface that has to carry.
-                    .foregroundColor: palette[.eye]!,
+                    .foregroundColor: CHROME_TEXT,
                 ]
                 let sz = (s as NSString).size(withAttributes: attrs)
                 (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
@@ -1918,7 +1517,7 @@ final class ChipView: NSVisualEffectView {
                 p.move(to: NSPoint(x: mid - w, y: base))
                 p.line(to: NSPoint(x: mid, y: apex))
                 p.line(to: NSPoint(x: mid + w, y: base))
-                palette[.glyph]!.setStroke()
+                CHROME_INK.setStroke()
                 p.lineWidth = 2.5
                 p.lineCapStyle = .round
                 p.lineJoinStyle = .round
@@ -2005,7 +1604,7 @@ final class BubbleView: NSVisualEffectView {
         override func draw(_ dirtyRect: NSRect) {
             NSColor.clear.setFill()
             dirtyRect.fill()
-            let bg = palette[.screen]!, line = palette[.outline]!, textColor = palette[.glyph]!
+            let bg = CHROME_PANEL, line = CHROME_EDGE, textColor = CHROME_INK
 
             let body = BubbleView.bodyPath()
             // The blur underneath already darkens; this is a tint on top of it,
@@ -2195,7 +1794,7 @@ final class Controller: NSObject, NSWindowDelegate {
         chip = NSWindow(contentRect: NSRect(origin: .zero, size: chipSize),
                         styleMask: [.borderless], backing: .buffered, defer: false)
         chipView = ChipView(frame: NSRect(origin: .zero, size: chipSize))
-        let size = canvasSize(GW, GH, SCALE)
+        let size = canvasSize(builtinPet.width, builtinPet.height, builtinPet.scale)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         view = PetView(frame: NSRect(origin: .zero, size: size))
@@ -2296,11 +1895,16 @@ final class Controller: NSObject, NSWindowDelegate {
         lastPetStamp = stamp
         let pet = stamp == nil ? nil : (try? loadCustomPet(resolved))
         view.custom = pet
-        view.scale = pet?.scale ?? SCALE
-        let s = pet?.scale ?? SCALE
+        // `custom` stays nil-when-absent even though something is always drawn:
+        // the Pets menu's checkmark means "this is what you are looking at", and
+        // the built-in row can only answer that while "no user pet" is still
+        // representable. Geometry asks `activePet`, which resolves the fallback.
+        let shown = pet ?? builtinPet
+        view.scale = shown.scale
+        let s = shown.scale
         view.xpad = sidePad(s)
         view.spriteGen += 1
-        let size = canvasSize(pet?.width ?? GW, pet?.height ?? GH, s)
+        let size = canvasSize(shown.width, shown.height, s)
         if window.frame.size != size {
             // setContentSize pins the bottom-left corner, so a wider pet grows
             // off the right edge — where this thing lives by default.
@@ -2556,7 +2160,7 @@ final class Controller: NSObject, NSWindowDelegate {
                 // lift on a lift. A tap still hops it — that one is a reply to
                 // the user, where this one is the pet cheering by itself.
                 if (becameDone || entered.contains(.done)) && next == .done && view.motionOK
-                    && view.custom?.sequence(for: .done) == nil {
+                    && view.activePet.sequence(for: .done) == nil {
                     view.hopUntil = view.tick + 12
                 }
                 // Reminders and tuck-wake follow per-input events, not the
@@ -2600,6 +2204,550 @@ final class Controller: NSObject, NSWindowDelegate {
         }
     }
 }
+
+// The built-in pet, carried as a manifest rather than as drawing code. It goes
+// through the same loader a user's pet.json does, so every rule that parser
+// enforces holds for the shipped pet too, and `--export` can hand the text back
+// verbatim instead of reconstructing it from pixels.
+//
+// The consequence to know before reading `PetView`: `custom` is now never nil.
+// There is no second art path left, so the behaviours that used to key off
+// `custom == nil` — the hover startle, error's tear, done's sparkle, idle's
+// doze-and-peek, cursor gaze and the blink — are gone rather than dormant.
+// They come back as declared `sequences`, not as branches.
+let BUILTIN_MANIFEST = #"""
+{
+  "moods" : {
+    "done" : [
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      ".........................ooooo....................................ooooo.........................",
+      ".......................oollllloo.......oooooooooooooooooo.......oollllloo.......................",
+      "......................olllllllllo..oooolllllllllllllllllloooo..olllllllllo......................",
+      "......................ollbbbbbllooollllllllllllllllllllllllllooollbbbbbllo......................",
+      "......................ollbbbbbsoollllllbbbbbbbbbbbbbbbbbblllllloolbbbbbsso......................",
+      ".....................ollbbbbboollllbbbbbbbbbbbbbbbbbbbbbbbbbblllloobbbbbsso.....................",
+      "......................ollbbbollllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllllobbbsso......................",
+      ".............o........ollbbolllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllobbsso........o.............",
+      ".............o........ollsollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllossso........o.............",
+      "............ogo........oolollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslosoo........ogo............",
+      "..........oogggoo........ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo........oogggoo..........",
+      "............ogo..........ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso..........ogo............",
+      ".............o..........ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo..........o.............",
+      ".............o..........ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso..........o.............",
+      "........................ollbbbbbbboooobbbbbbbbbbbbbbbbbbbbboooobbbbbbsso........................",
+      ".......................ollbbbbbgggeeeeooobbbbbbbbbbbbbbbgggeeeeooobbbbsso.......................",
+      ".......................ollbbboggggeeeeeeeoobbbbbbbbbbboggggeeeeeeeoobbsso.......................",
+      ".......................ollbboeggggeeeeeeeeeobbbbbbbbboeggggeeeeeeeeeobsso.......................",
+      ".......................ollboeeeeeeeeeeeeeeeeobbbbbbboeeeeeeeeeeeeeeeeosso.......................",
+      ".......................ollboeeeeeeeeeeeeeeeeobbbbbbboeeeeeeeeeeeeeeeeosso.......................",
+      ".......................ollboeeeeeeooooeeeeeeobbbbbbboeeeeeeooooeeeeeeosso.......................",
+      ".......................ollboeeeooobbbboooeeeobbbbbbboeeeooobbbboooeeeosso.......................",
+      ".......................ollboeoobbbbbbbbbbooeobbbbbbboeoobbbbbbbbbbooeosso.......................",
+      "......................ollbboobbbbbbbbbbbbbboobbbbbbboobbbbbbbbbbbbbboobsso......................",
+      ".....................ollbbbobbbbbbbbbbbbbbbbobbbbbbbobbbbbbbbbbbbbbbbobbslo.....................",
+      "....................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo....................",
+      "...................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo...................",
+      "..................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo.................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo.................",
+      "................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo................",
+      "................ollbbbbbbooooooooooooooooooooooooooooooooooooooooooooooobbbbbsso................",
+      "................ollbbbboosssssssssssssssssssssssssssssssssssssssssssssssoobbbsso................",
+      "...............ollbbbbosssssssocccossssssssssssssssssssssssssocccossssssssobbbsso...............",
+      "...............ollbbbosssssssocccccossssssssssssssssssssssssocccccossssssssobbsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbossssssssocccccccossssssssssssssssssssssocccccccosssssssssosso...............",
+      "...............ollbosssssssssocccccossssssssssssssssssssssssocccccossssssssssosso...............",
+      "...............ollbossssssssssooooossssssssssssssssssssssssssooooosssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbossssssssssssssssssssssssssssssssssssssssssssssssssssssssobsso...............",
+      "................ollccccccccssssssssssssssssssssssssssssssssssssssssssscccccccsso................",
+      "................ollccccccccccssssssssssssssssssssssssssssssssssssssscccccccccsso................",
+      "................ollbccccccccccccssssssssssssssssssssssssssssssssscccccccccccbsso................",
+      ".................ollsssssssccccccccsssssssssssssssssssssssssssccccccccsssssssso.................",
+      ".................ollbsssssssscccccccccccssssssssssssssssscccccccccccsssssssbsso.................",
+      "..................ollbsssssssssscccccccccccccccccccccccccccccccccsssssssssbsso..................",
+      "...................ollbsssssssssssscccccccccccccccccccccccccccsssssssssssbsso...................",
+      "....................ollbsssssssssssssssscccccccccccccccccsssssssssssssssbsso....................",
+      ".....................ollsbssssssssssssssssssssssssssssssssssssssssssssbssso.....................",
+      "......................ollssbssssssssssssssssssssssssssssssssssssssssbsssso......................",
+      ".......................oolsssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssoo.......................",
+      ".........................oolsssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssssoo.........................",
+      "...........................oolssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsssoo...........................",
+      ".............................oooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbboooo.............................",
+      "....................ooooooo......ollbbbbbbbbbbbbbbbbbbbbbbbbsso.......ooooooo...................",
+      "..................oollllllloo...ollbbbbbbbbbbbbbbbbbbbbbbbbbbsso....oollllllloo.................",
+      "................oolllllllllllooolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoooollllllllllloo...............",
+      "................olllbbbbbbblllollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllolllbbbbbbblllo...............",
+      "...............ollbbbbbbbbbbbllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblollbbbbbbbbbbbllo..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "..............ollbbbbbbbbbbbbbslobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbslo.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "................ollsbbbbbbbsssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollsbbbbbbbssso...............",
+      "................oolssssssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboolssssssssssoo...............",
+      "..................oolssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboolssssssoo.................",
+      "....................ooooooolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssooooooo...................",
+      ".........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.........................",
+      ".........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.........................",
+      "..........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso..........................",
+      "...........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...........................",
+      "............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso............................",
+      ".............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbooooobbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................oooooooooooooooo.....oooooooooooooooo............................."
+    ],
+    "error" : [
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      ".......................................oooooooooooooooooo.......................................",
+      "...................................oooolllllllllllllllllloooo...................................",
+      ".................................oolllllllllllllllllllllllllloo.................................",
+      "...............................oollllllbbbbbbbbbbbbbbbbbblllllloo...............................",
+      ".............................oollllbbbbbbbbbbbbbbbbbbbbbbbbbblllloo.............................",
+      "............................ollllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllllo............................",
+      "...........................olllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo...........................",
+      "..........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..........................",
+      "..........................ollbbbooooooobbbbbbbbbbbbbbbbbbooooooobbbslo..........................",
+      ".......................ooollbbooeeeeeeeoobbbbbbbbbbbbbbooeeeeeeeoobbslooo.......................",
+      ".....................oollollbocceeeeeeeccobbbbbbbbbbbbocceeeeeeeccobssolloo.....................",
+      ".....................ollollbogggceeeeeccccobbbbbbbbbbogggceeeeeccccobslollo.....................",
+      "....................ollbolloegggcceeeccccceobbbbbbbboegggcceeeccccceossobllo....................",
+      ".....................ollolloegggccceccccceeobbbbbbbboegggccceccccceeossosso.....................",
+      ".....................ooolloeeeeccccccccceeeeobbbbbboeeeeccccccccceeeeossooo.....................",
+      ".......................olloeeeeeccccccceeeeeobbbbbboeeeeeccccccceeeeeosso.......................",
+      ".......................olloeeeeeeccccceeeeeeobbbbbboeeeeeeccccceeeeeeosso.......................",
+      ".......................olloeeeeeccccccceeeeeobbbbbboeeeeeccccccceeeeeosso.......................",
+      ".......................olloeeeeccccccccceeeeobbbbbboeeeeccccccccceeeeosso.......................",
+      ".......................ollboeeccccceccccceeobbbbbbbboeeccccceccccceeobsso.......................",
+      ".......................ollboeccccceeeccccceobbbbbbbboeccccceeeccccceobsso.......................",
+      ".......................ollbbocccceeeeeccccobbbbbbbbbbocccceeeeeccccobbsso.......................",
+      "......................ollbbbbocceeeeeeeccobbbbbbbbbbbbocceeeeeeeccobbbbsso......................",
+      ".....................ollbbbbbbooeeeeeeeoobbbbbbbbbbbbbbooeeeeeeeoobbbbbbslo.....................",
+      "....................ollbbbbbbbbbooooooobbbbbbbbbbbbbbbbbbooooooobbbbbbbbbllo....................",
+      "...................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo...................",
+      "..................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo.................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo.................",
+      "................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo................",
+      "................ollbbbbbbooooooooooooooooooooooooooooooooooooooooooooooobbbbbsso................",
+      "................ollbbbboosssssssssssssssssssssssssssssssssssssssssssssssoobbbsso................",
+      "...............ollbbbbosssssssocccossssssssssssssssssssssssssocccossssssssobbbsso...............",
+      "...............ollbbbosssssssocccccossssssssssssssssssssssssocccccossssssssobbsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbossssssssocccccccossssssssssssssssssssssocccccccosssssssssosso...............",
+      "...............ollbosssssssssocccccossssssssssssssssssssssssocccccossssssssssosso...............",
+      "...............ollbossssssssssooooossssssssssssssssssssssssssooooosssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbossssssssssssssssssssssssssssssssssssssssssssssssssssssssobsso...............",
+      "................ollossssssssssssssssssssssssssssssssssssssssssssssssssssssssosso................",
+      "................ollossssssssssssssssssssssssssssssssssssssssssssssssssssssssosso................",
+      "................ollbossssssssssssssssssssssssssssssssssssssssssssssssssssssobsso................",
+      ".................ollossssssssssssssssssssssssssssssssssssssssssssssssssssssosso.................",
+      ".................ollbossssssssssssssssssssssssssssssssssssssssssssssssssssobsso.................",
+      "..................ollbosssssssssssssssssscccccccccccccccsssssssssssssssssobsso..................",
+      "...................ollbosssssssssssscccccccccccccccccccccccccsssssssssssobsso...................",
+      "....................ollboossssssscccccccccccccccccccccccccccccccssssssoobsso....................",
+      ".....................ollsboosscccccccccccssssssssssssssscccccccccccsoobssso.....................",
+      "......................ollssbccccccccssssssssssssssssssssssssscccccccbsssso......................",
+      ".......................oolsssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssoo.......................",
+      ".........................oolsssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssssoo.........................",
+      "...........................oolssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsssoo...........................",
+      ".............................oooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbboooo.............................",
+      ".................................ollbbbbbbbbbbbbbbbbbbbbbbbbsso.................................",
+      "................................ollbbbbbbbbbbbbbbbbbbbbbbbbbbsso................................",
+      "..............................oolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoo..............................",
+      ".............................olllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo.............................",
+      "............................olllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo............................",
+      "...........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo...........................",
+      "..........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..........................",
+      "....................ooooooolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllooooooo...................",
+      "..................oollllllloobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboollllllloo.................",
+      "................oollllllllllloobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboollllllllllloo...............",
+      "................olllbbbbbbblllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbolllbbbbbbblllo...............",
+      "...............ollbbbbbbbbbbbllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbllo..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "..............ollbbbbbbbbbbbbbslobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbslo.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "................ollsbbbbbbbsssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollsbbbbbbbssso...............",
+      "................oolssssssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoolssssssssssoo...............",
+      "..................oolssssssooollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.oolssssssoo.................",
+      "....................ooooooo...ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...ooooooo...................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbooooobbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................oooooooooooooooo.....oooooooooooooooo............................."
+    ],
+    "idle" : [
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      ".......................................oooooooooooooooooo.......................................",
+      "...................................oooolllllllllllllllllloooo...................................",
+      ".................................oolllllllllllllllllllllllllloo.................................",
+      "...........................o...oollllllbbbbbbbbbbbbbbbbbblllllloo...o...........................",
+      "........................ooolooollllbbbbbbbbbbbbbbbbbbbbbbbbbbllllooolooo........................",
+      ".......................ollllollllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllllollllo.......................",
+      "......................ollllolllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllollllo......................",
+      "......................ollbollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllobslo......................",
+      ".....................ollbbollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslobbslo.....................",
+      "......................ollollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslosso......................",
+      "......................ollollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssosso......................",
+      ".......................oollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsloo.......................",
+      "........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso........................",
+      "........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso........................",
+      ".......................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.......................",
+      ".......................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.......................",
+      ".......................ollooooooooooooooooooobbbbbbooooooooooooooooooosso.......................",
+      ".......................olloeeeeggggeeeeeeeeeobbbbbboeeeeggggeeeeeeeeeosso.......................",
+      ".......................olloeeeeggggeeeeeeeeeobbbbbboeeeeggggeeeeeeeeeosso.......................",
+      ".......................ollboeeeggggeeeeeeeeobbbbbbbboeeeggggeeeeeeeeobsso.......................",
+      ".......................ollboeeeeeeeeeeeeeeeobbbbbbbboeeeeeeeeeeeeeeeobsso.......................",
+      ".......................ollboeeeeeeeeeeeeeeeobbbbbbbboeeeeeeeeeeeeeeeobsso.......................",
+      "......................ollbbboeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeobbbsso......................",
+      ".....................ollbbbbbooeeeeeeeeeoobbbbbbbbbbbbooeeeeeeeeeoobbbbbslo.....................",
+      "....................ollbbbbbbbbooooeoooobbbbbbbbbbbbbbbbooooeoooobbbbbbbbllo....................",
+      "...................ollbbbbbbbbbbbbbobbbbbbbbbbbbbbbbbbbbbbbbobbbbbbbbbbbbbllo...................",
+      "..................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo.................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo.................",
+      "................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo................",
+      "................ollbbbbbbooooooooooooooooooooooooooooooooooooooooooooooobbbbbsso................",
+      "................ollbbbboosssssssssssssssssssssssssssssssssssssssssssssssoobbbsso................",
+      "...............ollbbbbosssssssocccossssssssssssssssssssssssssocccossssssssobbbsso...............",
+      "...............ollbbbosssssssocccccossssssssssssssssssssssssocccccossssssssobbsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbossssssssocccccccossssssssssssssssssssssocccccccosssssssssosso...............",
+      "...............ollbosssssssssocccccossssssssssssssssssssssssocccccossssssssssosso...............",
+      "...............ollbossssssssssooooossssssssssssssssssssssssssooooosssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbossssssssssssssssssssssssssssssssssssssssssssssssssssssssobsso...............",
+      "................ollossssssssssssssssssssssssssssssssssssssssssssssssssssssssosso................",
+      "................ollossssssssssssssssssssssssssssssssssssssssssssssssssssssssosso................",
+      "................ollbossssssssssssssssssssssssssssssssssssssssssssssssssssssobsso................",
+      ".................ollossssssssssssssssssssssssssssssssssssssssssssssssssssssosso.................",
+      ".................ollbcccccccccccsssssssssssssssssssssssssssssssssccccccccccbsso.................",
+      "..................ollbccccccccccccccccccccccccccccccccccccccccccccccccccccbsso..................",
+      "...................ollbccccccccccccccccccccccccccccccccccccccccccccccccccbsso...................",
+      "....................ollbsssssssscccccccccccccccccccccccccccccccccsssssssbsso....................",
+      ".....................ollsbssssssssssssssssssssssssssssssssssssssssssssbssso.....................",
+      "......................ollssbssssssssssssssssssssssssssssssssssssssssbsssso......................",
+      ".......................oolsssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssoo.......................",
+      ".........................oolsssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssssoo.........................",
+      "...........................oolssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsssoo...........................",
+      ".............................oooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbboooo.............................",
+      ".................................ollbbbbbbbbbbbbbbbbbbbbbbbbsso.................................",
+      "................................ollbbbbbbbbbbbbbbbbbbbbbbbbbbsso................................",
+      "..............................oolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoo..............................",
+      ".............................olllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo.............................",
+      "....................ooooooo.olllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo..ooooooo...................",
+      "..................oollllllloolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblloollllllloo.................",
+      "................oollllllllllloobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboollllllllllloo...............",
+      "................olllbbbbbbblllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbolllbbbbbbblllo...............",
+      "...............ollbbbbbbbbbbbllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbllo..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "..............ollbbbbbbbbbbbbbslobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbslo.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "................ollsbbbbbbbsssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollsbbbbbbbssso...............",
+      "................oolssssssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboolssssssssssoo...............",
+      "..................oolssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoolssssssoo.................",
+      "....................oooooooollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.ooooooo...................",
+      "............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso............................",
+      ".............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbooooobbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................oooooooooooooooo.....oooooooooooooooo............................."
+    ],
+    "running" : [
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      ".........................ooooo....................................ooooo.........................",
+      "........................olllllo........oooooooooooooooooo........olllllo........................",
+      ".......................olllllllo...oooolllllllllllllllllloooo...olllllllo.......................",
+      ".......................ollbbbslo.oolllllllllllllllllllllllllloo.ollbbbslo.......................",
+      ".......................ollbbbssoollllllbbbbbbbbbbbbbbbbbblllllloollbbbsso.......................",
+      "......................ollbbbboollllbbbbbbbbbbbbbbbbbbbbbbbbbblllloobbbbsso......................",
+      ".......................ollbbollllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllllobbsso.......................",
+      ".......................ollbolllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllobsso.......................",
+      ".......................ollollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllosso.......................",
+      "........................olollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsloso........................",
+      ".........................ollbbboobbbbbbbbbbbbbbbbbbbbbbbbbbbbbboobbbslo.........................",
+      ".........................ollbboeeooobbbbbbbbbbbbbbbbbbbbbbbboooeeobbsso.........................",
+      "........................ollbboeeeeeeoobbbbbbbbbbbbbbbbbbbbooeeeeeeobbslo........................",
+      "........................ollbboeeeeeeeeooobbbbbbbbbbbbbboooeeeeeeeeobbsso........................",
+      "........................ollboeeeeeeeeeeeeoobbbbbbbbbbooeeeeeeeeeeeeobsso........................",
+      ".......................ollbboeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeobbsso.......................",
+      ".......................ollbboeeegggeeeeeeeobbbbbbbbbboeeegggeeeeeeeobbsso.......................",
+      ".......................ollbboeeegggeeeeeeeobbbbbbbbbboeeegggeeeeeeeobbsso.......................",
+      ".......................ollbboeeegggeeeeeeeobbbbbbbbbboeeegggeeeeeeeobbsso.......................",
+      ".......................ollbboeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeobbsso.......................",
+      ".......................ollbboeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeobbsso.......................",
+      ".......................ollbbboeeeeeeeeeeeobbbbbbbbbbbboeeeeeeeeeeeobbbsso.......................",
+      ".......................ollbbboeeeeeeeeeeeobbbbbbbbbbbboeeeeeeeeeeeobbbsso.......................",
+      "......................ollbbbbboeeeeeeeeeobbbbbbbbbbbbbboeeeeeeeeeobbbbbsso......................",
+      ".....................ollbbbbbbboeeeeeeeobbbbbbbbbbbbbbbboeeeeeeeobbbbbbbslo.....................",
+      "....................ollbbbbbbbbbooooooobbbbbbbbbbbbbbbbbbooooooobbbbbbbbbllo....................",
+      "...................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo...................",
+      "..................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo.................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo.................",
+      "................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbslo................",
+      "................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso................",
+      "................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso................",
+      "...............ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...............",
+      "...............ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...............",
+      "...............ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...............",
+      "...............ollbbbbbbbbooooooooooooooooooooooooooooooooooooooooooooobbbbbbbsso...............",
+      "...............ollbbbbbboosssssssssssssssssssssssssssssssssssssssssssssoobbbbbsso...............",
+      "...............ollbbbbbossssssocccossssssssssssssssssssssssssocccosssssssobbbbsso...............",
+      "...............ollbbbbbosssssocccccossssssssssssssssssssssssocccccossssssobbbbsso...............",
+      "...............ollbbbbosssssocccccccossssssssssssssssssssssocccccccossssssobbbsso...............",
+      "...............ollbbbbosssssocccccccossssssssssssssssssssssocccccccossssssobbbsso...............",
+      "...............ollbbbbosssssocccccccossssssssssssssssssssssocccccccossssssobbbsso...............",
+      "...............ollbbbbossssssocccccossssssssssssssssssssssssocccccosssssssobbbsso...............",
+      "...............ollbbbbosssssssooooossssssssssssssssssssssssssooooossssssssobbbsso...............",
+      "................ollbbbosssssssssssssssssssssssssssssssssssssssssssssssssssobbsso................",
+      "................ollbbbosssssssssssssssssssssssssssssssssssssssssssssssssssobbsso................",
+      "................ollbbbosssssssssssssssssssssssssssssssssssssssssssssssssssobbsso................",
+      ".................ollbbosssssssssssssssssssssssssssssssssssssssssssssssssssobsso.................",
+      ".................ollbbosssssssssssssssssssssssssssssssssssssssssssssssssssobsso.................",
+      "..................ollbccccccccccccccccccccccccccccccccccccccccccccccccccccbsso..................",
+      "...................ollbccccccccccccccccccccccccccccccccccccccccccccccccccbsso...................",
+      "....................ollbccccccccccccccccccccccccccccccccccccccccccccccccbsso....................",
+      ".....................ollsbssssssssssssssssssssssssssssssssssssssssssssbssso.....................",
+      "......................ollssbssssssssssssssssssssssssssssssssssssssssbsssso......................",
+      ".......................oolsssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssoo.......................",
+      ".........................oolsssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssssoo.........................",
+      "...........................oolssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsssoo...........................",
+      ".............................oooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbboooo.............................",
+      "....................ooooooo......ollbbbbbbbbbbbbbbbbbbbbbbbbsso.......ooooooo...................",
+      "..................oollllllloo...ollbbbbbbbbbbbbbbbbbbbbbbbbbbsso....oollllllloo.................",
+      "................oolllllllllllooolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoooollllllllllloo...............",
+      "................olllbbbbbbblllollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllolllbbbbbbblllo...............",
+      "...............ollbbbbbbbbbbbllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblollbbbbbbbbbbbllo..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "..............ollbbbbbbbbbbbbbslobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbslo.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "................ollsbbbbbbbsssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollsbbbbbbbssso...............",
+      "................oolssssssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboolssssssssssoo...............",
+      "..................oolssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboolssssssoo.................",
+      "....................ooooooolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssooooooo...................",
+      ".........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.........................",
+      ".........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.........................",
+      "..........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso..........................",
+      "...........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...........................",
+      "............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso............................",
+      ".............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbooooobbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................oooooooooooooooo.....oooooooooooooooo............................."
+    ],
+    "waiting" : [
+      "................................................................................................",
+      "................................................................................................",
+      "................................................................................................",
+      ".........................ooooo..................................................................",
+      "........................olllllo........oooooooooooooooooo.......................................",
+      ".......................olllllllo...oooolllllllllllllllllloooo...................................",
+      ".......................ollbbbslo.oolllllllllllllllllllllllllloo.................................",
+      ".......................ollbbbssoollllllbbbbbbbbbbbbbbbbbblllllloo...............................",
+      "......................ollbbbboollllbbbbbbbbbbbbbbbbbbbbbbbbbblllloo.............................",
+      ".......................ollbbollllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllllo............................",
+      ".......................ollbolllbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo...........................",
+      ".......................ollollbbbbbbobbbbbbbbbbbbbbbbbbbbbbbbobbbbbbllo..........................",
+      "........................olollbbooooeoooobbbbbbbbbbbbbbbbooooeoooobbslooooo......................",
+      ".........................ollbooeeeeeeeeeoobbbbbbbbbbbbooeeeeeeeeeoobslollloo....................",
+      ".........................olloeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeossollllo....................",
+      "........................olloeeeegggeeeeeeeeobbbbbbbboeeeegggeeeeeeeeoslobbllo...................",
+      "........................olloeeeegggeeeeeeeeobbbbbbbboeeeegggeeeeeeeeossossso....................",
+      "........................olloeeeegggeeeeeeeeobbbbbbbboeeeegggeeeeeeeeossossoo....................",
+      ".......................olloeeeeeeeeeeeeeeeeeobbbbbboeeeeeeeeeeeeeeeeeossoo......................",
+      ".......................olloeeeeeeeeeeeeeeeeeobbbbbboeeeeeeeeeeeeeeeeeosso.......................",
+      ".......................olloeeeeeeeeeeeeeeeeeobbbbbboeeeeeeeeeeeeeeeeeosso.......................",
+      ".......................olloeeeeeeeeeeeeeeeeeobbbbbboeeeeeeeeeeeeeeeeeosso.......................",
+      ".......................ollboeeeeeeeeeeeeeeeobbbbbbbboeeeeeeeeeeeeeeeobsso.......................",
+      ".......................ollboeeeeeeeeeeeeeeeobbbbbbbboeeeeeeeeeeeeeeeobsso.......................",
+      ".......................ollbboeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeobbsso.......................",
+      ".......................ollbboeeeeeeeeeeeeeobbbbbbbbbboeeeeeeeeeeeeeobbsso.......................",
+      "......................ollbbbbooeeeeeeeeeoobbbbbbbbbbbbooeeeeeeeeeoobbbbsso......................",
+      ".....................ollbbbbbbbooooooooobbbbbbbbbbbbbbbbooooooooobbbbbbbslo.....................",
+      "....................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo....................",
+      "...................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo...................",
+      "..................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo..................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo.................",
+      ".................ollbbbbbooooooooooooooooooooooooooooooooooooooooooooooobbbbslo.................",
+      "................ollbbbboosssssssssssssssssssssssssssssssssssssssssssssssoobbbslo................",
+      "................ollbbbosssssssssssssssssssssssssssssssssssssssssssssssssssobbsso................",
+      "................ollbbossssssssocccossssssssssssssssssssssssssocccosssssssssobsso................",
+      "...............ollbbossssssssocccccossssssssssssssssssssssssocccccosssssssssobsso...............",
+      "...............ollbbosssssssocccccccossssssssssssssssssssssocccccccossssssssobsso...............",
+      "...............ollbossssssssocccccccossssssssssssssssssssssocccccccosssssssssosso...............",
+      "...............ollbossssssssocccccccossssssssssssssssssssssocccccccosssssssssosso...............",
+      "...............ollbosssssssssocccccossssssssssssssssssssssssocccccossssssssssosso...............",
+      "...............ollbossssssssssooooossssssssssssssssssssssssssooooosssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssssssssssssssssssssssssssssssssssosso...............",
+      "...............ollbosssssssssssssssssssssssssscccccssssssssssssssssssssssssssosso...............",
+      "...............ollbbccccccccccccsssssssssssscccccccccssssssssssssccccccccccccbsso...............",
+      "...............ollbbcccccccccccccccccccccccccccccccccccccccccccccccccccccccccbsso...............",
+      "...............ollbbbcccccccccccccccccccccccccccccccccccccccccccccccccccccccbbsso...............",
+      "................ollbbbsssssssssscccccccccccccccccccccccccccccccccssssssssssbbsso................",
+      "................ollbbbbssssssssssssssssssssscccccccccsssssssssssssssssssssbbbsso................",
+      "................ollbbbbbbsssssssssssssssssssssssssssssssssssssssssssssssbbbbbsso................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.................",
+      ".................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.................",
+      "..................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso..................",
+      "...................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...................",
+      "....................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso....................",
+      ".....................ollsbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssso.....................",
+      "......................ollssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsssso......................",
+      ".......................oolsssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssoo.......................",
+      ".........................oolsssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssssssoo.........................",
+      "...........................oolssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsssoo...........................",
+      ".............................oooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbboooo.............................",
+      ".................................ollbbbbbbbbbbbbbbbbbbbbbbbbsso.................................",
+      "....................ooooooo.....ollbbbbbbbbbbbbbbbbbbbbbbbbbbsso................................",
+      "..................oollllllloo.oolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsoo..............................",
+      "................oollllllllllloollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo.............................",
+      "................olllbbbbbbblllolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblllo............................",
+      "...............ollbbbbbbbbbbbllobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbllo...........................",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbblloooooooo...................",
+      "..............ollbbbbbbbbbbbbbslobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboollllllloo.................",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboollllllllllloo...............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbolllbbbbbbblllo...............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbllo..............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbslo.............",
+      "..............ollbbbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "...............ollbbbbbbbbbbbssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "................ollsbbbbbbbsssobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "................oolssssssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "..................oolssssssoobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbbbsso.............",
+      "....................ooooooolbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      ".........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollbbbbbbbbbbbsso..............",
+      "..........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbollsbbbbbbbssso...............",
+      "...........................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbboolssssssssssoo...............",
+      "............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbssooolssssssoo.................",
+      ".............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso...ooooooo...................",
+      "..............................ollbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbsssssbbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbbbbooooobbbbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollbbbbbbbbbbsso.....ollbbbbbbbbbbsso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................ollsssssssssssso.....ollsssssssssssso.............................",
+      "..............................oooooooooooooooo.....oooooooooooooooo............................."
+    ]
+  },
+  "name" : "perchling",
+  "palette" : {
+    "b" : "#da7756",
+    "c" : "#3a2820",
+    "e" : "#ffc169",
+    "g" : "#fff4e9",
+    "l" : "#eaa286",
+    "o" : "#743725",
+    "s" : "#be5937"
+  },
+  "scale" : 1
+}
+"""#
+
+// try! is deliberate: this parses a compile-time constant, so a throw here is a
+// broken build, not a runtime condition to survive. Failing loudly beats
+// limping on with a pet nobody drew.
+let builtinPet = try! loadCustomPet(Data(BUILTIN_MANIFEST.utf8))
+
 
 // Runtime home: PERCHLING_HOME (set by pet.sh) > $CLAUDE_CONFIG_DIR/perchling > ~/.claude/perchling.
 let env = ProcessInfo.processInfo.environment

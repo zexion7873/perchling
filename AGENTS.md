@@ -45,13 +45,15 @@ Verify without launching:
 - **Rendered frames** — copy `pet.swift` to a scratch directory, cut everything
   from `let argv = CommandLine.arguments` onward, and append a harness that
   calls `cacheDisplay(in:to:)` on a `PetView` per tick into a filmstrip PNG.
+  The cut has to keep `BUILTIN_MANIFEST` and `builtinPet`, which sit just above
+  the runtime-home block — a `PetView` with no pet draws nothing.
   This exercises the real `draw()`, so what you see is what ships.
   `tools/moods-gif.swift` is a worked example of the same cut. Give the view no
   window: `gaze()` returns neutral without one, whereas a view in a window aims
   its pupils at wherever the mouse happens to be, which is how a render stops
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
-  and turns nine flat inks into a million.
+  and turns a handful of flat inks into a million.
 - **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
   `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
   `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above
@@ -92,73 +94,37 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 
 ## Invariants worth not rediscovering
 
-- **Art lives in the original 32×33 design space.** `RES` multiplies every
-  coordinate and `cell()` expands each source cell into a `RES × RES` block.
-  Write new sprite coordinates in design space and pass them through `cell()`;
-  hand-multiplying by `RES` at a call site is how the two spaces drift apart.
-  The shell and torso are the one place expansion is not cell-blocky:
-  `lathe()` slides each design row's span toward the next across its `RES`
-  sub-rows, because a profile stepped 3px at a time scallops the silhouette
-  while every other rounded edge in the art steps 1px. Its profile is still
-  written in design cells.
-- **A limb that leaves its resting place has to be overlaid, not unioned.**
-  `buildBase()` builds the 1.1 body from two `lathe()` profiles joined by a
-  waist — the head is the wider profile, the torso the narrower one below
-  it — plus a pair of square `rrect` legs (rounding a 5x4 leg at this size
-  costs its planted look, and the outline is most of the leg anyway).
-  `buildBase()` still merges shell, torso, and legs into one mask and
-  `shade()` derives every ink from neighbour tests over that mask, so an arm
-  unioned into it at any height stops being an arm and becomes a lump on
-  whatever it touches. Both of the built-in's arms are already built this
-  way — each is its own mask, shaded on its own, and stamped over the base —
-  which generalises what used to be a wave-only trick into how every arm
-  works, resting or not, and is what gives each one an outline of its own
-  instead of melting into the shell. Each arm is ONE uniform 4-cell pill,
-  not a shoulder welded to a forearm: those overlapped, so the arm was widest
-  in the middle and grew outward as it descended, which reads as a flexed
-  deltoid. Four cells is the floor, not a preference — three is all outline
-  once `shade()` takes its ring, and reaching past column 4 drops the
-  arm-to-torso overlap to zero so the limb floats. The wave was the original reason for
-  the rule and was retired in 1.0.1: its elbow was anchored at hip height,
-  where the resting arm nub sits, so the raised arm spanned hip-to-glass with
-  zero transition frames and read as a creature suddenly extending a limb,
-  not waving one. The 1.1 rework gives the body real shoulders and proves the
-  overlay rule at the resting arms, but the wave itself is still retired —
-  nobody has rebuilt it on the new geometry, and its old operational details
-  (which frames end on the dark glass, the elbow's overlap margin, the
-  parameter that dropped the resting nub) do not carry forward regardless,
-  since a new shoulder is new geometry from scratch.
-- **The only way to draw a line INSIDE the pet is to stamp a separately
-  shaded mass.** `buildBase()` merges shell, torso and legs into one mask, so
-  `shade()` can only ever derive the OUTSIDE contour — which is why the head
-  was a flat coral field with a rim, and why five rounds of reshaping its
-  `lathe` profile could not give it a feature (a lathe is one centred span
-  per row, so it can only produce a convex silhouette; every bump that would
-  break that reads as ears, an antenna or a hood). The arms already dodged
-  this; the brim over the visor is the same trick pointed at the head, and it
-  is what makes the screen read as set into the shell rather than painted on
-  it. Two limits worth not rediscovering: the head's contrast budget is spent
-  at ONE band, because a second starts reading as stripes on a light desktop;
-  and an overlay can never fix the SILHOUETTE, since `rrect` expands
-  cell-blocky while the head expands through `lathe`'s sub-row slide, so an
-  overlay cannot even follow the existing contour. Also fixed forever: the
-  forehead cannot grow, because the casing's top is frozen at design row 4
-  and the head cannot start above row 0, so every row a taller head buys
-  lands below the visor as blank chin.
-- **The glass carries eyes only, and `Ink.errorX` exists for exactly one
-  thing: error's X.** 1.1 retired `.scanline` and `.blush` along with the
-  corner glint and the terminal ticker — nothing stamps onto the glass now
-  except `eyeRects`'/`startledRects`'/`tearRects`'/`sparkleRects`'
-  `.eye`/`.glyph`/`.errorX`, so a face
-  idea that used to live on one of those retired inks needs a home in one of
-  the three survivors or it does not ship. `errorX` is not a reuse of
-  `.shade` — error's cross needed its own hex once the palette split face
-  inks apart, and it is the one face ink that is not amber.
-  `tools/moods-gif.swift` keeps its own literal `inks` array mirroring the
-  enum's cases, so any change to `Ink` — addition, removal, or reorder —
-  has to be mirrored there too, or the GIF tool's ink-count assertion fails
-  at regen time instead of at compile time; `.scanline`/`.blush` going away
-  is exactly as much a mirror update as a new ink arriving.
+- **There is no drawing code. The built-in pet is a manifest.** `pet.swift`
+  carries it as `BUILTIN_MANIFEST`, parses it once through the same
+  `loadCustomPet` a user's `pet.json` goes through, and `--export` hands that
+  text straight back — so the export is an exact round-trip and
+  `examples/perchling.json` is a copy of it, not a re-serialisation. The whole
+  programmatic engine that used to draw the robot — `Ink`, its palette,
+  `buildBase`, `lathe`, `shade`, `cell`, `merge`, `rrect`, and the `eyeRects` /
+  `startledRects` / `tearRects` / `sparkleRects` overlays — is gone as of 1.7.0.
+  Do not go looking for it, and do not restore a piece of it to add a behaviour:
+  anything the pet does that a manifest cannot declare has nowhere to live.
+  The 1.0–1.6 robot is frozen at `examples/robot.json` and is the only record
+  of what that engine drew.
+- **`custom` means "the user picked something"; `activePet` means "what is on
+  screen".** They were the same question while the built-in was drawing code and
+  are not now — `custom` is still nil when no `pet.json` resolves, because the
+  Pets menu's checkmark means "this is what you are looking at" and the built-in
+  row can only answer that while "no user pet" stays representable. Every draw
+  path reads `activePet`; the menu reads `custom`. Collapsing the two puts two
+  checkmarks in the menu, or none.
+- **The chrome has its own colours and must keep them.** `CHROME_PANEL`,
+  `CHROME_EDGE`, `CHROME_TEXT` and `CHROME_INK` used to be borrowed from the
+  pet's ink palette, which was fine while one enum described both. A pet is a
+  manifest now: borrowing would mean a user's pet repainting the bubble and the
+  chip. The hexes are unchanged from 1.6 on purpose — the panels look identical.
+- **Six behaviours died with the engine, and they are not dormant.** The hover
+  startle, error's tear, done's sparkle, idle's doze-and-peek, the
+  cursor-following gaze and the blink were all gated on `custom == nil` and all
+  drew through the deleted overlays. They come back only as declared `eyes` and
+  `sequences` blocks on the manifest, which the shipped pet does not yet carry.
+  This was a priced, accepted trade for 1.7.0, not an oversight — see the README
+  and `skills/draw-pet/SKILL.md`, both of which now say so out loud.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -231,9 +197,9 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   screen, so a future reader who only has the harness should not "fix" it.
 - **A manifest carries pixels, and the two things it can say about them are
   where the eyes are and which frames animate.** A mood is one grid unless
-  `sequences` gives that mood a clock, so the doze-and-peek cycle stays
-  renderer-only whatever a manifest declares — it cuts between two drawn eye
-  SHAPES and synthesising the second one was built and removed. The two
+  `sequences` gives that mood a clock. The doze-and-peek cycle cut between two
+  drawn eye SHAPES and no manifest can express that; synthesising the second
+  shape was built and removed, and the cycle left with the drawing code. The two
   declarations do not compose: a mood loop suppresses the eye box, so a pet is
   choosing per mood between eyes that track and frames that move.
   The optional `eyes` block (`box`, `socket`, and optional `range`/`lid`)
@@ -250,20 +216,15 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `blink` is not guaranteed by declaring a box: synthesis needs pixels inside
   it brighter than `socket`, and `--validate` says `blink UNAVAILABLE` rather
   than failing when there are none.
-- **The startle is built-in-only, and it is a timed burst rather than a hover
-  state.** `mouseEntered` arms `startledUntil = tick + 16` and there is no
-  `mouseExited`: it reverts after 0.8s whether or not the cursor is still on
-  the pet. Both ends check `custom == nil` — the deadline is never armed for a
-  pose that cannot be drawn, and `custom` can change under a running process.
-  A single drawn `hover` grid was built and removed: the reaction Codex plays
-  on hover is its five-frame `jumping` row, so a one-frame version is the wrong
-  shape. That gap is what `sequences.hover` fills — a custom pet gets a
-  multi-frame burst of its own, armed in the same `mouseEntered`, gated on the
-  same `motionOK`, and expiring by elapsing rather than on `mouseExited`, so
-  neither kind of pet holds a hover state. A pet that ships no hover sequence
-  still has no hover reaction at all. Synthesising it by opening the declared
-  eye box was also built and removed — it keeps the pose's own lids and merely
-  widens them, where the built-in swaps the eye SHAPE outright.
+- **Hover is a sequence or it is nothing.** `mouseEntered` arms
+  `hoverSeqStart` only when the active pet declares `sequences.hover`, and the
+  burst expires by elapsing rather than on `mouseExited` — there is no
+  `mouseExited` — so no pet ever holds a hover state. A single drawn `hover`
+  grid was built and removed before this: the reaction Codex plays on hover is
+  its five-frame `jumping` row, so a one-frame version is the wrong shape.
+  Synthesising one by opening the declared eye box was also built and removed —
+  it keeps the pose's own lids and merely widens them, which is a squint, not a
+  start.
 - **A sequence is either a reaction or a resting state, and the difference is
   when it stops.** `hover` and `drag` arrive and get out of the way; the five
   mood names loop for as long as the pet is in that mood and restart when it
@@ -586,10 +547,12 @@ still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it
 covers, not a replacement for any of those.
 
-Changing the built-in's art leaves two generated artifacts behind, and both of
-them lie quietly rather than failing: `examples/perchling.json` *is* `--export`
-output, and `docs/moods.gif` is the README hero. Regenerate both in the same
-change. The GIF tool encodes its own output and decodes it back pixel-for-pixel
+Changing the built-in's art now means editing `BUILTIN_MANIFEST` inside
+`pet.swift`, and it leaves three artifacts behind that lie quietly rather than
+failing: `examples/perchling.json` *is* `--export` output, `docs/moods.gif` is
+the README hero, and the README's `width=` must equal the GIF's real pixel
+width or the browser resamples the pixel art into mush. Regenerate all of them
+in the same change. The GIF tool encodes its own output and decodes it back pixel-for-pixel
 before it will exit 0, so a green run really does mean the file is right — and
 two runs of it are byte-identical, so a diff on `docs/moods.gif` means the art
 moved.

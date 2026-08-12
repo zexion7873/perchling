@@ -110,11 +110,10 @@ Rules the loader enforces:
   animate it and the pet stops watching the cursor and never blinks again. A
   tap still hops a pet off a mood loop, and `done`'s automatic celebration hop
   stands down when `done` has frames of its own, so a jump is not lifted twice.
-- The doze-and-peek cycle stays renderer-only: it cuts between two drawn eye
-  shapes, and a manifest has one frame per mood to cut between. The hover
-  startle was the same shape, which is what `sequences.hover` exists to fix —
-  but only for pets that ship the frames. A pet with no hover sequence has no
-  hover reaction at all.
+- There is no renderer-only behaviour left to inherit. The doze-and-peek cycle
+  and the hover startle were drawing code on a built-in that no longer exists;
+  the built-in is a manifest now and lives under exactly these rules. A pet with
+  no hover sequence has no hover reaction at all — including the shipped one.
 
 ## Workflow
 

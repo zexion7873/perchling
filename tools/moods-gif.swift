@@ -19,15 +19,11 @@ let START = 30        // ticks 0-15 are inside idle's open-eyed peek, and a
 let DELAY = 6         // hundredths; the overlay ticks at 1/20s
 let CELL_PAD = 4      // per side, so five 104pt canvases land on 560
 
-// Six cells in one row: the five moods, then hover. Hover is a sixth reaction
-// rather than a second row of the first five — startle overrides the eyes
-// whatever the mood underneath is, so five hovered pets would be five copies
-// of one pose. It rides on idle because that is the baseline the other five
-// are read against.
-let CELLS: [(mood: Mood, startled: Bool)] = [
-    (.idle, false), (.running, false), (.waiting, false),
-    (.done, false), (.error, false), (.idle, true),
-]
+// Five cells in one row, one per mood. The sixth used to show the hover
+// startle; the built-in is a manifest now and reacts to hover only when it
+// declares the frames, which this one does not — so there is no sixth pose to
+// photograph, rather than a sixth pose being left out.
+let CELLS: [Mood] = [.idle, .running, .waiting, .done, .error]
 
 // MARK: - GIF89a
 
@@ -148,15 +144,32 @@ NSApplication.shared.setActivationPolicy(.prohibited)
 
 if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
     FileHandle.standardError.write(
-        "Reduce Motion is on: the tear and the startle never draw, so the GIF would be five still poses. Turn it off and re-run.\n"
+        "Reduce Motion is on: the tick freezes, so every cell renders one resting frame. Turn it off and re-run.\n"
         .data(using: .utf8)!)
     exit(1)
 }
 
-let inks: [Ink] = [.outline, .shade, .body, .light, .casing, .screen,
-                   .eye, .glyph, .errorX]
+// The expected colour set is harvested from the pet's own frames rather than
+// kept as a list in step by hand. That list was a mirror of an enum, and a
+// mirror is a thing that goes stale silently: an ink the art stops using is now
+// a manifest edit, and this finds out by looking.
+let inks: [NSColor] = {
+    var seen: [String: NSColor] = [:]
+    for grid in builtinPet.frames.values {
+        for row in grid {
+            for c in row where c != nil {
+                let k = String(format: "%02x%02x%02x",
+                               Int((c!.redComponent * 255).rounded()),
+                               Int((c!.greenComponent * 255).rounded()),
+                               Int((c!.blueComponent * 255).rounded()))
+                seen[k] = c!
+            }
+        }
+    }
+    return Array(seen.values)
+}()
 
-let canvas = canvasSize(GW, GH, SCALE)
+let canvas = canvasSize(builtinPet.width, builtinPet.height, builtinPet.scale)
 let cw = Int(canvas.width), chh = Int(canvas.height)
 let cellW = cw + 2 * CELL_PAD
 let W = cellW * CELLS.count, H = chh
@@ -166,14 +179,14 @@ let W = cellW * CELLS.count, H = chh
 // arrangement that cannot bake whatever the mouse was doing into committed art.
 // Attaching one and centring it on the pointer looks equivalent but is not: the
 // pointer can move during the render.
-let views = CELLS.map { cell -> PetView in
+let views = CELLS.map { mood -> PetView in
     let v = PetView(frame: NSRect(origin: .zero, size: canvas))
-    v.mood = cell.mood
+    v.mood = mood
     return v
 }
 
 // Render every frame first, then build the colour table from what actually
-// landed in the pixels. Comparing against the Ink constants instead loses to
+// landed in the pixels. Comparing against the manifest's colours instead loses to
 // colour management — the same srgb value drawn through AppKit comes back
 // shifted — and a table harvested from the render is lossless by construction.
 // GIF carries no colour profile, so the context is pinned to sRGB and the
@@ -192,14 +205,11 @@ for step in 0..<FRAMES {
     // Blit the cached CGImage straight in. Going through NSImage.draw lets the
     // context interpolate — the view is flipped and the context is not, and the
     // resulting half-pixel offset blends every pixel with its neighbour, which
-    // turns nine flat inks into a million.
+    // turns a handful of flat inks into a million.
     ctx.interpolationQuality = .none
     ctx.setShouldAntialias(false)
     for (i, v) in views.enumerated() {
         v.tick = tick
-        // `startled` is `tick < startledUntil`, so one past the tick holds the
-        // pose for every frame without ever expiring mid-loop.
-        v.startledUntil = CELLS[i].startled ? tick + 1 : -1
         v.needsDisplay = true
         let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
         v.cacheDisplay(in: v.bounds, to: rep)
@@ -242,13 +252,12 @@ let table = observed.map {
             blue: CGFloat($0 & 0xff) / 255, alpha: 1)
 }
 
-// Every ink must still be recognisable as the colour pet.swift asked for; a
+// Every ink must still be recognisable as the colour the manifest asked for; a
 // silent profile shift would otherwise ship a differently-coloured pet.
 var drift = 0
 for key in observed {
     var best = Int.max
-    for ink in inks {
-        let c = palette[ink]!
+    for c in inks {
         let dr = Int((key >> 16) & 0xff) - Int((c.redComponent * 255).rounded())
         let dg = Int((key >> 8) & 0xff) - Int((c.greenComponent * 255).rounded())
         let db = Int(key & 0xff) - Int((c.blueComponent * 255).rounded())
@@ -323,8 +332,8 @@ var report = "wrote \(outURL.path) — \(W)x\(H), \(FRAMES) frames @ \(DELAY)0ms
 report += "\((try! Data(contentsOf: outURL)).count / 1024)KB\n"
 report += "palette: \(observed.count) colours, all of them stored verbatim\n"
 report += drift == 0
-    ? "profile: the rendered inks match pet.swift's palette exactly\n"
-    : "profile: rendered inks drift up to \(Int(Double(drift).squareRoot())) per channel from pet.swift's palette\n"
+    ? "profile: the rendered inks match the manifest's palette exactly\n"
+    : "profile: rendered inks drift up to \(Int(Double(drift).squareRoot())) per channel from the manifest's palette\n"
 if let failure = verify() {
     report += "ROUND-TRIP FAILED: \(failure)\n"
     FileHandle.standardError.write(report.data(using: .utf8)!)
