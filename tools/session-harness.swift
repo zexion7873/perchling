@@ -275,9 +275,18 @@ do {
     titleFile(nested, "local_1.json", "s1", "renamed")
     check("a rewritten record is re-read", desktopTitles(root, cache: &cache)["s1"], "renamed")
 
-    try! FileManager.default.removeItem(at: nested.appendingPathComponent("local_2.json"))
-    _ = desktopTitles(root, cache: &cache)
-    check("the cache is pruned when a record goes away", cache.count, 2)
+    // local_2.json was never cached (it has no title), so deleting it could
+    // never move cache.count regardless of whether pruning works — that
+    // assertion couldn't fail. local_1.json IS cached at this point (the
+    // rename above put it there under "renamed"), so deleting it is the one
+    // fixture that actually exercises the prune path.
+    try! FileManager.default.removeItem(at: nested.appendingPathComponent("local_1.json"))
+    let afterPrune = desktopTitles(root, cache: &cache)
+    check("the cache is pruned when a record goes away", cache.count, 1)
+    // The count could look right while a stale entry still answers queries —
+    // that's the failure the prune exists to prevent, so assert the map
+    // directly, not just its size.
+    check("a pruned record no longer answers", afterPrune["s1"], nil)
 }
 
 var missingCache: [String: TitleEntry] = [:]
