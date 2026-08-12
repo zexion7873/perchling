@@ -477,7 +477,26 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   rows never print the same string without knowing. That guarantee is why the
   suffix is computed over the MENU rows and applied only on collision — and why
   it joins with a middle dot, since the em dash is already spent joining a label
-  to its status.
+  to its status. **There is a second foreign file, and perchling only ever
+  reads it too:** the desktop app's own session records, at
+  `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_<uuid>.json`,
+  joined to a `sessions/<sid>` file by their `cliSessionId`. The title in that
+  record outranks the registry name, on purpose — every interactive session is
+  given a `derived` registry name, so a name always answers, and a title
+  ranked below it could never win; the two stores disagree about the same
+  session by design, not by drift. A real record is ~279KB, almost all of it
+  an MCP config block, and there is no index over the directory, so
+  `desktopTitles` caches by modification time rather than reparsing on every
+  poll — parsing every record on a 0.4s poll would put over a megabyte a
+  second of JSON through the main thread. A bounded prefix read was rejected
+  in its place: the JSON's key order is not guaranteed, so `title` might sit
+  past whatever prefix was read, and the failure mode would be a title
+  silently vanishing rather than falling back to the registry name.
+  Enumeration asks for no resource keys and filters by filename first,
+  because these records share a directory with hundreds of `deleted_`
+  tombstones — asking for keys up front would turn one `readdir` into a
+  `stat` per tombstone. `titleSource` is deliberately not read, for the same
+  reason `nameSource` is not.
 - **The bubble quotes the session the face is reporting.** `menuRows()` already
   sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
   `bubbleText()` takes its line three and its name. Before this the caption came
