@@ -226,21 +226,46 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   it keeps the pose's own lids and merely widens them, which is a squint, not a
   start.
 - **A sequence is either a reaction or a resting state, and the difference is
-  when it stops.** `hover` and `drag` arrive and get out of the way; the five
-  mood names loop for as long as the pet is in that mood and restart when it
-  changes, because `done`'s frames are an arc and a celebration joined halfway
-  through lands before it jumps. `moods` is still required and is still what
-  Reduce Motion shows. Priority is drag > hover > mood loop, and the mood loop
-  is reached by testing whether a reaction produced a frame rather than by
-  chaining another `else`: `hoverSeqStart` stays armed after its burst is spent
-  — only a drag clears it — so an `else if` on it swallows every mood loop from
-  the first hover onward. That regression is one line away at all times and has
-  a harness assertion pinning it.
+  when it stops.** `hover`, `drag` and `tap` arrive and get out of the way; the
+  five mood names loop for as long as the pet is in that mood and restart when
+  it changes, because `done`'s frames are an arc and a celebration joined
+  halfway through lands before it jumps. `moods` is still required and is still
+  what Reduce Motion shows. Priority is drag > tap > hover > mood loop, and
+  **every arm below the first is reached by testing whether a frame was already
+  produced, never by chaining another `else`**: a burst's clock stays armed
+  after the burst is spent — only a drag clears it — so an `else if` matches on
+  a spent burst, produces nothing, and silently swallows everything below it.
+  That regression is one line away at all times, it has now been made twice
+  (once against the mood loop, once against hover by the first `tap` arm), and
+  `tools/run-pose-harness.sh` pins it for both clocks. Before that harness
+  existed this paragraph claimed an assertion that did not.
+- **`tap` outranks `hover`, and the reverse is dead code rather than a
+  preference.** The cursor must be on the pet to click it, so `hoverSeqStart` is
+  always armed when a tap arrives; a `tap` ranked below it could never play on
+  any pet declaring both. The procedural two-cell hop survives for pets that
+  declare no `tap` — which is every shipped pet — so `hopUntil` is live code and
+  `mouseUp` arms exactly one of the two.
+- **A sequence's timing is `steps`, it is required, and `frames` is an unordered
+  pose pool.** Each entry is `[frameIndex, ms]`, and a pose may appear several
+  times under different holds — which is the whole point, because a real
+  animation row is four drawings replayed on an accented clock, not six
+  drawings. A missing `steps` is REJECTED rather than defaulted: a tempo that
+  quietly fell back to a house value is indistinguishable from one authored that
+  way, and the manifest is read on disk by a process whose stderr nobody sees.
+  The single `ms` this replaced is gone from the format; a leftover one warns.
+  Making `ms` accept either an Int or an array was considered and is the
+  catastrophic version — an older perchling does `guard let n = m as? Int` and
+  throws, which rejects the whole file and greys the pet's row out with no
+  visible error. Each step quantises to `TICK_MS` independently, and the OK line
+  prints the whole declared-to-resolved timeline, one line per sequence, because
+  six numbers do not fit the semicolon-joined form the single duration used.
 - **`plays` repeats a one-shot; it does not lengthen a loop.** A double hop is
-  the same frames run twice — the index wraps, the deadline does not — because
+  the same timeline run twice — the index wraps, the deadline does not — because
   storing the arc twice costs ~11KB per duplicated grid AND puts byte-identical
   cells inside a sequence, which the pipeline has an assertion against precisely
-  so an accidentally padded row cannot get in. It is the exact dual of `mirror`:
+  so an accidentally padded row cannot get in. Since `steps` exists there is a
+  second reason: a repeated pose costs two numbers, so padding `frames` is never
+  the way to hold a beat. It is the exact dual of `mirror`:
   both are declared, both are meaningless on kinds that cannot use them, and
   both make `--validate` warn rather than fail. And in both cases the OK line
   must not print what the warning just called ignored — a repeat count or a
@@ -536,12 +561,19 @@ bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
+bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
+bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 ~/.claude/perchling/bin/perchling --validate examples/sprout.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-There is a harness for the session/tray layer now —
-`bash tools/run-session-harness.sh` — but nothing else here has a test suite.
+Three layers have harnesses now — the session/tray layer
+(`tools/run-session-harness.sh`), the manifest parser
+(`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
+rebuilding the installed one) and sequence precedence inside `pose()`
+(`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
+runtime-home block, because `PetView` lives below that line). Nothing else here
+has a test suite.
 "Verified" still means: it compiles, the examples still validate, `--export`
 still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it

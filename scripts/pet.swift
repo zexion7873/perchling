@@ -77,29 +77,41 @@ struct EyeBox {
 }
 
 // A sequence is several frames on a clock — the one thing a manifest could not
-// say, because a mood is a single grid. `ticksPerFrame` is resolved at load
-// because the tick loop quantises every duration to `TICK_MS`: an author who
-// writes 120 gets 100, and `--validate` says so rather than leaving them to
-// discover it by counting frames.
+// say, because a mood is a single grid. `steps` is compiled at load into a
+// tick-indexed `schedule` because the tick loop quantises every duration to
+// `TICK_MS`: an author who writes 120 gets 100, and `--validate` says so rather
+// than leaving them to discover it by counting frames.
 //
-// hover and drag are reactions, which arrive and expire. The five mood names
-// are resting states, which loop until the mood changes — a mood is one grid,
-// and this is how a manifest puts a clock on it. Their rawValues are `Mood`'s
-// own, so a mood reaches its sequence by name instead of through a table that
-// can fall out of step with the enum beside it.
+// hover, drag and tap are reactions, which arrive and expire. The five mood
+// names are resting states, which loop until the mood changes — a mood is one
+// grid, and this is how a manifest puts a clock on it. Their rawValues are
+// `Mood`'s own, so a mood reaches its sequence by name instead of through a
+// table that can fall out of step with the enum beside it.
+//
+// `tap` is named for what the user did, not for what the pet does. Of the
+// others, two name an action of the user's and five name a state of the pet's,
+// and none names a motion — `jump` would write "a poke makes it jump" into the
+// format, where an author might want a nod.
 enum SeqKind: String, CaseIterable {
-    case hover, drag
+    case hover, drag, tap
     case idle, running, waiting, done, error
 
-    // nil for the two reactions, which is how a caller tells a state that runs
-    // forever from a reaction that gets out of the way again.
+    // nil for the three reactions, which is how a caller tells a state that
+    // runs forever from a reaction that gets out of the way again.
     var mood: Mood? { Mood(rawValue: rawValue) }
 }
 
 struct PetSequence {
     let frames: [[[NSColor?]]]
-    let ticksPerFrame: Int
-    let declaredMs: Int
+    // Tick offset -> frame index, compiled once from `steps`. A uniform loop and
+    // a timeline that replays poses under different holds are the same object
+    // here, so `pose()` has one expression and no branch. A frame index occupies
+    // as many entries as its step holds ticks.
+    let schedule: [Int]
+    // Declared beside resolved, for --validate only. An author who writes 110
+    // and silently receives 100 has no other way to find out, and a timeline has
+    // six of those numbers where the old single duration had one.
+    let steps: [(frame: Int, ms: Int, ticks: Int)]
     // Consent to being flipped, which the format could not express before and
     // is the only reason mirroring is safe at all. A rightward run and its
     // leftward twin are the same pixels reflected — Codex spends a whole atlas
@@ -109,16 +121,16 @@ struct PetSequence {
     // gait, so the author says.
     let mirror: Bool
     // How many times a ONE-SHOT runs before it gets out of the way. A double
-    // hop is the frames twice, not ten frames — a repeat costs a number where
-    // duplicated grids cost about 11KB each, and duplicates in `frames` would
-    // also be indistinguishable from a row accidentally padded with copies,
-    // which is a hazard the pipeline has an assertion against. Meaningless on
-    // anything that already loops forever, where `--validate` says so.
+    // hop is the timeline twice, not a doubled timeline — a repeat costs a
+    // number where duplicated grids cost about 11KB each, and duplicates in
+    // `frames` would also be indistinguishable from a row accidentally padded
+    // with copies, which is a hazard the pipeline has an assertion against.
+    // Meaningless on anything that already loops forever, where `--validate`
+    // says so.
     let plays: Int
-    var actualMs: Int { ticksPerFrame * TICK_MS }
-    // ONE pass through the frames. `plays` multiplies it only where it applies,
-    // which the caller knows and this does not.
-    var totalTicks: Int { frames.count * ticksPerFrame }
+    // ONE pass through the timeline. `plays` multiplies it only where it
+    // applies, which the caller knows and this does not.
+    var totalTicks: Int { schedule.count }
 }
 
 // A tuple will not synthesise Equatable, and Pose's equality IS the repaint
@@ -153,6 +165,10 @@ struct CustomPet {
     // out loud once, or a typo is indistinguishable from a sequence that simply
     // never plays.
     let unknownSequenceKeys: [String]
+    // Only --validate reads this too. A sequence still carrying `ms` is asking
+    // for a tempo the format no longer has, and silence would look like it
+    // worked.
+    let legacyMsKeys: [String]
 
     func frame(for mood: Mood) -> [[NSColor?]] { frames[mood] ?? frames[.idle]! }
 
@@ -366,6 +382,7 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     // and otherwise skipped.
     var sequences: [SeqKind: PetSequence] = [:]
     var unknownSequenceKeys: [String] = []
+    var legacyMsKeys: [String] = []
     if let raw = top["sequences"] {
         guard let seqs = raw as? [String: Any] else {
             throw PetError("\"sequences\" must be an object mapping a sequence name — hover, drag, or a mood — to frame lists")
@@ -387,13 +404,36 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
             guard (2...16).contains(rawFrames.count) else {
                 throw PetError("sequences.\(name).frames has \(rawFrames.count) frames — must be 2...16")
             }
-            var ms = 150
-            if let m = obj["ms"] {
-                guard let n = m as? Int, (50...1000).contains(n) else {
-                    throw PetError("sequences.\(name).ms must be an integer 50...1000 (milliseconds per frame)")
-                }
-                ms = n
+            // Required. There is no default tempo: a sequence whose timing
+            // quietly fell back to a house value would be indistinguishable
+            // from one authored that way, and the manifest is read on disk by a
+            // process whose stderr the user never sees.
+            guard let rawSteps = obj["steps"] as? [[Int]] else {
+                throw PetError("sequences.\(name).steps is required — an array of [frameIndex, ms] pairs")
             }
+            guard (2...32).contains(rawSteps.count) else {
+                throw PetError("sequences.\(name).steps has \(rawSteps.count) entries — must be 2...32")
+            }
+            var steps: [(frame: Int, ms: Int, ticks: Int)] = []
+            var schedule: [Int] = []
+            for (i, pair) in rawSteps.enumerated() {
+                guard pair.count == 2 else {
+                    throw PetError("sequences.\(name).steps[\(i)] must be a two-element array [frameIndex, ms]")
+                }
+                let f = pair[0], stepMs = pair[1]
+                guard (0..<rawFrames.count).contains(f) else {
+                    throw PetError("sequences.\(name).steps[\(i)] frame \(f) is out of range — frames has \(rawFrames.count)")
+                }
+                guard (50...1000).contains(stepMs) else {
+                    throw PetError("sequences.\(name).steps[\(i)].ms is \(stepMs) — must be 50...1000 (milliseconds)")
+                }
+                let ticks = max(1, Int((Double(stepMs) / Double(TICK_MS)).rounded()))
+                steps.append((frame: f, ms: stepMs, ticks: ticks))
+                schedule.append(contentsOf: Array(repeating: f, count: ticks))
+            }
+            // A leftover key from before timelines. Loud once, not fatal: the
+            // timing it asks for is already fully described by `steps`.
+            if obj["ms"] != nil { legacyMsKeys.append(name) }
             var mirror = false
             if let mr = obj["mirror"] {
                 guard let b = mr as? Bool else {
@@ -417,9 +457,8 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
                 grids.append(try parseGrid(rows, pal, dims.w, "sequences.\(name) frame \(i)"))
             }
             sequences[kind] = PetSequence(
-                frames: grids,
-                ticksPerFrame: max(1, Int((Double(ms) / Double(TICK_MS)).rounded())),
-                declaredMs: ms, mirror: mirror, plays: plays)
+                frames: grids, schedule: schedule, steps: steps,
+                mirror: mirror, plays: plays)
         }
     }
     // Sequence frames count: a jump lifts the body above every mood, and the
@@ -432,7 +471,8 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     return CustomPet(name: (top["name"] as? String) ?? "custom",
                      width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
                      eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame,
-                     sequences: sequences, unknownSequenceKeys: unknownSequenceKeys)
+                     sequences: sequences, unknownSequenceKeys: unknownSequenceKeys,
+                     legacyMsKeys: legacyMsKeys)
 }
 
 func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
@@ -622,9 +662,12 @@ final class PetView: NSView {
     var xpad = sidePad(builtinPet.scale)
     var startledUntil = -1
     // Custom pets only. `-1` is disarmed, matching hopUntil and startledUntil.
-    // Hover is one-shot and expires by elapsing; drag loops until mouseUp.
+    // Hover is one-shot and expires by elapsing; drag loops until mouseUp; tap
+    // is one-shot like hover and outranks it, because the cursor is on the pet
+    // whenever a tap arrives and a tap ranked lower could never play.
     var hoverSeqStart = -1
     var dragSeqStart = -1
+    var tapSeqStart = -1
     // Which way the drag is heading, latched. Only consulted for a sequence
     // that declared `mirror`. Deliberately NOT derived from `lean`: that decays
     // to zero the moment the hand stops moving, so a pause mid-drag would spin
@@ -835,16 +878,34 @@ final class PetView: NSView {
                 // looks like. A pet that did not declare `mirror` never flips,
                 // whichever way it is dragged.
                 seq = SeqRef(kind: .drag,
-                             index: ((tick - dragSeqStart) / s.ticksPerFrame) % s.frames.count,
+                             index: s.schedule[(tick - dragSeqStart) % s.schedule.count],
                              flipped: s.mirror && dragFacingLeft)
-            } else if hoverSeqStart >= 0, let s = pet.sequences[.hover] {
-                let i = (tick - hoverSeqStart) / s.ticksPerFrame
+            }
+            // Above hover, and that ordering is not a preference: the cursor
+            // must be on the pet to click it, so hover is always armed when a
+            // tap arrives, and a tap ranked below it would be dead code.
+            //
+            // Reached by testing `seq`, never by chaining an `else if` onto the
+            // arm above. A burst's clock stays armed after the burst is spent —
+            // only a drag clears it — so an `else if` here matches on a spent
+            // tap, produces nothing, and silently swallows every hover from the
+            // first tap onward. That is the same regression the mood loop has
+            // always been written around, one level up.
+            if seq == nil, tapSeqStart >= 0, let s = pet.sequences[.tap] {
+                let i = tick - tapSeqStart
+                if i < s.schedule.count * s.plays {
+                    seq = SeqRef(kind: .tap, index: s.schedule[i % s.schedule.count], flipped: false)
+                }
+            }
+            if seq == nil, hoverSeqStart >= 0, let s = pet.sequences[.hover] {
+                // In TICKS, not frames — the schedule is the clock now.
+                let i = tick - hoverSeqStart
                 // A burst has no direction of travel, so it never flips. It
                 // may run more than once: the index wraps, the deadline does
-                // not, which is what makes a double hop the same five frames
-                // rather than ten.
-                if i < s.frames.count * s.plays {
-                    seq = SeqRef(kind: .hover, index: i % s.frames.count, flipped: false)
+                // not, which is what makes a double hop the same timeline
+                // rather than a longer one.
+                if i < s.schedule.count * s.plays {
+                    seq = SeqRef(kind: .hover, index: s.schedule[i % s.schedule.count], flipped: false)
                 }
             }
             // The mood loop is the floor: it plays whenever no reaction is,
@@ -856,7 +917,7 @@ final class PetView: NSView {
             // direction of travel, which is also why `mirror` only warns here.
             if seq == nil, let k = SeqKind(rawValue: mood.rawValue), let s = pet.sequences[k] {
                 seq = SeqRef(kind: k,
-                             index: ((tick - moodSeqStart) / s.ticksPerFrame) % s.frames.count,
+                             index: s.schedule[(tick - moodSeqStart) % s.schedule.count],
                              flipped: false)
             }
         }
@@ -971,6 +1032,7 @@ final class PetView: NSView {
         if dragSeqStart < 0, motionOK, activePet.sequences[.drag] != nil {
             dragSeqStart = tick
             hoverSeqStart = -1
+            tapSeqStart = -1
         }
         // Velocity, not displacement: a slow drag across the whole screen must
         // not accumulate into a permanent tilt. The blend is what keeps a
@@ -986,9 +1048,13 @@ final class PetView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if !dragged {
-            // Hop first so the poke registers even though focus is about to
-            // leave for the home app.
-            if motionOK { hopUntil = tick + 12 }
+            // React first so the poke registers even though focus is about to
+            // leave for the home app. A pet that drew its own reaction plays
+            // that; every other pet — the built-in included — keeps the
+            // procedural two-cell hop, so nothing that works today changes.
+            if motionOK {
+                if activePet.sequences[.tap] != nil { tapSeqStart = tick } else { hopUntil = tick + 12 }
+            }
             onTap?()
         }
         pressAt = nil
@@ -2798,34 +2864,37 @@ if argv.count >= 2 {
                 eyes += pet.blinkFrame == nil ? ", blink UNAVAILABLE (no lit pixels in box)" : ", blink ok"
 
             }
-            var seqs = "no sequences"
-            if !pet.sequences.isEmpty {
-                seqs = SeqKind.allCases.compactMap { k -> String? in
-                    guard let s = pet.sequences[k] else { return nil }
-                    // Saying the rounded duration out loud is the point: an
-                    // author who writes 120 and silently receives 100 has no
-                    // other way to find out.
-                    let msg = s.declaredMs == s.actualMs
-                        ? "@\(s.declaredMs)ms"
-                        : "@\(s.declaredMs)ms -> \(s.actualMs)ms"
-                    // Only where it does something, exactly as `mirror` below:
-                    // printing a repeat count on a kind the warning calls
-                    // ignored is one line contradicting the next.
-                    let plays = k == .hover ? s.plays : 1
-                    let secs = String(format: "%.2fs", Double(s.totalTicks * plays * TICK_MS) / 1000)
-                    // A reaction is over when its frames run out; a mood plays
-                    // for as long as the pet is in that mood, so the number
-                    // worth printing is its cycle, not its lifetime.
-                    let shape = (k == .drag || k.mood != nil) ? "loop" : "total"
-                    let runs = plays > 1 ? " x\(plays)" : ""
-                    return "\(k.rawValue) \(s.frames.count) frames\(runs) \(msg) (\(s.ticksPerFrame) ticks, \(secs) \(shape))"
-                        // Only where it does something. Saying it on a kind the
-                        // warning below calls ignored is one line contradicting
-                        // the next.
-                        + (s.mirror && k == .drag ? ", mirrors when dragged left" : "")
-                }.joined(separator: "; ")
+            let seqLines = SeqKind.allCases.compactMap { k -> String? in
+                guard let s = pet.sequences[k] else { return nil }
+                let declared = s.steps.map { String($0.ms) }.joined(separator: "/")
+                let resolved = s.steps.map { String($0.ticks * TICK_MS) }.joined(separator: "/")
+                // Saying the rounding out loud is the point. Only when there is
+                // rounding to say: an arrow between two identical strings is
+                // noise on every well-chosen timeline.
+                let rounded = s.steps.contains { $0.ticks * TICK_MS != $0.ms }
+                let timing = rounded ? "\(declared)ms -> \(resolved)ms" : "\(declared)ms"
+                // Only where it does something, exactly as `mirror` below:
+                // printing a repeat count on a kind the warning calls ignored
+                // is one line contradicting the next.
+                let plays = (k.mood == nil && k != .drag) ? s.plays : 1
+                let secs = String(format: "%.2fs", Double(s.totalTicks * plays * TICK_MS) / 1000)
+                // A reaction is over when its timeline runs out; a mood plays
+                // for as long as the pet is in that mood, so the number worth
+                // printing is its cycle, not its lifetime.
+                let shape = (k == .drag || k.mood != nil) ? "loop" : "total"
+                let runs = plays > 1 ? " x\(plays)" : ""
+                let name = k.rawValue.padding(toLength: 7, withPad: " ", startingAt: 0)
+                return "  \(name) \(s.frames.count) frames, \(s.steps.count) steps\(runs)  "
+                    + "\(timing)  (\(s.totalTicks) ticks, \(secs) \(shape))"
+                    // Only where it does something. Saying it on a kind the
+                    // warning below calls ignored is one line contradicting
+                    // the next.
+                    + (s.mirror && k == .drag ? ", mirrors when dragged left" : "")
             }
-            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes) — \(seqs)")
+            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes)")
+            // One line per sequence: a timeline is six numbers where a single
+            // duration was one, and the locomotion row on a real pet is eight.
+            if seqLines.isEmpty { print("  no sequences") } else { print(seqLines.joined(separator: "\n")) }
             // In grid rows, not points: the on-screen distance is rows * scale,
             // so the same manifest at scale 2 moves the chrome twice as far.
             let moodTop = pet.frames.values
@@ -2837,14 +2906,22 @@ if argv.count >= 2 {
             // Silently ignoring it would be indistinguishable from a mirror that
             // simply never triggers, which is an afternoon nobody should spend.
             for k in SeqKind.allCases where k != .drag && pet.sequences[k]?.mirror == true {
-                let why = k == .hover ? "a one-shot burst" : "a resting state"
+                let why = k.mood == nil ? "a one-shot burst" : "a resting state"
                 FileHandle.standardError.write(Data("warning: sequences.\(k.rawValue).mirror is ignored — \(why) has no direction of travel\n".utf8))
             }
             // The mirror image of the rule above: `plays` counts runs of
-            // something that ends, and only the hover burst ends on its own.
-            for k in SeqKind.allCases where k != .hover && (pet.sequences[k]?.plays ?? 1) > 1 {
+            // something that ends, and only the bursts end on their own. Same
+            // test as `shape` above, so the two lines cannot disagree about
+            // which kinds run forever.
+            for k in SeqKind.allCases where (k == .drag || k.mood != nil) && (pet.sequences[k]?.plays ?? 1) > 1 {
                 let why = k == .drag ? "a drag loops until you let go" : "a mood loops until the mood changes"
                 FileHandle.standardError.write(Data("warning: sequences.\(k.rawValue).plays is ignored — \(why)\n".utf8))
+            }
+            // Not an error: the timeline is already complete without it. But a
+            // key that silently does nothing is the afternoon this repo keeps
+            // paying for.
+            for name in pet.legacyMsKeys {
+                FileHandle.standardError.write(Data("warning: sequences.\(name).ms is ignored — timing comes from steps\n".utf8))
             }
             // Listed off the enum rather than spelled out, so the message
             // cannot name a set of sequences the parser no longer agrees with.

@@ -175,16 +175,25 @@ A mood is a single grid, so everything that moves lives in a top-level
 
 ```json
 "sequences": {
-  "hover": { "ms": 150, "plays": 2, "frames": ["...", "..."] },
-  "drag":  { "ms": 100, "mirror": true, "frames": ["...", "..."] },
-  "done":  { "ms": 150, "frames": ["...", "..."] }
+  "hover": { "frames": ["...", "..."], "steps": [[0, 150], [1, 150]], "plays": 2 },
+  "drag":  { "frames": ["...", "..."], "steps": [[0, 100], [1, 100]], "mirror": true },
+  "tap":   { "frames": ["...", "...", "..."], "steps": [[0, 140], [1, 140], [2, 280]] },
+  "done":  { "frames": ["...", "..."], "steps": [[0, 280], [1, 110], [0, 140]] }
 }
 ```
 
-Two of the names are reactions: `hover` plays when the cursor arrives and
-`drag` loops while the pet is held. `"plays": 2` on `hover` runs its frames
-twice — a double hop off one copy of the art — and it means nothing on anything
-that already loops until something else stops it. The other five are the moods themselves —
+`steps` is the animation and it is required. Each entry is `[frame, ms]` — "draw
+this frame, hold it this long" — so `frames` is just a pool of poses whose order
+means nothing. A pose may appear more than once with a different hold, which is
+what `done` does above: three beats off two drawings. Durations round to the
+50ms tick, and `perchling --validate` prints the timeline it actually built.
+
+Three of the names are reactions: `hover` plays when the cursor arrives, `drag`
+loops while the pet is held, and `tap` plays when the pet is clicked — a pet
+that ships `tap` frames replaces the little hop every pet does by default.
+`"plays": 2` on `hover` or `tap` runs the timeline twice — a double hop off one
+copy of the art — and it means nothing on anything that already loops until
+something else stops it. The other five are the moods themselves —
 `idle`, `running`, `waiting`, `done`, `error` — and naming one makes that mood
 animate, looping for as long as the pet is in it and starting over when it
 arrives. Every one is optional and independent. The mood's own grid in `moods`

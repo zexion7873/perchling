@@ -66,25 +66,36 @@ Rules the loader enforces:
   at least 3% of the box. `perchling --validate` prints the box it read and
   says `blink UNAVAILABLE` if nothing in the box is bright enough to close.
 - **sequences** (optional) puts several frames on a clock:
-  `"sequences": { "hover": { "ms": 150, "frames": [ <grid>, <grid> ] } }`.
-  Seven names are recognised. Two are reactions: `hover` plays when the cursor
+  `"sequences": { "hover": { "frames": [ <grid>, <grid> ], "steps": [[0,150],[1,150]] } }`.
+  Eight names are recognised. Three are reactions: `hover` plays when the cursor
   arrives and then stops — it does not hold while the cursor stays, and there is
-  no exit reaction — and `drag` loops for as long as the pet is held. `plays`
-  (optional, 1–8, default 1) runs a hover burst that many times off one copy of
-  the frames, so a double hop costs a number rather than a second set of grids;
-  it does nothing on `drag` or on a mood, which already run until the drag or
-  the mood ends, and `--validate` says so.
+  no exit reaction — `drag` loops for as long as the pet is held, and `tap`
+  plays when the pet is clicked. A pet that ships `tap` frames replaces the
+  two-cell hop every pet does by default; ship no `tap` and you keep the hop.
+  `plays` (optional, 1–8, default 1) runs a `hover` or `tap` burst that many
+  times off one copy of the frames, so a double hop costs a number rather than a
+  second set of grids; it does nothing on `drag` or on a mood, which already run
+  until the drag or the mood ends, and `--validate` says so.
   The other five are the moods, `idle` `running` `waiting` `done` `error`, and
   naming one makes that mood animate: the frames loop for as long as the pet is
   in that mood and start over when it arrives there. A mood you animate still
   needs its grid in `moods`; that grid is what shows under Reduce Motion, so
-  make it the frame the pet should hold still in. A drag beats a hover and a
-  hover beats a mood loop. Each frame is a grid exactly like a mood's: same
-  canvas size, same palette. `frames` takes 2–16 — one frame is a pose, not a
-  sequence. `ms` (optional, 50–1000, default 150) is per frame; the renderer
-  ticks every 50ms, so the number rounds to a multiple of 50 — write 120 and
-  you get 100, and `perchling --validate` prints what you actually got. Ship
-  either one without the other. Neither plays while macOS Reduce Motion is on.
+  make it the frame the pet should hold still in. A drag beats a tap, a tap
+  beats a hover, and a hover beats a mood loop — a tap outranks a hover because
+  the cursor is on the pet whenever you click it. Each frame is a grid exactly
+  like a mood's: same canvas size, same palette. `frames` takes 2–16 — one frame
+  is a pose, not a sequence.
+  `steps` is **required** and it is the animation: 2–32 entries, each one a
+  `[frame, ms]` pair meaning "draw this frame, hold it this long". `frame` is an
+  index into `frames`, so the order you list `frames` in means nothing, and the
+  same pose may appear several times with different holds — `[[0,280],[1,110],[2,110],[3,140],[0,140],[1,320]]`
+  is six beats off four drawings, which is how a breathing loop gets an accent
+  instead of a metronome. `ms` is 50–1000 per step and the renderer ticks every
+  50ms, so each one rounds to a multiple of 50 — write 120 and you get 100, and
+  `perchling --validate` prints the whole timeline it actually built. Never pad
+  `frames` with a duplicate grid to hold a pose longer: a grid costs about 11KB
+  and a repeated step costs two numbers. Ship any sequence without the others.
+  None of them plays while macOS Reduce Motion is on.
   Do not draw a left and a right `drag`. Draw it facing RIGHT and add
   `"mirror": true` to that sequence if your pet may be reflected — the renderer
   then draws the frames flipped while the drag heads left, which buys a second
