@@ -2,7 +2,7 @@
 
 # 🐣 Perchling
 
-<img src="docs/moods.gif" width="672" alt="The perchling pet in its five moods — idle, running, waiting, done and error — each animating, followed by a sixth showing it startled, eyes blown wide, as the cursor hovers it.">
+<img src="docs/moods.gif" width="560" alt="The perchling pet — a small coral hippo — in its five moods: idle with heavy lids, running with its snout drawn in, waiting wide-eyed, done with its eyes closed in an arch and sparkles overhead, and error with a dark cross through each eye.">
 
 **A tiny pixel creature that perches on the corner of your screen and reacts to
 Claude Code — so you can look away from the terminal and still know when it
@@ -58,14 +58,13 @@ launch — a few seconds, once.
 
 |   | State | Trigger | What you see |
 |:-:|-------|---------|--------------|
-| 👁️ | **running** | you submit a prompt, tools execute | bounces, eyes narrow into a raised half-lid |
-| 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, twitching |
-| 🎉 | **done** | turn or agent completed | hops under a twinkle, eyes lift into a happy arch |
-| 😢 | **error** | an API failure ended the turn | droops, and a tear rolls down its screen |
-| 💤 | **idle** | nothing happening | breathes slowly, dozes, peeks now and then |
+| 👁️ | **running** | you submit a prompt, tools execute | bounces, snout drawn in, eyes narrowed to work |
+| 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, wide-eyed, twitching |
+| 🎉 | **done** | turn or agent completed | hops under a twinkle, eyes closed in a happy arch |
+| 😢 | **error** | an API failure ended the turn | droops, a dark cross through each eye |
+| 💤 | **idle** | nothing happening | breathes slowly, lids heavy |
 
-When its eyes are open they follow your cursor, sixteen directions of it. Hover
-it and it startles. Drag it and it leans into the pull, feet planted, and rights
+Drag it and it leans into the pull, feet planted, and rights
 itself when you let go. Click it and it hops, then throws you back to Claude —
 the desktop app if that's running, otherwise whatever was frontmost when the pet
 launched.
@@ -156,7 +155,7 @@ The format lives in [`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
 
 ### 👁️ Eyes that follow
 
-Add an optional `eyes` block and the pet stops staring straight ahead: its eyes
+Add an optional `eyes` block and a pet stops staring straight ahead: its eyes
 drift toward the cursor while it waits, and blink on their own.
 
 ```json
@@ -199,18 +198,19 @@ a burst and a resting state have no direction of travel.
 
 > [!WARNING]
 > A manifest carries pixels, and what it can say about them is where the eyes
-> are and which frames animate. Declare `eyes` and a custom pet gets the
+> are and which frames animate. Declare `eyes` and a pet gets the
 > cursor-following gaze and a blink; without it, neither. Declare `sequences`
 > and it gets the reactions and mood loops you named; a pet that ships no
 > `hover` frames has no hover reaction at all. The two do not stack: a playing
 > sequence takes the body over, so a mood you animate is a mood that stops
-> tracking the cursor and stops blinking — `waiting` is the only mood that did
-> either, so it is the only one where the choice costs anything. The
-> doze-and-peek cycle stays built-in-only whatever you declare — it cuts
-> between two drawn eye shapes, and a manifest has one frame per mood to cut
-> between — and a custom pet's
-> sideways twitch moves the whole body rather than just the eyes.
+> tracking the cursor and stops blinking — `waiting` is the only mood that had
+> either, so it is the only one where the choice costs anything.
+> The sideways twitch moves the whole body rather than just the eyes.
 > The drag lean works on any pet — it bends the pixels that are already there.
+>
+> The built-in is a manifest like any other, so all of this applies to it too:
+> it declares neither block today, which is why it neither follows your cursor
+> nor reacts to hover.
 
 ### 📚 Your pet library
 
@@ -218,9 +218,10 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Three worked examples
-ship in [`examples/`](examples/): a leafy slime, the retired first mascot
-(`classic`), and the built-in creature itself.
+copied into your library the first time you pick one. Four worked examples
+ship in [`examples/`](examples/): a leafy slime, the first mascot (`classic`),
+the CRT terminal robot that was the built-in through 1.6 (`robot`), and the
+built-in creature itself.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:
@@ -320,9 +321,9 @@ Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
 Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
 
-The built-in creature is not a drawing at all — it is composed at runtime from
-rounded rectangles and a lathed shell profile, with its shading derived from
-neighbouring pixels. The source code *is* the source art.
+The built-in creature is a manifest, carried in the binary and parsed by the
+same loader a pet you draw goes through. `--export` hands that text back
+verbatim, so the pet you see is exactly the file you can start editing.
 
 ## 📄 License
 
