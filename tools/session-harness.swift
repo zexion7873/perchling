@@ -223,5 +223,67 @@ do {
     check("the separator is not an em dash", labels["s1"]!.contains("—"), false)
 }
 
+// MARK: - desktopTitles
+
+func titleFile(_ dir: URL, _ leaf: String, _ cliSid: String?, _ title: String?,
+               bulkKB: Int = 0) {
+    let sidKey = cliSid.map { "\"cliSessionId\":\"\($0)\"," } ?? ""
+    let titleKey = title.map { ",\"title\":\"\($0)\"" } ?? ""
+    let bulk = bulkKB > 0
+        ? ",\"remoteMcpServersConfig\":\"\(String(repeating: "x", count: bulkKB * 1024))\""
+        : ""
+    writeFile(dir, leaf,
+              "{\"sessionId\":\"local_x\",\(sidKey)\"cwd\":\"/p/x\"\(titleKey)\(bulk)}")
+}
+
+do {
+    // The records sit two account-scoped directories down; the level must be
+    // globbed, never hardcoded.
+    let root = tempDir("titles")
+    let nested = root.appendingPathComponent("acct").appendingPathComponent("org")
+    try! FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    titleFile(nested, "local_1.json", "s1", "my session")
+    titleFile(nested, "local_2.json", "s2", nil)              // no title
+    titleFile(nested, "local_3.json", "s3", "")               // empty title
+    titleFile(nested, "local_4.json", nil, "orphan")          // no join key
+    titleFile(nested, "local_5.json", "s5", "line\\nbreak")   // control character
+    writeFile(nested, "local_6.json", "{not json")
+    writeFile(nested, "deleted_7", "{\"cliSessionId\":\"s7\",\"title\":\"tombstone\"}")
+    writeFile(nested, "notes.txt", "ignored")
+
+    var cache: [String: TitleEntry] = [:]
+    let m = desktopTitles(root, cache: &cache)
+    check("a titled session is read", m["s1"], "my session")
+    check("a record with no title has no entry", m["s2"], nil)
+    check("an empty title is absent", m["s3"], nil)
+    check("a record with no cliSessionId is skipped", m.values.contains("orphan"), false)
+    check("control characters are stripped from a title", m["s5"], "linebreak")
+    check("a deleted_ tombstone is not a record", m["s7"], nil)
+    // Of the six local_*.json fixtures, only s1 and s5 clear both bars (a
+    // parseable cliSessionId and a non-empty cleaned title) — s2 has no title
+    // key, s3's title cleans to empty, s4 has no join key, s6 isn't valid
+    // JSON. The five checks above already pin every other key to absent, so
+    // 2 is the only count consistent with them.
+    check("only local_*.json records are read", m.count, 2)
+
+    // The cache exists because a real record is ~279KB. Same mtime must not
+    // re-parse, and a changed file must not be served stale.
+    check("the cache holds one entry per parsed record", cache.count, 2)
+    let again = desktopTitles(root, cache: &cache)
+    check("a second call is stable", again["s1"], "my session")
+
+    titleFile(nested, "local_1.json", "s1", "renamed")
+    check("a rewritten record is re-read", desktopTitles(root, cache: &cache)["s1"], "renamed")
+
+    try! FileManager.default.removeItem(at: nested.appendingPathComponent("local_2.json"))
+    _ = desktopTitles(root, cache: &cache)
+    check("the cache is pruned when a record goes away", cache.count, 2)
+}
+
+var missingCache: [String: TitleEntry] = [:]
+check("a missing titles directory is an empty map",
+      desktopTitles(URL(fileURLWithPath: "/nonexistent/perchling-titles"),
+                    cache: &missingCache).count, 0)
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

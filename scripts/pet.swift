@@ -1651,6 +1651,68 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
     return out
 }
 
+// One parsed desktop record. Cached because a real one is ~279KB — almost all
+// of it an MCP config block — and re-parsing every record on a 0.4s poll would
+// put over a megabyte a second of JSON through the main thread.
+struct TitleEntry {
+    let stamp: Date
+    let sid: String
+    let title: String
+}
+
+// The desktop app's own session records, which carry the title the user sees in
+// the sidebar. A second foreign file, and a second one perchling only reads:
+// the CLI registry beside it names the same session differently — `derived`
+// there, user- or LLM-written here — and this one is what the human is looking
+// at, so it wins.
+//
+// The join key is the record's `cliSessionId`, which holds the CLI session id
+// that names perchling's own sessions/<sid> file.
+//
+// `titleSource` is deliberately not read, for the same reason `nameSource` is
+// not: `user` and `auto` titles are both what the sidebar shows.
+//
+// Records sit two account-scoped directories below `dir`, so that level is
+// globbed rather than hardcoded. Enumeration asks for NO resource keys and
+// filters by name first: the records share a directory with hundreds of
+// `deleted_` tombstones, and asking for keys up front turns one readdir into a
+// stat per tombstone.
+func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: String] {
+    let fm = FileManager.default
+    func kids(_ u: URL) -> [URL] {
+        (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
+                                     options: [.skipsHiddenFiles])) ?? []
+    }
+    var out: [String: String] = [:]
+    var seen: Set<String> = []
+    for acct in kids(dir) {
+        for org in kids(acct) {
+            for url in kids(org) where url.lastPathComponent.hasPrefix("local_")
+                                    && url.pathExtension == "json" {
+                let key = url.path
+                let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                seen.insert(key)
+                if let hit = cache[key], hit.stamp == stamp {
+                    out[hit.sid] = hit.title
+                    continue
+                }
+                guard let data = try? Data(contentsOf: url),
+                      let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let sid = obj["cliSessionId"] as? String,
+                      let raw = obj["title"] as? String else { cache[key] = nil; continue }
+                let title = cleanName(raw)
+                if title.isEmpty { cache[key] = nil; continue }
+                cache[key] = TitleEntry(stamp: stamp, sid: sid, title: title)
+                out[sid] = title
+            }
+        }
+    }
+    // A record the app deleted must not keep answering from memory.
+    cache = cache.filter { seen.contains($0.key) }
+    return out
+}
+
 // A session's identity, most specific first: the name the host CLI keeps for it,
 // then the project directory, then its raw id — deliberately unfriendly, because
 // a session with neither is a real state and a made-up name would hide it.
