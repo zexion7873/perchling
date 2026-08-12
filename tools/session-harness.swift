@@ -139,12 +139,20 @@ do {
 }
 
 do {
-    let dir = tempDir("registry-dup")
-    regFile(dir, 201, "same", "older")
-    Thread.sleep(forTimeInterval: 0.02)
-    regFile(dir, 202, "same", "newer")
-    check("two files for one session: the newer wins",
-          registryNames(dir, alive: { _ in true })["same"], "newer")
+    // Directory enumeration is a name-hash order on this filesystem, not
+    // creation order: probed by writing 201.json 202.json acct1 acct2
+    // zzz.json aaa.json and getting back zzz.json acct1 201.json aaa.json
+    // 202.json acct2. One arrangement of which pid gets the later mtime can
+    // therefore pass by coincidence of enumeration order alone, with no
+    // tie-break in play — so both permutations run, and one of them
+    // necessarily lands the older file last whatever order this filesystem
+    // hands back.
+    let d1 = tempDir("registry-dup-a")
+    regFile(d1, 201, "same", "older"); Thread.sleep(forTimeInterval: 0.02); regFile(d1, 202, "same", "newer")
+    check("dup A: the newer wins", registryNames(d1, alive: { _ in true })["same"], "newer")
+    let d2 = tempDir("registry-dup-b")
+    regFile(d2, 202, "same", "older"); Thread.sleep(forTimeInterval: 0.02); regFile(d2, 201, "same", "newer")
+    check("dup B: the newer wins", registryNames(d2, alive: { _ in true })["same"], "newer")
 }
 
 do {
@@ -251,7 +259,15 @@ do {
     titleFile(nested, "local_4.json", nil, "orphan")          // no join key
     titleFile(nested, "local_5.json", "s5", "line\\nbreak")   // control character
     writeFile(nested, "local_6.json", "{not json")
+    // Documents the real directory shape but proves nothing on its own: no
+    // .json extension, so pathExtension == "json" already excludes it before
+    // hasPrefix("local_") is ever asked — removing that prefix filter leaves
+    // this fixture, and the harness, green.
     writeFile(nested, "deleted_7", "{\"cliSessionId\":\"s7\",\"title\":\"tombstone\"}")
+    // The fixture that actually exercises hasPrefix("local_"): a sibling
+    // .json that isn't a session record. scheduled-tasks.json really sits in
+    // this directory (87 bytes) — pathExtension alone would let it through.
+    writeFile(nested, "scheduled-tasks.json", "{\"cliSessionId\":\"s9\",\"title\":\"not a session\"}")
     writeFile(nested, "notes.txt", "ignored")
 
     // A second account directory, with its own org level and its own record.
@@ -271,6 +287,7 @@ do {
     check("a record with no cliSessionId is skipped", m.values.contains("orphan"), false)
     check("control characters are stripped from a title", m["s5"], "linebreak")
     check("a deleted_ tombstone is not a record", m["s7"], nil)
+    check("a sibling .json that is not a record is skipped", m["s9"], nil)
     check("a second account directory is found, not just the first", m["s8"], "second acct")
     // Of the seven local_*.json fixtures (six under acct/org, one under
     // acct2/org2), only s1, s5 and s8 clear both bars (a parseable
@@ -313,25 +330,36 @@ do {
 
 do {
     // Two records under different account directories claiming the same
-    // cliSessionId — the desktop analogue of registry-dup above.
-    // contentsOfDirectory enumerates acct1 before acct2 here (creation
-    // order), so the older-mtime record is placed in acct2 to be enumerated
-    // LAST: the one arrangement where a missing tie-break — last write into
-    // the dict wins — produces the wrong answer, rather than passing by
-    // enumeration order the way the reverse arrangement did when tried. The
-    // sleep clears the mtime resolution hazard: two files written in the
-    // same instant can carry the same stamp.
-    let dir = tempDir("titles-dup")
-    let a = dir.appendingPathComponent("acct1").appendingPathComponent("org")
-    let b = dir.appendingPathComponent("acct2").appendingPathComponent("org")
-    try! FileManager.default.createDirectory(at: a, withIntermediateDirectories: true)
-    try! FileManager.default.createDirectory(at: b, withIntermediateDirectories: true)
-    titleFile(b, "local_older.json", "dup", "older")
+    // cliSessionId — the desktop analogue of registry-dup above. Which of
+    // acct1/acct2 contentsOfDirectory enumerates first is a name-hash order
+    // on this filesystem, not creation order (probed under registry-dup
+    // above), so a single arrangement of which account holds the older
+    // record can pass by coincidence of that order alone. Both permutations
+    // run, the same fix as registry-dup, so one of them necessarily
+    // enumerates the older record last whatever order this filesystem hands
+    // back. The sleep clears the mtime resolution hazard: two files written
+    // in the same instant can carry the same stamp.
+    let d1 = tempDir("titles-dup-a")
+    let a1 = d1.appendingPathComponent("acct1").appendingPathComponent("org")
+    let b1 = d1.appendingPathComponent("acct2").appendingPathComponent("org")
+    try! FileManager.default.createDirectory(at: a1, withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: b1, withIntermediateDirectories: true)
+    titleFile(a1, "local_older.json", "dup", "older")
     Thread.sleep(forTimeInterval: 0.02)
-    titleFile(a, "local_newer.json", "dup", "newer")
-    var dupCache: [String: TitleEntry] = [:]
-    check("two records for one session: the newer wins",
-          desktopTitles(dir, cache: &dupCache)["dup"], "newer")
+    titleFile(b1, "local_newer.json", "dup", "newer")
+    var cacheA: [String: TitleEntry] = [:]
+    check("titles dup A: the newer wins", desktopTitles(d1, cache: &cacheA)["dup"], "newer")
+
+    let d2 = tempDir("titles-dup-b")
+    let a2 = d2.appendingPathComponent("acct1").appendingPathComponent("org")
+    let b2 = d2.appendingPathComponent("acct2").appendingPathComponent("org")
+    try! FileManager.default.createDirectory(at: a2, withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: b2, withIntermediateDirectories: true)
+    titleFile(b2, "local_older.json", "dup", "older")
+    Thread.sleep(forTimeInterval: 0.02)
+    titleFile(a2, "local_newer.json", "dup", "newer")
+    var cacheB: [String: TitleEntry] = [:]
+    check("titles dup B: the newer wins", desktopTitles(d2, cache: &cacheB)["dup"], "newer")
 }
 
 var missingCache: [String: TitleEntry] = [:]

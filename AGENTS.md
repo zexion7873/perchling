@@ -53,9 +53,10 @@ Verify without launching:
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns nine flat inks into a million.
 - **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
-  `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText` and
-  `registryNames` all sit above the runtime-home block, so a harness for them
-  has to cut there instead of at `let argv`: cutting at `let argv` still runs
+  `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
+  `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above
+  the runtime-home block, so a harness for them has to cut there instead of
+  at `let argv`: cutting at `let argv` still runs
   that block at load time, which touches `~/.claude/perchling/` — the very
   directory this file forbids writing to. `bash tools/run-session-harness.sh`
   already does exactly this — it cuts `pet.swift` before `// Runtime home:`,
@@ -461,10 +462,13 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   for the 30s-empty-grace liveness check, but never touches a mood — it is
   not the second reader this bullet forbids, and adding one that reads a mood
   would be.
-- **The session registry is the host CLI's file, and perchling only ever reads
-  it.** `<config>/sessions/<pid>.json` carries a session's id and the name the
-  app shows for it, which is where a tray row's name now comes from — the
-  project directory is the fallback, not the source. It is undocumented, so
+- **The session registry is one of two foreign files perchling reads, and by
+  itself it is not where a tray row's name comes from.**
+  `<config>/sessions/<pid>.json` carries a session's id and the CLI's own name
+  for it — usually derived from the cwd rather than typed by a human (measured
+  on this machine: `perchling-de`, `nameSource: derived`) — one layer in the
+  title → name → project directory → sid-prefix chain, not the top of it. It
+  is undocumented, so
   `registryNames` treats every failure as a missing entry: a moved format, an
   older CLI and a background job that never had a name are indistinguishable
   from outside and all three are correctly answered by falling back. **A name's
@@ -473,19 +477,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   registry directory is resolved from `CLAUDE_CONFIG_DIR` directly and never
   from `root`, because `PERCHLING_HOME` can point at a scratch directory with no
   registry in it. `nameSource` is deliberately not read: it would encode a guess
-  about host naming policy, and `sessionLabels` already guarantees two drawn
-  rows never print the same string without knowing. That guarantee is why the
-  suffix is computed over the MENU rows and applied only on collision — and why
-  it joins with a middle dot, since the em dash is already spent joining a label
-  to its status. **There is a second foreign file, and perchling only ever
-  reads it too:** the desktop app's own session records, at
+  about host naming policy, and `sessionLabels` guarantees two drawn rows never
+  print the same string without knowing — except when two session ids share
+  their first eight characters, where the guard against a doubled suffix
+  (`abcdef01 · abcdef01`) knowingly leaves both unsuffixed instead. That
+  guarantee is why the suffix is computed over the MENU rows and applied only
+  on collision — and why it joins with a middle dot, since the em dash is
+  already spent joining a label to its status. **There is a second foreign
+  file, and perchling only ever reads it too:** the desktop app's own session
+  records, at
   `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_<uuid>.json`,
   joined to a `sessions/<sid>` file by their `cliSessionId`. The title in that
-  record outranks the registry name, on purpose — every interactive session is
-  given a `derived` registry name, so a name always answers, and a title
-  ranked below it could never win; the two stores disagree about the same
-  session by design, not by drift. A real record is ~279KB, almost all of it
-  an MCP config block, and there is no index over the directory, so
+  record is what a tray row's name actually comes from when the session has
+  one, and it outranks the registry name on purpose — every interactive
+  session is given a `derived` registry name, so a name always answers, and a
+  title ranked below it could never win; the two stores disagree about the
+  same session by design, not by drift. A real record is ~279KB, almost all of
+  it an MCP config block, and there is no index over the directory, so
   `desktopTitles` caches by modification time rather than reparsing on every
   poll — parsing every record on a 0.4s poll would put over a megabyte a
   second of JSON through the main thread. A bounded prefix read was rejected
@@ -566,7 +574,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 39 assertions over the session/tray layer
+bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
 ~/.claude/perchling/bin/perchling --validate examples/sprout.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```

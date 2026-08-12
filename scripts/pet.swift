@@ -1446,6 +1446,11 @@ final class PetView: NSView {
         let sessions = sessionList?() ?? []
         let labels = labelList?() ?? [:]
         for r in sessions {
+            // `labels` is `sessionLabels(sessions)` from this same poll, which
+            // fills in every sid it is handed — the `?? sessionName(r)` cannot
+            // fire. Kept anyway: it is a correct-value fallback (the
+            // unsuffixed name), not a guard, and the alternative is a
+            // force-unwrap in a process that runs all day.
             let item = NSMenuItem(title: sessionTitle(labels[r.sid] ?? sessionName(r),
                                                       r.mood, moodStatus),
                                   action: #selector(focusSessionAction), keyEquivalent: "")
@@ -1831,6 +1836,9 @@ func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
     guard let top = rows.first else {
         return (nil, wording[display] ?? "", globalSay)
     }
+    // `labels` and `rows` both come from the same `pollMoods` pass (see the
+    // comment above), so `labels[top.sid]` cannot be missing — the `??` is a
+    // correct-value fallback, not a guard against a case that can happen.
     return (rows.count > 1 ? labels[top.sid] ?? sessionName(top) : nil,
             wording[top.mood] ?? "",
             top.say ?? globalSay)
