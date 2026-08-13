@@ -12,7 +12,12 @@ SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 export PERCHLING_HOME="$SCRATCH/home"
 
-awk '/^let argv = CommandLine.arguments/{exit} {print}' scripts/pet.swift > "$SCRATCH/harness.swift"
+# `let builtinPet` becomes `var` in the scratch copy only, so a harness can give
+# the BUILT-IN a sequence. Without that there is no way to exercise the
+# `activePet` path at all: PetView is final, so overriding `activePet` is not
+# open either, and a rule that cannot be tested is a rule that silently rots.
+awk '/^let argv = CommandLine.arguments/{exit} {print}' scripts/pet.swift \
+  | sed 's/^let builtinPet = /var builtinPet = /' > "$SCRATCH/harness.swift"
 cat tools/pose-harness.swift >> "$SCRATCH/harness.swift"
 
 swiftc -O "$SCRATCH/harness.swift" -o "$SCRATCH/pose-harness" || exit 1

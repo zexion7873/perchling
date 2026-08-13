@@ -661,7 +661,8 @@ final class PetView: NSView {
     var scale: CGFloat = builtinPet.scale
     var xpad = sidePad(builtinPet.scale)
     var startledUntil = -1
-    // Custom pets only. `-1` is disarmed, matching hopUntil and startledUntil.
+    // `-1` is disarmed, matching hopUntil and startledUntil. Armed off
+    // `activePet`, so the built-in's own sequences arm these too.
     // Hover is one-shot and expires by elapsing; drag loops until mouseUp; tap
     // is one-shot like hover and outranks it, because the cursor is on the pet
     // whenever a tap arrives and a tap ranked lower could never play.
@@ -872,7 +873,11 @@ final class PetView: NSView {
         // `tick` freezes under Reduce Motion, so an index derived from
         // `tick - start` would stick on one frame forever.
         var seq: SeqRef?
-        if motionOK, let pet = custom {
+        if motionOK {
+            // `activePet`, never `custom`: the built-in is a manifest like any
+            // other and declares its own sequences. `custom` answers "did the
+            // user pick something", which is a question only the Pets menu asks.
+            let pet = activePet
             if dragSeqStart >= 0, let s = pet.sequences[.drag] {
                 // Frames as drawn face RIGHT; the flip is what leftward travel
                 // looks like. A pet that did not declare `mirror` never flips,
