@@ -125,6 +125,9 @@ Rules the loader enforces:
   and the hover startle were drawing code on a built-in that no longer exists;
   the built-in is a manifest now and lives under exactly these rules. A pet with
   no hover sequence has no hover reaction at all — including the shipped one.
+  What the shipped pet *does* declare is worth copying from: an `eyes` block at
+  `"range": 0`, and `done`, `idle` and `tap` sequences. `examples/perchling.json`
+  is `--export`, so it is a working example of every block in this document.
 
 ## Workflow
 
@@ -137,12 +140,17 @@ Rules the loader enforces:
    ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
    ```
    The snapshot is a faithful copy: the built-in is itself a manifest, so the
-   export carries everything it has and loses nothing. What it does not have is
-   an `eyes` block, and one cannot simply be declared on it — the two lenses sit
-   far apart with shaded head and outline between them, so any box covering both
-   spans inks other than the socket colour, and a shift rewrites the whole box.
-   Gaze on a remix of the default means redrawing the eye region onto a flat
-   field first, not adding four numbers.
+   export carries everything it has — including its `eyes` block and its three
+   sequences — and loses nothing.
+
+   One thing about it will not transfer to a redesign: its `eyes` block declares
+   `"range": 0`, which buys the blink and no gaze, and that is a fact about the
+   art rather than a preference. The two lenses run the full width of the flat
+   part of the face, so any box covering both has the head's outline and shading
+   under its border, and a gaze rewrites the whole box. Blink is fine there
+   because it repaints the box entirely. Gaze on a remix of the default means
+   redrawing the eye region onto a flat field first — narrower eyes with coral
+   either side — not raising four numbers to something nonzero.
 1. Settle the creature with the user: species, colors, vibe. An outline
    color, 2–3 body colors, and 1–2 face colors is the sweet spot.
 2. Draw the five grids. Design `idle` first, then copy it per mood and
@@ -194,7 +202,9 @@ the user's project as the working directory:
 
 - `sprout.json` — a leafy slime, 48×40 at scale 2, shaded and blushing. Shows
   how the pieces fit together at the fine-detail end.
-- `perchling.json` — the built-in pet, exported: 96×100 at scale 1.
+- `perchling.json` — the built-in pet, exported: 96×100 at scale 1. The only
+  shipped pet that declares `eyes` or `sequences`, so it is the reference for
+  both.
 - `classic.json` — the first mascot, retired when the built-in became the CRT
   terminal robot; same footprint as the export it was frozen from.
 - `robot.json` — that terminal robot, the built-in from 1.0 through 1.6, frozen

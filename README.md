@@ -168,6 +168,12 @@ has to sit on a flat field. `range` (default 2) is how far they travel and
 `lid` overrides the blink color, which is otherwise picked from the box.
 `perchling --validate` reports the box it read and what it could build from it.
 
+`"range": 0` is worth knowing about: it buys the blink and switches the gaze
+off. Use it when the eyes have no flat margin to slide into — the built-in pet
+is exactly that case, its eyes running the full width of the flat part of its
+face — because the blink repaints the whole box and so needs no margin at all,
+while a gaze with nowhere to go smears the face instead.
+
 ### 🎞️ Anything that needs more than one frame
 
 A mood is a single grid, so everything that moves lives in a top-level
@@ -217,9 +223,12 @@ a burst and a resting state have no direction of travel.
 > The sideways twitch moves the whole body rather than just the eyes.
 > The drag lean works on any pet — it bends the pixels that are already there.
 >
-> The built-in is a manifest like any other, so all of this applies to it too:
-> it declares neither block today, which is why it neither follows your cursor
-> nor reacts to hover.
+> The built-in is a manifest like any other, so all of this applies to it too.
+> It declares `eyes` at `"range": 0` — so it blinks while it waits and does not
+> follow your cursor — and `sequences` for `done`, `idle` and `tap`. It ships no
+> `hover` or `drag` frames, so it has no hover reaction and leans on the shear
+> when dragged. `examples/perchling.json` is `perchling --export`, so it is the
+> worked example for every one of these blocks.
 
 ### 📚 Your pet library
 
