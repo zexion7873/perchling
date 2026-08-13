@@ -12,6 +12,7 @@
 //   drag arm never runs ................. 1
 //   bursts never expire ................. 3, 4, 5, 7
 //   tap falls back to another sequence ... 8
+//   pose() reads `custom` instead of `activePet` ... 9, 10
 //
 // Assertion 5 also has the strongest proof of all: it failed against the first
 // implementation of the tap arm, which was an `else if` and let a spent tap
@@ -102,6 +103,16 @@ check("plays does not lengthen it", poseAt(14, tap: 10).seq?.kind == .idle)
 //    procedural hop still owns the poke, and pose() must not invent a frame.
 view.custom = pet([.idle: seq([b, a])])
 check("no tap sequence means no tap frame", poseAt(10, tap: 10).seq?.kind == .idle)
+
+// 9-10. The built-in is a manifest too, and every draw path must read
+//    `activePet` rather than `custom`. A sequence declared by the built-in that
+//    pose() cannot see is not merely inert: mouseUp arms `tapSeqStart` off
+//    `activePet`, so declaring `tap` gives up the procedural hop for a frame
+//    that never arrives, and clicking the pet does nothing at all.
+builtinPet = pet([.tap: seq([a, c]), .idle: seq([b, a])])
+view.custom = nil
+check("built-in tap plays with no custom pet", poseAt(10, tap: 10).seq?.kind == .tap)
+check("built-in mood loop plays with no custom pet", poseAt(10).seq?.kind == .idle)
 
 print("---")
 print("\(passed) passed, \(failed) failed")

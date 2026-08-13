@@ -113,18 +113,48 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   row can only answer that while "no user pet" stays representable. Every draw
   path reads `activePet`; the menu reads `custom`. Collapsing the two puts two
   checkmarks in the menu, or none.
+
+  **`pose()` was the site that got this wrong**, and the symptom was not the
+  one you would predict. Its sequence-selection block read `custom`, while the
+  clocks feeding it are armed off `activePet` — so a built-in declaring `tap`
+  had `mouseUp` set `tapSeqStart` instead of `hopUntil`, gave up the procedural
+  hop, and then produced no frame: clicking the pet did nothing at all. Pinned
+  now by two assertions in `tools/run-pose-harness.sh`, which sed-patches `let
+  builtinPet` to `var` in its scratch copy so a harness can give the BUILT-IN a
+  sequence. `PetView` is `final`, so overriding `activePet` was not open
+  either, and a rule that cannot be tested is a rule that silently rots.
 - **The chrome has its own colours and must keep them.** `CHROME_PANEL`,
   `CHROME_EDGE`, `CHROME_TEXT` and `CHROME_INK` used to be borrowed from the
   pet's ink palette, which was fine while one enum described both. A pet is a
   manifest now: borrowing would mean a user's pet repainting the bubble and the
   chip. The hexes are unchanged from 1.6 on purpose — the panels look identical.
-- **Six behaviours died with the engine, and they are not dormant.** The hover
+- **Six behaviours died with the engine in 1.7.0. Three are back, one is
+  structurally unreachable on this pet, and two were not funded.** The hover
   startle, error's tear, done's sparkle, idle's doze-and-peek, the
   cursor-following gaze and the blink were all gated on `custom == nil` and all
-  drew through the deleted overlays. They come back only as declared `eyes` and
-  `sequences` blocks on the manifest, which the shipped pet does not yet carry.
-  This was a priced, accepted trade for 1.7.0, not an oversight — see the README
-  and `skills/draw-pet/SKILL.md`, both of which now say so out loud.
+  drew through the deleted overlays. Where each one now stands:
+
+  - **blink** — back, as a declared `eyes` block with `range: 0`. Still
+    `waiting`-only, still suppressed if `waiting` ever gains a sequence.
+  - **done's sparkle** and **idle's doze** — back in a different form, as mood
+    loops. Not the old drawings: squash and stretch, because the grid has three
+    free rows above the art and none below it, so there is no altitude to
+    spend and a drawn jump cannot out-travel the procedural hop it replaces.
+  - **the gaze** — **not unfunded but unreachable, and that is an art problem
+    rather than a format one.** The gaze shifts the eye box's contents and
+    refills the vacated strip with `socket`, so the box needs flat colour under
+    its border. This pet's eyes run edge to edge: at rows 21-22 the amber
+    reaches x27 and x68 and the very next pixel each side is the eye outline,
+    then the head's shading band. Zero coral margin. Every box formed by padding
+    each mood's amber bbox by 0..9 on each side was searched — 10,000 per mood,
+    all five moods — and not one has a single-ink border. Buying gaze means
+    narrowing the eyes, which reverses the round where they won by AREA. Do not
+    re-derive this; it is not a matter of choosing a better box.
+  - **the hover startle** and **error's tear** — still gone, and simply not
+    funded. Both are a `sequences` entry away.
+
+  1.7.0's trade was priced and accepted, not an oversight. What paid it back is
+  `docs/design/2026-08-13-hippo-eyes-and-sequences-design.md`.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -165,6 +195,15 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   measuring to the canvas. It buys the whole 23 on a pet that never lifts.
   And the inset is measured at the RESTING bounce, never the live one, or the
   chrome breathes along with the pet.
+
+  **The shipped pet now exercises this**, so the paragraph above is a live cost
+  rather than a hypothetical. Its sequences reach row 0 where its mood grids
+  stop at 3, and `--validate` prints exactly that: `inkTop: 0 (moods alone: 3
+  — sequences reach higher, chrome moves up 3 rows)`. The bubble and the chip
+  therefore sit three points higher than the moods alone would put them, in
+  every mood, permanently. That it cannot become per-mood movement is
+  structural rather than lucky: `artTopInset` reads `activePet.inkTop`, which
+  is one stored value on `CustomPet`.
 - **The bubble and the chip ARE vibrancy views; their drawing is a subview.**
   A view's own `draw()` runs before every one of its subviews, so an
   `NSVisualEffectView` added *under* a painting view lands on top of the text
