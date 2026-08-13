@@ -10,7 +10,7 @@ needs you.**
 
 [![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
-[![Binary](https://img.shields.io/badge/binary-under_0.5MB-brightgreen?style=flat)](#-how-it-works)
+[![Binary](https://img.shields.io/badge/binary-under_1MB-brightgreen?style=flat)](#-how-it-works)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 [![GitHub stars](https://img.shields.io/github/stars/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/commits)
