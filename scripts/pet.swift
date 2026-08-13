@@ -2288,6 +2288,17 @@ final class Controller: NSObject, NSWindowDelegate {
 // They come back as declared `sequences`, not as branches.
 let BUILTIN_MANIFEST = #"""
 {
+  "eyes" : {
+    "box" : [
+      26,
+      11,
+      44,
+      17
+    ],
+    "lid" : "o",
+    "range" : 0,
+    "socket" : "b"
+  },
   "moods" : {
     "done" : [
       "................................................................................................",
