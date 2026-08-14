@@ -548,6 +548,29 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   tombstones — asking for keys up front would turn one `readdir` into a
   `stat` per tombstone. `titleSource` is deliberately not read, for the same
   reason `nameSource` is not.
+
+  **The enumeration is cached separately from the parse, and the two answer
+  different questions.** Skipping every parse still walked the whole directory:
+  351 tombstones against 3 real records, measured 2026-08-14, and growing on
+  its own — 292 two days earlier. `TitleCache.dirs` memoises the records'
+  directory listing against that directory's own mtime, which took a warm poll
+  from 1167.4 µs to 80.8 µs.
+
+  **Do not collapse the two into one gate.** A directory's mtime moves when an
+  entry is added, removed or renamed and does NOT move when an existing file's
+  contents are rewritten — measured on APFS, and true of
+  `write(to:atomically:)` as well as an in-place write. A single dir-mtime gate
+  therefore serves a renamed session's old title until some unrelated record is
+  created or deleted. The listing cache may memoise WHICH files exist and never
+  what is in them; the per-file stamp check stays. `tools/session-harness.swift`
+  pins both halves, and each assertion was proven to fail alone under the
+  mutation it exists for. The listing half needed `titleDirScans`, a counter
+  nothing in the app reads — a pure performance change has no observable result,
+  so without it deleting the cache leaves every assertion green.
+
+  The listing cache needs no prune, unlike the parse cache: a removal moves the
+  directory's mtime, so a stale listing is replaced on the next poll rather than
+  answering forever.
 - **The bubble quotes the session the face is reporting.** `menuRows()` already
   sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
   `bubbleText()` takes its line three and its name. Before this the caption came

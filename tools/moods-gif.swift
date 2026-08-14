@@ -9,13 +9,25 @@
 // through cacheDisplay, which is what makes this a picture of the pet that
 // ships instead of a second drawing of it.
 
-let FRAMES = 54       // one full tear cycle; anything shorter cuts a droplet
-                      // off mid-fall at the loop seam
-let START = 30        // ticks 0-15 are inside idle's open-eyed peek, and a
-                      // peeking idle reads identically to waiting — a bad first
-                      // frame for a hero whose whole claim is that the moods
-                      // differ. Every animation here is periodic, so starting
-                      // late rotates the loop without breaking it.
+let FRAMES = 54       // Arbitrary, and unavoidably so. Its original reason was
+                      // "one full tear cycle", and the tear died with the
+                      // drawing engine in 1.7.0. Nothing replaces it: the
+                      // periods this renders — idle 52, error 44, done 11,
+                      // waiting 60/30/80, running 8/40 — have an LCM of 34,320
+                      // ticks, so a seamless loop would be 28 minutes of GIF.
+                      // 54 is a duration and a filesize (3.24s, ~210KB). Pick
+                      // another number freely; there is no seam to protect.
+let START = 30        // Its original reason is gone too — ticks 0-15 used to
+                      // sit inside idle's open-eyed peek, which 1.7.0 deleted.
+                      // 30 survives on a different one: at tick 0 `waiting` is
+                      // mid-blink (`tick % 80 < 2`), and a blinking waiting
+                      // hides the wide eyes that are the only thing telling it
+                      // apart — a bad first frame for a hero whose whole claim
+                      // is that the moods differ. Any start in 2...79 does that
+                      // job; the blink still lands inside the window at ticks
+                      // 80-81, where it is wanted. Every animation here is
+                      // periodic, so starting late rotates the loop without
+                      // breaking it.
 let DELAY = 6         // hundredths; the overlay ticks at 1/20s
 let CELL_PAD = 4      // per side, so five 104pt canvases land on 560
 
