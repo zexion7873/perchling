@@ -167,9 +167,9 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   (idle stretches up, error squashes down), so telling them apart does not
   depend on noticing how far either moved.
 
-  1.7.0's trade was priced and accepted, not an oversight. What paid it back is
-  `docs/design/2026-08-13-hippo-eyes-and-sequences-design.md` and
-  `docs/design/2026-08-14-hover-and-error-design.md`.
+  1.7.0's trade was priced and accepted, not an oversight, and the reasoning
+  that paid it back is in this file rather than in a design document you cannot
+  see: everything above was measured, and the numbers are the argument.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -643,6 +643,9 @@ bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
+bash tools/run-deform-checks.sh    # the built-in's generator still draws the shipped pet
+python3 tools/hippo/emit_swiftfmt.py           # regenerate BUILTIN_MANIFEST's text
+python3 tools/hippo/sheet_deform.py /tmp/s.png # contact sheet of the deformation range
 ~/.claude/perchling/bin/perchling --validate examples/sprout.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
@@ -659,8 +662,26 @@ still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it
 covers, not a replacement for any of those.
 
-Changing the built-in's art now means editing `BUILTIN_MANIFEST` inside
-`pet.swift`, and it leaves three artifacts behind that lie quietly rather than
+**The built-in's art is generated, and `tools/hippo/` is what generates it.**
+`BUILTIN_MANIFEST` is 175KB of row strings; nobody edits that by hand. The
+manifest comes out of `emit_swiftfmt.py`, which composes the five moods and the
+five sequences from parametric geometry — `v6_deform.build(mood, sq, wd)` — and
+formats them byte-exactly the way Swift's `JSONSerialization(.prettyPrinted,
+.sortedKeys)` would, so `--export` can hand the embedded string straight back.
+
+`bash tools/run-deform-checks.sh` is what keeps the generator honest, and its
+first guard is the one that matters here: it regenerates all five moods and
+compares them against `examples/perchling.json`. That file IS `--export`, which
+IS `BUILTIN_MANIFEST`, so the guard fails the moment the generator and the
+shipped pet drift apart — including if someone hand-edits the manifest.
+
+The deformation is applied to the parameter TABLES, never to a finished grid.
+`shade()` derives its outline, light and shade bands from neighbour tests on a
+mask, so a mask built at deformed coordinates comes out correctly shaded while a
+resample of shaded output lands the bands on notches.
+
+Changing the built-in's art still means the manifest inside `pet.swift` ends up
+different, and it leaves three artifacts behind that lie quietly rather than
 failing: `examples/perchling.json` *is* `--export` output, `docs/moods.gif` is
 the README hero, and the README's `width=` must equal the GIF's real pixel
 width or the browser resamples the pixel art into mush. Regenerate all of them
