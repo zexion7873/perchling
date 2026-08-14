@@ -225,10 +225,10 @@ a burst and a resting state have no direction of travel.
 >
 > The built-in is a manifest like any other, so all of this applies to it too.
 > It declares `eyes` at `"range": 0` — so it blinks while it waits and does not
-> follow your cursor — and `sequences` for `done`, `idle` and `tap`. It ships no
-> `hover` or `drag` frames, so it has no hover reaction and leans on the shear
-> when dragged. `examples/perchling.json` is `perchling --export`, so it is the
-> worked example for every one of these blocks.
+> follow your cursor — and `sequences` for `done`, `error`, `hover`, `idle` and
+> `tap`. It ships no `drag` frames, so it leans on the shear when dragged.
+> `examples/perchling.json` is `perchling --export`, so it is the worked example
+> for every one of these blocks.
 
 ### 📚 Your pet library
 

@@ -124,10 +124,13 @@ Rules the loader enforces:
 - There is no renderer-only behaviour left to inherit. The doze-and-peek cycle
   and the hover startle were drawing code on a built-in that no longer exists;
   the built-in is a manifest now and lives under exactly these rules. A pet with
-  no hover sequence has no hover reaction at all — including the shipped one.
+  no hover sequence has no hover reaction at all. The shipped one declares
+  one, so it does — but that is a fact about its manifest, not about the
+  renderer, which is the whole point of this section.
   What the shipped pet *does* declare is worth copying from: an `eyes` block at
-  `"range": 0`, and `done`, `idle` and `tap` sequences. `examples/perchling.json`
-  is `--export`, so it is a working example of every block in this document.
+  `"range": 0`, and `done`, `error`, `hover`, `idle` and `tap` sequences —
+  every sequence kind except `drag`. `examples/perchling.json` is `--export`, so
+  it is a working example of every block in this document.
 
 ## Workflow
 
@@ -203,8 +206,8 @@ the user's project as the working directory:
 - `sprout.json` — a leafy slime, 48×40 at scale 2, shaded and blushing. Shows
   how the pieces fit together at the fine-detail end.
 - `perchling.json` — the built-in pet, exported: 96×100 at scale 1. The only
-  shipped pet that declares `eyes` or `sequences`, so it is the reference for
-  both.
+  shipped pet that declares `eyes` or `sequences`, and it declares every
+  sequence kind except `drag`, so it is the reference for both.
 - `classic.json` — the first mascot, retired when the built-in became the CRT
   terminal robot; same footprint as the export it was frozen from.
 - `robot.json` — that terminal robot, the built-in from 1.0 through 1.6, frozen

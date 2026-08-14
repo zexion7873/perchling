@@ -128,9 +128,9 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   pet's ink palette, which was fine while one enum described both. A pet is a
   manifest now: borrowing would mean a user's pet repainting the bubble and the
   chip. The hexes are unchanged from 1.6 on purpose — the panels look identical.
-- **Six behaviours died with the engine in 1.7.0. Three are back, one is
-  structurally unreachable on this pet, and two were not funded.** The hover
-  startle, error's tear, done's sparkle, idle's doze-and-peek, the
+- **Six behaviours died with the engine in 1.7.0. Four are back; the other two
+  are below what this pet's art can carry, which is not the same as unfunded.**
+  The hover startle, error's tear, done's sparkle, idle's doze-and-peek, the
   cursor-following gaze and the blink were all gated on `custom == nil` and all
   drew through the deleted overlays. Where each one now stands:
 
@@ -150,11 +150,26 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
     all five moods — and not one has a single-ink border. Buying gaze means
     narrowing the eyes, which reverses the round where they won by AREA. Do not
     re-derive this; it is not a matter of choosing a better box.
-  - **the hover startle** and **error's tear** — still gone, and simply not
-    funded. Both are a `sequences` entry away.
+  - **the hover startle** — back, as a `sequences.hover` burst, and it is the
+    exact inverse of `tap`: a poke compresses, a surprise recoils. Both earlier
+    attempts failed on shape (see the hover bullet below); a deformation is at
+    least two frames by construction, so neither objection reaches it.
+  - **error's tear** — **gone for the same reason as the gaze: it is below what
+    this art can carry.** A droplet is a 2x2 or 2x3 ellipse, 4-6 px, against an
+    18 px legibility floor — the ivory catchlight, the smallest mark on this
+    sprite that reads at all. The runway is five rows: the coral corridor under
+    the eye runs rows 29..33 before the muzzle starts at 35. The old tear fell
+    glass → casing → chin on a taller face that no longer exists. Do not
+    re-propose it as a `sequences` entry; the entry is not what is missing.
+
+  What `error` got instead is a slump — a squash it sinks into and comes back
+  out of. It separates from `idle`'s breath by DIRECTION rather than amplitude
+  (idle stretches up, error squashes down), so telling them apart does not
+  depend on noticing how far either moved.
 
   1.7.0's trade was priced and accepted, not an oversight. What paid it back is
-  `docs/design/2026-08-13-hippo-eyes-and-sequences-design.md`.
+  `docs/design/2026-08-13-hippo-eyes-and-sequences-design.md` and
+  `docs/design/2026-08-14-hover-and-error-design.md`.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -263,7 +278,10 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   its five-frame `jumping` row, so a one-frame version is the wrong shape.
   Synthesising one by opening the declared eye box was also built and removed —
   it keeps the pose's own lids and merely widens them, which is a squint, not a
-  start.
+  start. **The built-in declares one now**, and it sidesteps both objections
+  without answering either: a squash/stretch deformation is at least two frames
+  by construction, so "a one-frame version is the wrong shape" never applies,
+  and it never touches the eyes, so it cannot come out a squint.
 - **A sequence is either a reaction or a resting state, and the difference is
   when it stops.** `hover`, `drag` and `tap` arrive and get out of the way; the
   five mood names loop for as long as the pet is in that mood and restart when
