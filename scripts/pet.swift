@@ -1344,6 +1344,35 @@ struct TitleEntry {
     let hit: (sid: String, title: String)?
 }
 
+// Both halves of what survives across polls. The parse cache keys on a record's
+// path; the listing cache keys on the directory that holds them, because the
+// enumeration is its own cost and a separate question from the parse. Measured
+// on this machine 2026-08-14: 3 real records against 351 `deleted_` tombstones,
+// so a poll that skipped every parse still walked 355 directory entries.
+struct TitleCache {
+    var files: [String: TitleEntry] = [:]
+    var dirs: [String: DirListing] = [:]
+}
+
+// The `local_*.json` paths a directory held, and the directory mtime they were
+// read at. A directory's mtime moves when an entry is added, removed or
+// renamed and does NOT move when an existing file's contents are rewritten —
+// measured on APFS, and true of an atomic `write(to:atomically:)` as well as an
+// in-place one. So this may memoise WHICH files exist and must never memoise
+// what is in them: the per-file stamp check below is what catches a rename,
+// and `tools/run-session-harness.sh`'s "a rewritten record is re-read" is what
+// catches anyone who forgets that.
+struct DirListing {
+    let stamp: Date
+    let urls: [URL]
+}
+
+// Incremented once per directory actually enumerated. Nothing in the app reads
+// it; `tools/session-harness.swift` does, because the listing cache is a pure
+// performance change and no assertion over the RESULT can tell whether it is
+// working. Without this, deleting the cache leaves every test green.
+var titleDirScans = 0
+
 // The desktop app's own session records, which carry the title the user sees in
 // the sidebar. A second foreign file, and a second one perchling only reads:
 // the CLI registry beside it names the same session differently — `derived`
@@ -1361,11 +1390,24 @@ struct TitleEntry {
 // filters by name first: the records share a directory with hundreds of
 // `deleted_` tombstones, and asking for keys up front turns one readdir into a
 // stat per tombstone.
-func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: String] {
+func desktopTitles(_ dir: URL, cache: inout TitleCache) -> [String: String] {
     let fm = FileManager.default
     func kids(_ u: URL) -> [URL] {
-        (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
-                                     options: [.skipsHiddenFiles])) ?? []
+        titleDirScans += 1
+        return (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
+                                            options: [.skipsHiddenFiles])) ?? []
+    }
+    // The records' own directory is the only one worth memoising: `dir` and the
+    // account level below it hold one entry each, while this one holds hundreds
+    // of tombstones. Asking its mtime is one stat against that whole walk.
+    func records(_ org: URL) -> [URL] {
+        let stamp = (try? org.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? .distantPast
+        if let listed = cache.dirs[org.path], listed.stamp == stamp { return listed.urls }
+        let urls = kids(org).filter { $0.lastPathComponent.hasPrefix("local_")
+                                      && $0.pathExtension == "json" }
+        cache.dirs[org.path] = DirListing(stamp: stamp, urls: urls)
+        return urls
     }
     var out: [String: String] = [:]
     // Two records can claim the same cliSessionId — a stale directory left
@@ -1377,13 +1419,12 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
     var seen: Set<String> = []
     for acct in kids(dir) {
         for org in kids(acct) {
-            for url in kids(org) where url.lastPathComponent.hasPrefix("local_")
-                                    && url.pathExtension == "json" {
+            for url in records(org) {
                 let key = url.path
                 let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
                 seen.insert(key)
-                if let entry = cache[key], entry.stamp == stamp {
+                if let entry = cache.files[key], entry.stamp == stamp {
                     if let hit = entry.hit {
                         if let prev = stamps[hit.sid], prev > stamp { continue }
                         stamps[hit.sid] = stamp
@@ -1395,23 +1436,25 @@ func desktopTitles(_ dir: URL, cache: inout [String: TitleEntry]) -> [String: St
                       let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                       let sid = obj["cliSessionId"] as? String,
                       let raw = obj["title"] as? String else {
-                    cache[key] = TitleEntry(stamp: stamp, hit: nil)
+                    cache.files[key] = TitleEntry(stamp: stamp, hit: nil)
                     continue
                 }
                 let title = cleanName(raw)
                 guard !title.isEmpty else {
-                    cache[key] = TitleEntry(stamp: stamp, hit: nil)
+                    cache.files[key] = TitleEntry(stamp: stamp, hit: nil)
                     continue
                 }
-                cache[key] = TitleEntry(stamp: stamp, hit: (sid: sid, title: title))
+                cache.files[key] = TitleEntry(stamp: stamp, hit: (sid: sid, title: title))
                 if let prev = stamps[sid], prev > stamp { continue }
                 stamps[sid] = stamp
                 out[sid] = title
             }
         }
     }
-    // A record the app deleted must not keep answering from memory.
-    cache = cache.filter { seen.contains($0.key) }
+    // A record the app deleted must not keep answering from memory. The listing
+    // cache needs no prune: a removal moves the directory's mtime, so its entry
+    // is replaced on the very next poll rather than going stale.
+    cache.files = cache.files.filter { seen.contains($0.key) }
     return out
 }
 
@@ -1818,7 +1861,7 @@ final class Controller: NSObject, NSWindowDelegate {
     // than from `root`, for the same reason the registry is.
     let titlesURL: URL
     // Survives across polls on purpose: see TitleEntry.
-    var titleCache: [String: TitleEntry] = [:]
+    var titleCache = TitleCache()
     let sayURL: URL
     let petURL: URL
     var lastSayStamp: Date?

@@ -279,7 +279,7 @@ do {
     try! FileManager.default.createDirectory(at: nested2, withIntermediateDirectories: true)
     titleFile(nested2, "local_8.json", "s8", "second acct")
 
-    var cache: [String: TitleEntry] = [:]
+    var cache = TitleCache()
     let m = desktopTitles(root, cache: &cache)
     check("a titled session is read", m["s1"], "my session")
     check("a record with no title has no entry", m["s2"], nil)
@@ -307,11 +307,30 @@ do {
     // misses) — a count of 3 here would mean misses are silently dropped
     // and re-parsed on every poll forever, the exact bug this cache exists
     // to prevent.
-    check("the cache holds one entry per examined record, hit or miss", cache.count, 7)
+    check("the cache holds one entry per examined record, hit or miss", cache.files.count, 7)
     let again = desktopTitles(root, cache: &cache)
     check("a second call is stable", again["s1"], "my session")
 
+    // The listing cache is a pure performance change: no assertion over the
+    // RESULT can tell whether it is working, which is why `titleDirScans`
+    // exists. Two calls with nothing touched must enumerate the records'
+    // directory once, not twice. Proven able to fail by deleting the memo in
+    // `records()`, which takes this from 2 to 4.
+    //
+    // 4 scans on the first call: `root`, two account directories, and one org
+    // directory — acct2/org2 is memoised on the same call, so the second call
+    // re-walks only the two levels above the records.
+    titleDirScans = 0
+    _ = desktopTitles(root, cache: &cache)
+    let firstScans = titleDirScans
+    _ = desktopTitles(root, cache: &cache)
+    check("an unchanged records directory is not re-enumerated",
+          titleDirScans - firstScans, 3)
+
     titleFile(nested, "local_1.json", "s1", "renamed")
+    // A rewrite leaves the directory's mtime alone — measured on APFS, and true
+    // of `write(to:atomically:)` as well — so this is exactly the assertion a
+    // listing cache that also memoised CONTENTS would fail.
     check("a rewritten record is re-read", desktopTitles(root, cache: &cache)["s1"], "renamed")
 
     // local_1.json IS cached at this point (the rename above put it there
@@ -321,7 +340,7 @@ do {
     // coincidence.
     try! FileManager.default.removeItem(at: nested.appendingPathComponent("local_1.json"))
     let afterPrune = desktopTitles(root, cache: &cache)
-    check("the cache is pruned when a record goes away", cache.count, 6)
+    check("the cache is pruned when a record goes away", cache.files.count, 6)
     // The count could look right while a stale entry still answers queries —
     // that's the failure the prune exists to prevent, so assert the map
     // directly, not just its size.
@@ -347,7 +366,7 @@ do {
     titleFile(a1, "local_older.json", "dup", "older")
     Thread.sleep(forTimeInterval: 0.02)
     titleFile(b1, "local_newer.json", "dup", "newer")
-    var cacheA: [String: TitleEntry] = [:]
+    var cacheA = TitleCache()
     check("titles dup A: the newer wins", desktopTitles(d1, cache: &cacheA)["dup"], "newer")
 
     let d2 = tempDir("titles-dup-b")
@@ -358,11 +377,11 @@ do {
     titleFile(b2, "local_older.json", "dup", "older")
     Thread.sleep(forTimeInterval: 0.02)
     titleFile(a2, "local_newer.json", "dup", "newer")
-    var cacheB: [String: TitleEntry] = [:]
+    var cacheB = TitleCache()
     check("titles dup B: the newer wins", desktopTitles(d2, cache: &cacheB)["dup"], "newer")
 }
 
-var missingCache: [String: TitleEntry] = [:]
+var missingCache = TitleCache()
 check("a missing titles directory is an empty map",
       desktopTitles(URL(fileURLWithPath: "/nonexistent/perchling-titles"),
                     cache: &missingCache).count, 0)
