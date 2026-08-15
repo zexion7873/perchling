@@ -1197,17 +1197,19 @@ let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .wa
 let moodStatus: [Mood: String] = {
     // Idle earns a line now that the bubble stays up through it. Without one
     // the panel is a blank slab whenever nothing is happening, which is most
-    // of the time. It says spacing out rather than dozing because the idle
-    // face has open eyes: a manifest has one frame per mood, so there is no
-    // eyes-closed art to cut to, and "dozing" under two open eyes reads as a
-    // caption that lost its picture.
-    let en: [Mood: String] = [.idle: "unbothered…", .running: "thinking…",
+    // of the time. The line has to fit ANY pet, since users draw their own:
+    // it names no species, no body part and no expression, and it never says
+    // dozing — a manifest has one frame per mood, so there is no eyes-closed
+    // art to cut to, and "dozing" under two open eyes reads as a caption that
+    // lost its picture. It is also contented rather than listless: idle means
+    // "nothing needs you", not "I can't be bothered".
+    let en: [Mood: String] = [.idle: "chilling…", .running: "thinking…",
                               .waiting: "waiting for you…",
                               .done: "done!", .error: "oops, error"]
     let tables: [String: [Mood: String]] = [
-        "zh-Hant": [.idle: "懶得動…", .running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
-        "zh-Hans": [.idle: "懒得动…", .running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
-        "ja": [.idle: "やる気なし…", .running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
+        "zh-Hant": [.idle: "放空中…", .running: "思考中…", .waiting: "等你回應…", .done: "完成！", .error: "出錯了"],
+        "zh-Hans": [.idle: "闲着呢…", .running: "思考中…", .waiting: "等你回应…", .done: "完成！", .error: "出错了"],
+        "ja": [.idle: "まったり中…", .running: "考え中…", .waiting: "入力待ち…", .done: "完了！", .error: "エラー"],
     ]
     // Region-only Chinese tags carry no script subtag, so map them by hand
     // rather than letting a bare "zh" prefix decide the script.
