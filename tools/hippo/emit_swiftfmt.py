@@ -4,7 +4,6 @@
 string verbatim and examples/perchling.json is that same text."""
 import sys, os, json
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 from hippo import PAL
 import v6_deform as art          # v5_lighter plus the squash/stretch axis;

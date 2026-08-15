@@ -1392,11 +1392,14 @@ var titleDirScans = 0
 // stat per tombstone.
 func desktopTitles(_ dir: URL, cache: inout TitleCache) -> [String: String] {
     let fm = FileManager.default
-    func kids(_ u: URL) -> [URL] {
+    // nil is "could not read", which is NOT the same answer as an empty
+    // directory — see `records`, where conflating the two used to stick.
+    func scan(_ u: URL) -> [URL]? {
         titleDirScans += 1
-        return (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
-                                            options: [.skipsHiddenFiles])) ?? []
+        return try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
+                                           options: [.skipsHiddenFiles])
     }
+    func kids(_ u: URL) -> [URL] { scan(u) ?? [] }
     // The records' own directory is the only one worth memoising: `dir` and the
     // account level below it hold one entry each, while this one holds hundreds
     // of tombstones. Asking its mtime is one stat against that whole walk.
@@ -1404,8 +1407,16 @@ func desktopTitles(_ dir: URL, cache: inout TitleCache) -> [String: String] {
         let stamp = (try? org.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate ?? .distantPast
         if let listed = cache.dirs[org.path], listed.stamp == stamp { return listed.urls }
-        let urls = kids(org).filter { $0.lastPathComponent.hasPrefix("local_")
-                                      && $0.pathExtension == "json" }
+        // A read that FAILED must not be cached. Storing `[]` against the
+        // current mtime would answer "this directory has no records" until that
+        // mtime happened to move — and rewriting a file does not move it, so one
+        // unreadable poll would drop every desktop title until a record was
+        // created or deleted, or the process restarted. Enumerating is the only
+        // step that can fail here, so leaving the cache untouched means the next
+        // poll simply tries again.
+        guard let entries = scan(org) else { return cache.dirs[org.path]?.urls ?? [] }
+        let urls = entries.filter { $0.lastPathComponent.hasPrefix("local_")
+                                    && $0.pathExtension == "json" }
         cache.dirs[org.path] = DirListing(stamp: stamp, urls: urls)
         return urls
     }

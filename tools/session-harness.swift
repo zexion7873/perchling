@@ -317,9 +317,9 @@ do {
     // directory once, not twice. Proven able to fail by deleting the memo in
     // `records()`, which takes this from 2 to 4.
     //
-    // 4 scans on the first call: `root`, two account directories, and one org
-    // directory — acct2/org2 is memoised on the same call, so the second call
-    // re-walks only the two levels above the records.
+    // 5 scans on the first call: `root`, its two account directories, and both
+    // org directories. The second call re-walks only the three levels above the
+    // records, because both org listings are memoised — hence 3, not 5.
     titleDirScans = 0
     _ = desktopTitles(root, cache: &cache)
     let firstScans = titleDirScans
@@ -345,6 +345,38 @@ do {
     // that's the failure the prune exists to prevent, so assert the map
     // directly, not just its size.
     check("a pruned record no longer answers", afterPrune["s1"], nil)
+}
+
+do {
+    // A directory that cannot be READ is not a directory with no records, and
+    // the listing cache must not conflate them. It used to: `[]` was stored
+    // against the current mtime, and because rewriting a file does not move a
+    // directory's mtime, that entry answered "no records" until one was created
+    // or deleted — so a single unreadable poll dropped every desktop title for
+    // the rest of the process's life.
+    //
+    // Proven able to fail: against the version that cached the failure, the
+    // recovery check below comes back nil.
+    let root = tempDir("titles-unreadable")
+    let org = root.appendingPathComponent("acct").appendingPathComponent("org")
+    try! FileManager.default.createDirectory(at: org, withIntermediateDirectories: true)
+    titleFile(org, "local_1.json", "s1", "my session")
+
+    try? FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: org.path)
+    var cache = TitleCache()
+    let blind = desktopTitles(root, cache: &cache)["s1"]
+    // Running as root ignores the mode bits, which would leave the rest of this
+    // block asserting nothing. Say so rather than reporting a colour.
+    if blind != nil {
+        print("SKIP unreadable-directory checks — mode bits did not bite (root?)")
+    } else {
+        check("an unreadable records directory yields no title", blind, nil)
+        check("...and is not cached as an empty listing", cache.dirs.isEmpty, true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: org.path)
+        check("...so the next poll recovers once it is readable again",
+              desktopTitles(root, cache: &cache)["s1"], "my session")
+    }
+    try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: org.path)
 }
 
 do {
