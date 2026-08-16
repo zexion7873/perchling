@@ -443,23 +443,58 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   than deriving the tick from the list. Fixing one row's rule without the other
   produces two checkmarks.
 - **Not every wait announces itself, and not every announcement reaches the
-  plugin.** `waiting` has two triggers: the `Notification` event, whose matcher
-  is a regex over the notification type (`permission_prompt` also catches
-  `worker_permission_prompt`), and a `PreToolUse` matcher on the tools that
-  block on a human — asking a question and presenting a plan. **In the Claude
-  Code desktop app only the second one ever fires.** The app posts a macOS
-  banner with a `permission-<uuid>` request id for every blocking prompt
-  whatever the tool, and an `idle-<session>` one for the waiting-on-you nudge;
-  across nine such banners the `Notification` hook wrote nothing, not even for
-  a permission window held open 220 seconds. `waiting` tracked the `PreToolUse`
-  tool list exactly. The terminal CLI does dispatch the event. The user-facing
-  banner and the plugin-facing hook event are separate mechanisms — seeing the
-  banner says nothing about the hook, which is the easy way to get this
-  backwards. `PreToolUse` cannot cover the gap either: it runs before the
-  permission check, so it cannot tell a call that will prompt from one that
-  will just run. A new blocking affordance needs its own trigger; nothing
-  generic covers it. Nothing has to clear it: the next tool batch writes
-  `running` on its own.
+  plugin.** `waiting` has three triggers, and they cover different failures
+  rather than duplicating each other. `PermissionRequest` fires whenever a tool
+  call needs a permission decision; it takes no matcher because the point is
+  that it does not depend on knowing which tools block. The `PreToolUse` matcher
+  covers the affordances that block on a human WITHOUT entering the permission
+  flow at all — asking a question, presenting a plan — which no permission event
+  can see. The `Notification` event matches a regex over the notification type
+  (`permission_prompt` also catches `worker_permission_prompt`).
+  **In the Claude Code desktop app the third one never fires, and the reason is
+  structural rather than a bug.** The app launches the CLI with
+  `--permission-mode auto --permission-prompt-tool stdio`, so a decision leaves
+  as a control-protocol `can_use_tool` request and the app draws its own dialog;
+  Claude Code's own notification path is never reached. Measured with one prompt
+  and a forced `permissions.ask` rule, varying only the host:
+
+  | host / path | fires at the permission decision |
+  |---|---|
+  | interactive terminal CLI | `PermissionRequest`, then `Notification` |
+  | `--permission-prompt-tool stdio` (what the desktop app runs) | `PermissionRequest` only |
+  | headless `-p` | neither, even though the decision was genuinely required |
+
+  So **headless is not a proxy for either host** — a probe run under `-p` that
+  sees nothing has measured nothing. The user-facing macOS banner and the
+  plugin-facing hook event are separate mechanisms too; seeing the banner says
+  nothing about the hook, which is the easy way to get this backwards.
+  `PreToolUse` still cannot cover the permission gap — it runs before the
+  permission check, so it cannot tell a call that will prompt from one that will
+  just run — and that is exactly why `PermissionRequest` is its own arm instead
+  of a wider `PreToolUse` matcher. It does not fire when a rule or the
+  classifier already allowed the call, so it cannot manufacture a false
+  `waiting`, and a false one would self-heal anyway: nothing has to clear
+  `waiting`, the next tool batch writes `running` on its own.
+- **Adding an event name to `hooks/hooks.json` is a compatibility decision, and
+  getting it wrong is silent and total.** An event key the running CLI does not
+  recognise voids EVERY hook in the file, not just its own entry — so the pet
+  never launches at all, no `SessionStart`, no error anywhere the user can see.
+  Measured one variable at a time with throwaway plugins and a
+  `UserPromptSubmit` canary: `UserPromptSubmit` alone fires, `PermissionRequest`
+  + `UserPromptSubmit` fires, and adding one bogus key to either kills both.
+  **A `--settings` file does the exact opposite and ignores unknown keys**, so a
+  probe run with `claude --settings` proves nothing about this file; they are
+  separate validators with opposite failure modes, and the permissive one is the
+  easy one to reach for. The published docs describe the permissive behaviour
+  for both, and are wrong about plugins. `bash tools/run-hooks-check.sh` is the
+  gate; it has to copy `plugin.json` and `hooks/` to a scratch directory first,
+  because `claude plugin validate` pointed at this repo finds
+  `.claude-plugin/marketplace.json` and validates that instead, never reaching
+  hooks.json. Before adding an event, establish how far back it is accepted by
+  running an old CLI's own `plugin validate` — the tarballs are on npm and that
+  subcommand needs no auth. `PermissionRequest` was cleared this way back to
+  2.1.109, over a hundred releases; 2.0.x demands auth before validating and was
+  not measured.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
@@ -467,8 +502,9 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   than to EOF.
 - **Only `cmd_up` launches the pet, and of the hook events only `SessionStart`
   reaches it.** Everything else — `UserPromptSubmit`, `PostToolBatch`, `Stop`,
-  `StopFailure`, `PreToolUse`, `Notification` — runs `state.sh`, which writes
-  the global state file and the session refcount and starts nothing. So a pet
+  `StopFailure`, `PreToolUse`, `PermissionRequest`, `Notification` — runs
+  `state.sh`, which writes the global state file and the session refcount and
+  starts nothing. So a pet
   killed mid-session by `pet.sh stop`, by the menu's Quit, or by a crash does
   NOT come back on the next prompt: it comes back when a new session starts, or
   from `pet.sh up`, `pet.sh enable` or `pet.sh wake`, each of which calls
@@ -643,6 +679,7 @@ bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
+bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-deform-checks.sh    # the built-in's generator still draws the shipped pet
 python3 tools/hippo/emit_swiftfmt.py           # regenerate BUILTIN_MANIFEST's text
 python3 tools/hippo/sheet_deform.py /tmp/s.png # contact sheet of the deformation range
@@ -656,7 +693,10 @@ Three layers have harnesses now — the session/tray layer
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
 runtime-home block, because `PetView` lives below that line). Nothing else here
-has a test suite.
+has a test suite. `tools/run-hooks-check.sh` is not a fourth harness — it tests
+no Swift at all, it asks the installed CLI whether `hooks/hooks.json` is
+loadable — but it belongs to the same release gate, because the failure it
+catches takes the whole plugin down without printing anything.
 "Verified" still means: it compiles, the examples still validate, `--export`
 still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it
