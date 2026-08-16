@@ -10,6 +10,7 @@ EXAMPLES="$(cd "$(dirname "$0")/.." && pwd)/examples"
 BIN="$ROOT/bin/perchling"
 SESSIONS="$ROOT/sessions"
 OWNERS="$ROOT/owners"
+BUILDLOG="$ROOT/build.log"
 
 payload=""
 
@@ -32,18 +33,52 @@ session_owner() {
   ps -Ao pid=,ppid= | awk -v p=$$ '{pp[$1]=$2} END {while (pp[p] && pp[p] != 1) p = pp[p]; print p}'
 }
 
-supported() { [ "$(uname)" = Darwin ] && command -v swiftc >/dev/null 2>&1; }
+macos() { [ "$(uname)" = Darwin ]; }
+# Run the compiler rather than locating it: /usr/bin/swiftc is a stub macOS
+# ships whether or not a toolchain is installed, so `command -v` succeeds on
+# exactly the machine this guard exists to reject. The probe costs an exec, so
+# only the build path pays it — a session start on a machine whose toolchain
+# went missing must still launch a binary that is already built. Its output is
+# held and re-emitted only as a reason: an unaccepted Xcode licence fails this
+# probe too and only the compiler's own words tell that apart from an absent
+# toolchain, but `--version` also writes an unterminated driver banner to
+# stderr when it SUCCEEDS — and this function's stderr is the build log, so
+# passing it through fuses `swift-driver version: …` onto the first diagnostic.
+supported() {
+  macos || return 1
+  probe=$(swiftc --version 2>&1 >/dev/null) && return 0
+  [ -n "$probe" ] && printf '%s\n' "$probe" >&2
+  return 1
+}
 running() { pgrep -f "$BIN" >/dev/null 2>&1; }
 
-cmd_build() {
-  supported || { echo "perchling needs macOS + Xcode Command Line Tools (swiftc)" >&2; return 1; }
+compile() {
+  supported || { echo "perchling needs macOS with a working Swift toolchain (xcode-select --install)" >&2; return 1; }
   mkdir -p "$ROOT/bin"
-  swiftc -O -o "$BIN" "$SRC" || return 1
+  swiftc -O -o "$BIN" "$SRC"
+}
+
+# The log belongs to the build, not to whoever called it: every build writes
+# the current reason or removes a superseded one, so status can never report a
+# failure a later build already answered. A caller-side redirect cannot do
+# this — it holds the file open, so a `rm` inside would unlink the very inode
+# the reason is still being written to.
+cmd_build() {
+  mkdir -p "$ROOT"
+  compile 2>"$BUILDLOG"
+  rc=$?
+  # Whatever the compiler said reaches a human either way — warnings on a build
+  # that SUCCEEDED are most of the value of running this by hand, and capturing
+  # them to a file that is about to be removed would silently eat them. Only a
+  # failure stays on disk, because that file is what status reports.
+  cat "$BUILDLOG" >&2
+  [ "$rc" -eq 0 ] || return "$rc"
+  rm -f "$BUILDLOG"
   echo "built: $BIN"
 }
 
 cmd_up() {
-  supported || exit 0
+  macos || exit 0
   [ -e "$ROOT/disabled" ] && exit 0
   mkdir -p "$SESSIONS"
   sid="${1:-}"
@@ -91,7 +126,20 @@ cmd_up() {
   # (Re)build when missing or when a plugin update shipped newer source.
   if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
     pkill -f "$BIN" 2>/dev/null
+    # Silent here is fine — cmd_build has already put the reason in $BUILDLOG,
+    # where `pet.sh status` reads it. Discarding it was what made a failed
+    # build indistinguishable from a clean install.
     cmd_build >/dev/null 2>&1 || exit 0
+  else
+    # A binary that is present and current is proof the recorded reason no
+    # longer applies to what the pet runs, and only a build that HAS to happen
+    # can retract one. Without this, a failure recorded once outlives whatever
+    # caused it: a dev checkout's `pet.sh build` fails against its own $SRC
+    # while sharing this runtime home, or a transient breakage is fixed in a
+    # way that never moves $SRC's mtime, and every later session start skips
+    # the rebuild — so status keeps naming a build nobody can retract, beside a
+    # binary it calls `(built)`.
+    rm -f "$BUILDLOG"
   fi
   running || PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
   exit 0
@@ -109,6 +157,21 @@ cmd_down() {
 
 cmd_status() {
   echo "binary:   $BIN $([ -x "$BIN" ] && echo '(built)' || echo '(not built)')"
+  # Finding the reason is subtraction, not a pattern. Neither end of the file
+  # works — swiftc prints the message first and its source excerpt after, so a
+  # tail reports `951 |  }` — and no column anchor works either: the excerpt's
+  # line numbers are right-aligned to the width of the WHOLE FILE, so in a
+  # 4244-line source every quoted line from 1000 up also starts at column 0,
+  # and eight of pet.swift's own lines up there contain the text `error:`.
+  # What every excerpt line does carry is the ` | ` gutter. Drop those and what
+  # remains is messages; the fallbacks cover a log that is all excerpt, and a
+  # failure that never reached the compiler and so has no `error:` at all.
+  if [ -s "$BUILDLOG" ]; then
+    msg=$(grep -vE '^[[:space:]]*[0-9]*[[:space:]]*\|' "$BUILDLOG") || msg=$(cat "$BUILDLOG")
+    reason=$(printf '%s\n' "$msg" | grep -m1 'error:') || reason=$(printf '%s\n' "$msg" | head -1)
+    echo "build:    failed — $reason"
+    echo "          full error: $BUILDLOG"
+  fi
   echo "process:  $(running && echo running || echo stopped)"
   echo "state:    $(cat "$ROOT/state" 2>/dev/null || echo '-')"
   echo "sessions: $(ls -1 "$SESSIONS" 2>/dev/null | wc -l | tr -d ' ')"
