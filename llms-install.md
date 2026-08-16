@@ -9,11 +9,21 @@ steps to install it on the user's machine.
 Perchling is macOS-only and compiles itself from source on first launch.
 
 ```bash
-[ "$(uname)" = Darwin ] && command -v swiftc >/dev/null && echo ok
+[ "$(uname)" = Darwin ] || echo "NOT macOS"
+swiftc --version
 ```
 
+Run the compiler, don't just locate it: `/usr/bin/swiftc` is a stub that ships
+with macOS, so `command -v swiftc` succeeds on the very machine this step
+exists to reject. Read its output rather than only its exit status — a
+toolchain that is absent and one whose licence has not been accepted both fail
+here, and only the message tells them apart.
+
 - Not macOS → stop and tell the user perchling is macOS-only. Do not install.
-- macOS without `swiftc` → have the user run `xcode-select --install`, then retry.
+- `xcrun: error: unable to find utility` → have the user run
+  `xcode-select --install`, then retry.
+- A licence complaint → have the user run `sudo xcodebuild -license`. Do not
+  run it for them; it needs their admin password.
 
 ## 2. Install
 
@@ -36,7 +46,14 @@ claude plugin list | grep -i perchling
 
 Nothing to configure: the pet builds itself (a few seconds, one-time) and
 appears when the user's next Claude Code session starts. After that first
-session, the build succeeded if `~/.claude/perchling/bin/perchling` exists.
+session, the build succeeded if
+`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling"` exists.
+
+- Missing there → run `pet.sh status` (resolve the script as in Control,
+  below). `sessions: 0` means no hook has run yet. A `build: failed` line
+  names the reason and points at the full compiler output.
+- No `build:` line and still no binary → nothing has tried to build yet. Run
+  `pet.sh build` directly; it is the only path that reports on its own stdout.
 
 ## 4. Launch it now (recommended)
 
@@ -54,16 +71,34 @@ after which real Claude Code sessions keep the pet alive via their own hooks.
 
 ## Control & uninstall
 
-From the installed plugin directory:
+The control script lives inside the installed plugin and its path carries a
+version number, so resolve it once:
 
 ```bash
-scripts/pet.sh status   # binary / process / state / session count
-scripts/pet.sh stop     # remove refcounts and kill the pet
-scripts/pet.sh build    # force rebuild
-scripts/pet.sh disable  # keep it off across sessions
-scripts/pet.sh enable   # bring it back
-scripts/pet.sh wake     # un-tuck a tucked pet
+pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | head -1)
 ```
 
-Uninstall: `claude plugin uninstall perchling@perchling`, then
-`rm -rf ~/.claude/perchling` to remove the binary and state.
+Then, in that same shell, run the one the user asked for — not the whole
+block; `enable` and `wake` start a real pet.
+
+```bash
+bash "$pet" status   # binary / process / state / session count
+bash "$pet" stop     # remove refcounts and kill the pet
+bash "$pet" build    # force rebuild
+bash "$pet" disable  # keep it off across sessions
+bash "$pet" enable   # bring it back
+bash "$pet" wake     # un-tuck a tucked pet
+```
+
+Uninstall: `claude plugin uninstall perchling@perchling`. That leaves the
+runtime home behind — binary, state, and the user's pet library:
+
+```bash
+home="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
+ls -l "$home/pets" "$home/pet.json"
+```
+
+Copies of the shipped examples are replaceable; anything else is a pet the
+user drew, and the draw-pet skill *moves* one in rather than copying it, so
+it may be the only copy. `pet.json` counts too — it can be a regular file
+rather than a symlink. Ask, then remove `"$home"`.
