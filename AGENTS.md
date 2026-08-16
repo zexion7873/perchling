@@ -500,6 +500,60 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
+- **Whether the machine can build is a different question from whether the pet
+  can run, and four separate ways of conflating them are all silent.** Nothing
+  here has a harness, and every one of these was found by measurement after
+  looking correct.
+
+  `command -v swiftc` is not a capability check. `/usr/bin/swiftc` is an xcrun
+  stub macOS ships whether or not a toolchain is installed — 118KB, root-owned,
+  78 hard links, one per `/usr/bin` dev tool — so it succeeds on exactly the
+  machine the guard exists to reject. Hence `macos()` and `supported()` are
+  two predicates: the probe costs ~117ms per exec, and `cmd_up` runs at every
+  `SessionStart`, so gating the LAUNCH on it both wastes that on every session
+  and refuses to start an already-built binary on a machine whose Xcode later
+  vanished. `cmd_up` takes the cheap one; only the build path pays for the real
+  one.
+
+  The probe's output is held, not passed through. An unaccepted Xcode licence
+  fails `swiftc --version` exactly like an absent toolchain, and only the
+  compiler's own words tell them apart — but `--version` also writes an
+  unterminated `swift-driver version: … ` banner to stderr when it SUCCEEDS,
+  and `supported()`'s stderr is the build log, so passing it through fuses the
+  banner onto the first diagnostic and into the status headline.
+
+  **`$ROOT/build.log` belongs to the build, not to whoever called it.** A
+  caller-side redirect cannot own it: it holds the file open, so a `rm` inside
+  `cmd_build` would unlink the very inode the reason is still being written to
+  and the log would vanish on failure. `cmd_build` therefore opens it, prints
+  it either way — a successful build's WARNINGS are most of the value of
+  running `pet.sh build` by hand, and capturing them to a file about to be
+  removed eats them silently — and removes it only on success.
+
+  That is not enough on its own, because `cmd_up` builds only when the binary
+  is missing or stale, so on a healthy install no session start runs a build at
+  all and nothing retracts a reason. A dev checkout's `pet.sh build` failing
+  against its own `$SRC` while sharing one runtime home, or a transient
+  breakage fixed in a way that never moves `$SRC`'s mtime, would otherwise
+  leave `status` naming a build nobody can retract beside a binary it calls
+  `(built)`. So `cmd_up` removes the log on the branch where it does NOT
+  build: every other line of `status` reports current state, and this one must
+  too.
+
+  **Finding the reason in a swiftc log is subtraction, not a pattern.** The
+  message comes first and its source excerpt after, so `tail -1` reports
+  `951 |  }`. An unanchored match for `error:` finds the excerpt's own caret
+  line, or one of the nine lines in `pet.swift` that contain that text — the
+  `moodRank`/`moodTTL` tables and the mood-wording table. And a column anchor
+  does not save it: swiftc right-aligns each excerpt's line number to the width
+  of the WHOLE FILE, so at 4244 lines every quoted line from 1000 up starts at
+  column 0 too, and eight of those nine sit up there. What every excerpt line
+  does carry is the ` | ` gutter, so the headline drops those and takes the
+  first `error:` among what remains.
+
+  A hand-written fake `swiftc` is why two of these shipped green: the fixture
+  put its error on the last line, which the real compiler never does. Fake the
+  interface, never the output format — capture that from one real run.
 - **Only `cmd_up` launches the pet, and of the hook events only `SessionStart`
   reaches it.** Everything else — `UserPromptSubmit`, `PostToolBatch`, `Stop`,
   `StopFailure`, `PreToolUse`, `PermissionRequest`, `Notification` — runs
