@@ -236,10 +236,12 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Four worked examples
+copied into your library the first time you pick one. Twelve worked examples
 ship in [`examples/`](examples/): a leafy slime, the first mascot (`classic`),
-the CRT terminal robot that was the built-in through 1.6 (`robot`), and the
-built-in creature itself.
+the CRT terminal robot that was the built-in through 1.6 (`robot`), the
+built-in creature itself, and eight animals that animate every mood and every
+reaction, `drag` included — `husky`, `corgi`, `otter` and `chinchilla` on land,
+`whale`, `shark`, `sea-lion` and `seahorse` in the water.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:

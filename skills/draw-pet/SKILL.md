@@ -199,7 +199,7 @@ Rules the loader enforces:
    then iterate on feedback — recolor, resize, fix the face — by editing a
    draft and re-installing it the same way.
 
-Three worked examples ship with this plugin, under `$CLAUDE_PLUGIN_ROOT/examples/`
+Twelve worked examples ship with this plugin, under `$CLAUDE_PLUGIN_ROOT/examples/`
 — read them by that path, not a bare relative one, since the skill runs with
 the user's project as the working directory:
 
@@ -213,6 +213,17 @@ the user's project as the working directory:
 - `robot.json` — that terminal robot, the built-in from 1.0 through 1.6, frozen
   when the hippo replaced it. The engine that drew it is deleted, so this file
   is the only record of it.
+- `husky.json`, `corgi.json`, `otter.json`, `chinchilla.json`, `whale.json`,
+  `shark.json`, `sea-lion.json`, `seahorse.json` — eight animals at scale 1,
+  each declaring all eight sequences off five frames apiece. They are the only
+  shipped pets with a `drag` sequence, so they are the reference for `mirror`,
+  and the only ones that animate all five moods — which is why none declares
+  `eyes`: a mood loop suppresses the gaze and the blink, so there would be
+  nothing for the block to buy. The four land animals stand upright and are
+  sized off their height (94–110 wide); the four sea animals are long and
+  horizontal, so width hits the 128 ceiling first and they are shorter instead
+  — which is what a pet looks like when the canvas budget binds on the other
+  axis.
 
 ## Revert
 
