@@ -179,7 +179,24 @@ launch_once() {
 compile() {
   supported || { echo "perchling needs macOS with a working Swift toolchain (xcode-select --install)" >&2; return 1; }
   mkdir -p "$ROOT/bin"
-  swiftc -O -o "$BIN" "$SRC"
+  # Staged and renamed, like every other file this script publishes. Pointing
+  # swiftc straight at $BIN makes a failed or interrupted compile leave a
+  # truncated 0755 file with an mtime newer than $SRC — which is precisely what
+  # the rebuild gate reads as "current", so nothing ever rebuilds it, `status`
+  # calls it `(built)`, and the install is wedged with no way back short of
+  # deleting the file by hand.
+  #
+  # The staging name carries $$ instead of taking a lock. Concurrent session
+  # starts after a plugin update then each compile their own copy of the same
+  # source and the last rename wins, which is harmless because they are the
+  # same binary; a lock would be a second wedgeable mutex bought to save CPU in
+  # a window that opens once per release.
+  stage="$ROOT/bin/.perchling.$$"
+  swiftc -O -o "$stage" "$SRC" || { rm -f "$stage"; return 1; }
+  # rename() over a RUNNING executable succeeds where a write returns ETXTBSY:
+  # the live process keeps the old inode. That is what lets cmd_up build first
+  # and retire the old pet only once there is something better to replace it.
+  mv -f "$stage" "$BIN"
 }
 
 # The log belongs to the build, not to whoever called it: every build writes
@@ -259,14 +276,27 @@ cmd_up() {
   if [ -f "$BUILTIN_SRC" ] && ! cmp -s "$BUILTIN_SRC" "$BUILTIN"; then
     cp "$BUILTIN_SRC" "$ROOT/.builtin.$$" 2>/dev/null && mv -f "$ROOT/.builtin.$$" "$BUILTIN" 2>/dev/null
   fi
-  # (Re)build when missing or when a plugin update shipped newer source.
-  if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
-    pkill -x -f "$BIN_RE" 2>/dev/null
+  # (Re)build when missing or when a plugin update shipped newer source —
+  # unless this exact source has already been tried and failed, which a
+  # $BUILDLOG newer than $SRC records. Without that arm, source that compiles
+  # for the author and not on this machine (an SDK bump, a Swift bump) burns a
+  # full `swiftc -O` of the whole app inside the 30s hook timeout on EVERY
+  # session start, forever, and still ends with no pet. Nothing else on disk
+  # can stop that loop: the gate below reads only the exec bit and an mtime,
+  # and neither of them moves when a build fails.
+  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && [ ! "$BUILDLOG" -nt "$SRC" ]; then
     # Silent here is fine — cmd_build has already put the reason in $BUILDLOG,
     # where `pet.sh status` reads it. Discarding it was what made a failed
     # build indistinguishable from a clean install.
-    cmd_build >/dev/null 2>&1 || exit 0
-  else
+    if cmd_build >/dev/null 2>&1; then
+      # Only a build that SUCCEEDED retires the running pet. Killing first
+      # means a failed build takes the pet off the screen as well as leaving it
+      # unbuilt — and cmd_build's non-zero exit returns before launch_once is
+      # ever reached, so nothing puts one back. compile() stages and renames,
+      # so there is no ETXTBSY reason to clear the path first either.
+      pkill -x -f "$BIN_RE" 2>/dev/null
+    fi
+  elif [ -x "$BIN" ] && [ ! "$SRC" -nt "$BIN" ]; then
     # A binary that is present and current is proof the recorded reason no
     # longer applies to what the pet runs, and only a build that HAS to happen
     # can retract one. Without this, a failure recorded once outlives whatever
@@ -277,6 +307,13 @@ cmd_up() {
     # binary it calls `(built)`.
     rm -f "$BUILDLOG"
   fi
+  # A build that failed leaves whatever was there before, and an older binary
+  # still draws a pet — so it is launched rather than withheld, and only having
+  # nothing to launch gives up. The test has to happen HERE rather than inside
+  # launch_once: that function spins up to five seconds waiting for `running()`
+  # to see a process, holding its lock the whole time, and a $BIN that does not
+  # exist can never produce one.
+  [ -x "$BIN" ] || exit 0
   # Backgrounded so a SessionStart hook still returns immediately: launch_once
   # blocks until the pet is visible, and the hook must not wait on that.
   launch_once &

@@ -688,6 +688,41 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   A hand-written fake `swiftc` is why two of these shipped green: the fixture
   put its error on the last line, which the real compiler never does. Fake the
   interface, never the output format — capture that from one real run.
+
+  **A failed build gets three things right, and each of them is a separate
+  branch.** It must not corrupt the binary: `compile()` writes `swiftc`'s
+  output to a `$$`-suffixed staging name in `bin/` and renames on zero exit,
+  because a compile killed partway through the old in-place write left a
+  truncated 0755 file with an mtime newer than `$SRC` — exactly what the
+  rebuild gate reads as current, so nothing rebuilt it, `status` called it
+  `(built)`, and the install was wedged with no path back. A `$$` name rather
+  than a lock: concurrent session starts after a plugin update then build their
+  own copies of the same source and the last rename wins, which is harmless,
+  where a lock is a second wedgeable mutex bought to save CPU in a window that
+  opens once per release. It must not empty the desktop: the `pkill` runs only
+  on the branch where `cmd_build` SUCCEEDED, since a failure returns before
+  `launch_once` is ever reached and nothing puts a pet back — and `rename()`
+  over a running executable succeeds where a write returns `ETXTBSY`, so
+  clearing the path first buys nothing anyway. And it must not repeat: a
+  `$BUILDLOG` newer than `$SRC` means this exact source has already been tried,
+  and without that test a source that compiles for the author and not on this
+  machine burns a full `swiftc -O` inside the 30s hook timeout on every session
+  start, forever, and still ends with no pet. That third test is why the
+  log-retracting branch is now an explicit `elif` on "present AND current"
+  rather than a bare `else`: the `else` of the widened condition also catches
+  "needs a build, already failed", and deleting the reason there is deleting
+  the only thing that stops the loop.
+
+  `tools/run-build-gate.sh` pins the first, second and fourth of those, and
+  takes `PERCHLING_PET_SH` so it can be shown to FAIL: against the pre-fix
+  script it goes red on `pet-survives-failed-build` and `no-rebuild-loop`.
+  Only those two discriminate — `binary-untouched`, `reason-recorded` and
+  `no-staging-debris` pass against that mutant too, because `swiftc` writes no
+  output at all on a parse error, and they are negative controls rather than
+  coverage. Its mtimes are set with `touch -t`, never by writing the file: the
+  first version let `cc`, `touch` and `swiftc` land inside the same second and
+  `-nt` then answered differently run to run, which produced three verdicts
+  from three runs and none of them about the code.
 - **Only `cmd_up` launches the pet, and of the hook events only `SessionStart`
   reaches it.** Everything else — `UserPromptSubmit`, `PostToolBatch`, `Stop`,
   `StopFailure`, `PreToolUse`, `PermissionRequest`, `Notification` — runs
@@ -879,31 +914,33 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
+bash tools/run-session-harness.sh  # 70 assertions over the session/tray layer
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
+bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Five layers have harnesses — the session/tray layer
+Six layers have harnesses — the session/tray layer
 (`tools/run-session-harness.sh`), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
 runtime-home block, because `PetView` lives below that line) and `cmd_up`'s
 launch path (`tools/run-launch-race.sh`, which is shell only and compiles a C
-stub rather than touching `pet.swift`) and the shipped art
-(`tools/run-art-checks.sh`, which cuts where the session harness cuts so it can
-reach `builtinPet`).
+stub rather than touching `pet.swift`) and what a failed build may do to a
+working install (`tools/run-build-gate.sh`, shell only for the same reason, and
+using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
+which cuts where the session harness cuts so it can reach `builtinPet`).
 
-The last two take an override — `PERCHLING_PET_SH` and `PERCHLING_PET_SWIFT` —
+Three of them take an override — `PERCHLING_PET_SH` and `PERCHLING_PET_SWIFT` —
 so each can be pointed at a mutant carrying exactly the defect it is named after
-and shown to FAIL. That is the only reason to believe either, and the launch one
-has now been wrong twice in a way its own green lines could not show. Its first
+and shown to FAIL. That is the only reason to believe any of them, and the
+launch one has now been wrong twice in a way its own green lines could not show. Its first
 version asserted `pgrep -x -f` as its own literal text and passed against the
 broken script it was written to catch. The replacement went the same way for a
 subtler reason: it reconstructs `running()` by `sed`-ing one line out of the
