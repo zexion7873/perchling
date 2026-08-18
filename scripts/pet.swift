@@ -1187,7 +1187,13 @@ final class PetView: NSView {
         // Without this, AppKit's automatic validation re-enables the rows we
         // deliberately disabled for unparseable manifests.
         pets.autoenablesItems = false
-        let builtIn = NSMenuItem(title: "Built-in perchling",
+        // Named rather than labelled "Built-in perchling": whichever shipped pet
+        // is the built-in is filtered out of the list below, so without this its
+        // name appears nowhere in the menu and the row is a mystery. Same suffix
+        // shape as `(shipped)` one group down. When the art fails to load this
+        // reads `placeholder  (built-in)`, which is the most useful thing it
+        // could say at that moment.
+        let builtIn = NSMenuItem(title: "\(builtinPet.name)  (built-in)",
                                  action: #selector(pickBuiltInAction), keyEquivalent: "")
         builtIn.target = self
         builtIn.state = petIsOnScreen(nil, showingCustom: showingCustom) ? .on : .off

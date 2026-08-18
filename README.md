@@ -252,7 +252,7 @@ mkdir -p ~/.claude/perchling/pets
 ```
 
 Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
-live — which is exactly what the menu's **Built-in perchling** row does.
+live — which is exactly what the built-in row in the Pets menu does.
 
 ---
 
