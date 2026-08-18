@@ -332,7 +332,20 @@ quoting a real session throughout.
 /plugin uninstall perchling@perchling
 ```
 
-Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
+That leaves `~/.claude/perchling` behind — the binary, its state, and **your pet
+library**. Look before you remove it:
+
+```bash
+ls -l ~/.claude/perchling/pets ~/.claude/perchling/pet.json
+```
+
+The shipped pets in there are copies, and they come back the moment you pick one
+again. Anything else is a pet you drew — and the `draw-pet` skill *moves* a
+draft into the library rather than copying it, so that file can be the only one
+in existence. `pet.json` counts too: it is usually a symlink, but it can be a
+regular file holding a pet of its own.
+
+Once you have checked, `rm -rf ~/.claude/perchling` removes the rest.
 
 ---
 
