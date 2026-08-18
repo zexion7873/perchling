@@ -10,7 +10,7 @@ needs you.**
 
 [![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
-[![Binary](https://img.shields.io/badge/binary-under_1MB-brightgreen?style=flat)](#-how-it-works)
+[![Binary](https://img.shields.io/badge/binary-under_500KB-brightgreen?style=flat)](#-how-it-works)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 [![GitHub stars](https://img.shields.io/github/stars/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/commits)
@@ -236,11 +236,12 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Five ship in
+copied into your library the first time you pick one. Six ship in
 [`examples/`](examples/), all of them animals that animate every mood and every
-reaction, `drag` included — `otter` and `chinchilla` on land, `whale`, `shark`
-and `sea-lion` in the water. The husky is not among them because it is the
-built-in; `--export` is how you get its manifest.
+reaction, `drag` included — `husky`, `otter` and `chinchilla` on land, `whale`,
+`shark` and `sea-lion` in the water. Only five have a row: whichever one is
+currently the built-in is the creature you already have, so it is not offered
+twice.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:
@@ -251,7 +252,7 @@ mkdir -p ~/.claude/perchling/pets
 ```
 
 Delete `~/.claude/perchling/pet.json` and the built-in creature comes back,
-live — which is exactly what the menu's **Built-in perchling** row does.
+live — which is exactly what the built-in row in the Pets menu does.
 
 ---
 
@@ -331,7 +332,20 @@ quoting a real session throughout.
 /plugin uninstall perchling@perchling
 ```
 
-Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
+That leaves `~/.claude/perchling` behind — the binary, its state, and **your pet
+library**. Look before you remove it:
+
+```bash
+ls -l ~/.claude/perchling/pets ~/.claude/perchling/pet.json
+```
+
+The shipped pets in there are copies, and they come back the moment you pick one
+again. Anything else is a pet you drew — and the `draw-pet` skill *moves* a
+draft into the library rather than copying it, so that file can be the only one
+in existence. `pet.json` counts too: it is usually a symlink, but it can be a
+regular file holding a pet of its own.
+
+Once you have checked, `rm -rf ~/.claude/perchling` removes the rest.
 
 ---
 
@@ -340,7 +354,7 @@ Then `rm -rf ~/.claude/perchling` to remove the binary and its state.
 Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
 
-The built-in creature is a manifest, carried in the binary and parsed by the
+The built-in creature is a manifest shipped beside the binary, parsed by the
 same loader a pet you draw goes through. `--export` hands that text back
 verbatim, so the pet you see is exactly the file you can start editing.
 

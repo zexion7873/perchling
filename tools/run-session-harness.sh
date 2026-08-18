@@ -23,6 +23,13 @@ head -n $((cut - 1)) "$src" > "$work/gen.swift"
 # The one global a still-included type reaches for: the Controller's pet menu
 # reads examplesRoot, whose definition lives below the cut.
 echo 'let examplesRoot: URL? = nil' >> "$work/gen.swift"
+# Two more globals the still-included code reaches for. They moved BELOW this
+# cut when the built-in's art left the binary — `builtinPet` needs the runtime
+# home to know which file to load — so the harness supplies the no-home answer,
+# which is the embedded placeholder.
+echo 'let builtinLoaded = builtinFrom(nil)' >> "$work/gen.swift"
+echo 'let builtinText = builtinLoaded.text' >> "$work/gen.swift"
+echo 'let builtinPet = builtinLoaded.pet' >> "$work/gen.swift"
 cat "$here/session-harness.swift" >> "$work/gen.swift"
 
 swiftc -o "$work/gen" "$work/gen.swift"

@@ -10,6 +10,10 @@ this file covers what will waste your time if you assume it.
 - **`scripts/pet.swift`** — `bash scripts/pet.sh build` recompiles
   `~/.claude/perchling/bin/perchling` from *this* checkout. Live on next
   launch. Fast loop.
+- **the built-in's art** — `examples/$PERCHLING_BUILTIN.json`, copied into the
+  runtime home by `cmd_up` from whichever `pet.sh` ran. So a dev checkout's
+  `pet.sh up` installs the checkout's art exactly as it installs the checkout's
+  binary, and neither reaches a hook-driven session until published.
 - **`scripts/pet.sh`, `scripts/state.sh`, `hooks/hooks.json`** — hooks resolve
   `${CLAUDE_PLUGIN_ROOT}` to the **installed marketplace clone**, never this
   checkout. Editing them here changes nothing until the commit is pushed and
@@ -59,6 +63,16 @@ on comes from a `find`, and a fork+exec is long enough for somebody else to
 reclaim and take the lock. Serialising reclaim is what works, and the freshness
 re-test inside that lock is load-bearing rather than belt-and-braces: dropping
 it alone still launches two.
+
+The reclaim also has to survive a lock it cannot `rmdir`. That call refuses a
+non-empty directory and nothing else clears the lock, so anything that ever
+lands inside one wedges every future launch permanently — the exact failure the
+reclaim exists to prevent. Nothing writes in there, so it takes an outside
+cause, which is the kind of thing a lock has to survive rather than assume away.
+A stale lock that will not `rmdir` is RENAMED aside: one syscall, works on a
+non-empty directory, and leaves the debris where a human can look at it.
+`rm -rf` on a path built from an environment variable is not something this
+script should own.
 
 Verify without launching:
 
@@ -134,13 +148,38 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 
 ## Invariants worth not rediscovering
 
-- **There is no drawing code. The built-in pet is a manifest.** `pet.swift`
-  carries it as `BUILTIN_MANIFEST`, parses it once through the same
-  `loadCustomPet` a user's `pet.json` goes through, and `--export` hands that
-  text straight back — so the export is an exact round-trip rather than a
-  re-serialisation, and `BUILTIN_MANIFEST` is the only copy of that text in the
-  repo. Do not park a second one under `examples/`: a copy can drift from the
-  string the app renders, and nothing would see it. The whole
+- **There is no drawing code, and as of 1.14 there is no embedded art either.**
+  The built-in is a pet in `examples/`, named by `PERCHLING_BUILTIN` and
+  defaulting to `husky`, parsed through the same
+  `loadCustomPet` a user's `pet.json` goes through, and `--export` hands the
+  loaded TEXT straight back — so the export is an exact round-trip rather than a
+  re-serialisation, and there is exactly one copy of it in the repo. It used to
+  be 449KB of string literal called `BUILTIN_MANIFEST`, which is most of why the
+  binary was 917KB and is now 458.
+
+  Selecting it by NAME rather than by path is what makes swapping the default
+  creature one line, and the menu needs no help: `petChoices` hides whichever
+  shipped pet matches `builtinPet.name`, so the new built-in leaves the list and
+  the old one joins it. The copy is compared by CONTENT rather than mtime,
+  because a swap points at a different file that may be older than the copy
+  already in place and an mtime test would decline to update it.
+
+  Three more things follow, and the second is the one that bites. `pet.sh`
+  copies the file into the RUNTIME HOME, and the renderer reads it from there
+  rather than from the plugin directory — so an overlay launched by hand, with no idea which plugin started
+  it, still finds its art. `builtinPet` therefore sits BELOW the runtime-home
+  block, because it needs `root` to know what to load, which means every harness
+  cutting above that line has to stub it (`run-session-harness.sh` and
+  `run-art-checks.sh` both do, next to the `examplesRoot` stub they already
+  had). And `builtinText` is the file with its trailing newline dropped, so
+  `print()` puts exactly one back and `--export > draft.json` is byte-identical
+  to the file it came from.
+
+  What is still embedded is `PLACEHOLDER_MANIFEST`, 1.8KB, and it renders only
+  when that file is missing or will not parse. Both mean a broken install rather
+  than a choice, so it is deliberately plain — do not improve it into something
+  that looks chosen. Do not park a copy of the husky under `examples/` either: a
+  copy can drift from the file the app renders, and nothing would see it. The whole
   programmatic engine that used to draw the robot — `Ink`, its palette,
   `buildBase`, `lathe`, `shade`, `cell`, `merge`, `rrect`, and the `eyeRects` /
   `startledRects` / `tearRects` / `sparkleRects` overlays — is gone as of 1.7.0.
@@ -570,6 +609,26 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   And `pgrep -x perchling` was rejected as the alternative precisely because it
   matches by process NAME and would see an unrelated install, which breaks the
   scratch-`CLAUDE_CONFIG_DIR` isolation every test here depends on.
+
+  **`-x` is not enough on its own, because the pattern is a REGEX and `$BIN` is
+  a path the user chose.** A config directory named `cfg+test (1)` makes `+` a
+  quantifier and `(1)` a group, and the pattern then matches nothing: measured
+  against a process genuinely running from such a path, `pgrep -x -f "$BIN"`
+  reports NOT FOUND. Both halves break at once and neither says so — `running()`
+  reports stopped beside a visible pet, so each session start adds another, and
+  all three `pkill` sites match nothing, so `stop` and `disable` stop nothing.
+  `BIN_RE` is escaped once beside `BIN` and is what all four uses match on.
+  Matching literally with `ps -Awwo args= | grep -qxF` removes the class of bug
+  instead of escaping it, and lost on cost: 33.9ms against pgrep's 20.7 per
+  call, in a function polled up to 50 times per launch.
+
+  The assertion for this must be the ALREADY-RUNNING shape, never a stampede.
+  A stampede cannot see it: the lock serialises the callers, the holder spins
+  out its full five seconds waiting for a pet `running()` will never admit to,
+  and the rest stand down against a genuinely fresh lock — one launch, green,
+  against the broken script. The damage lands between session starts, where no
+  lock is left to mask it. The first version of that assertion scored 13/13
+  against the mutant it existed to catch.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
@@ -809,7 +868,7 @@ bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
-bash tools/run-launch-race.sh       # cmd_up launches exactly one pet under concurrency
+bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -836,8 +895,14 @@ subtler reason: it reconstructs `running()` by `sed`-ing one line out of the
 script under test, which silently yields nothing callable for four of the five
 ways to spell that function — every probe then exits 127, prints `miss`, and the
 assertion reports "0 false hits" having tested nothing. It now asserts the
-extracted name is callable before trusting the count. And eleven green lines are
-not eleven guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
+extracted name is callable before trusting the count — and, because that proved
+insufficient the same afternoon, that all eight probes came back with a VERDICT.
+`BIN_RE` was added to `pet.sh` hours later; the extracted `running()` referenced
+it, the probe did not set it, every subshell died on `set -u`, and the
+assertion counted zero hits among zero verdicts and reported ok. Both failures
+were "the extracted function did not run", so the guard now counts what came
+back rather than naming a cause. And thirteen green lines are not thirteen
+guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
 the race window, so they pass against a broken script too and the file labels
 them negative controls rather than coverage.
 
@@ -852,19 +917,19 @@ at a rendered frame. The harness is one more kind of evidence for the code it
 covers, not a replacement for any of those.
 
 **The built-in's art has no generator, and only one thing checks it.**
-`BUILTIN_MANIFEST` is 449KB of row strings quantised from raster art, so
-changing the built-in means replacing the whole embedded string — there is no
-`build()` to re-run, and nothing that will notice if the DRAWING comes out
-wrong. That is a real regression against 1.7–1.12, where the manifest was
+`examples/husky.json` is 449KB of row strings quantised from raster art, so
+changing the built-in means replacing the whole file — there is no `build()` to
+re-run, and nothing that will notice if the DRAWING comes out wrong. That is a real regression against 1.7–1.12, where the manifest was
 emitted from parametric geometry and a guard held the two together; the
 generator only ever drew the hippo, so it went when the hippo did. If the
 built-in is ever generated again, bind the guard to this string and nothing
 else — a copy parked under `examples/` puts the check one indirection from what
 ships, and a drift between them is invisible to it.
 
-`tools/run-art-checks.sh` is the one check that does exist, and it is bound that
-way: it cuts before the runtime-home block and asks `builtinPet` itself, plus
-every manifest in `examples/`. It answers exactly one question — is any
+`tools/run-art-checks.sh` is the one check that does exist: it is handed
+every manifest in `examples/` as a path, the built-in among them — the files
+that actually ship, with nothing in between to drift — plus the embedded
+placeholder, which no path can reach. It answers exactly one question — is any
 transparent pixel unreachable from the border — because that one is decidable
 without knowing what the art is supposed to look like. It is not a substitute
 for rendering a frame and looking at it, and it cannot be: a pet drawn as a

@@ -5,9 +5,10 @@
 # The cut point is the runtime-home block, the same one run-session-harness.sh
 # uses and for the same reason: `let argv` still leaves the block that resolves
 # ~/.claude/perchling and creates directories inside it, and a test run must not
-# touch the live install. BUILTIN_MANIFEST and `builtinPet` both sit above that
-# line, which is what lets this check the string that actually ships rather than
-# a copy of it.
+# touch the live install — and `builtinPet` now sits BELOW it, because it needs
+# the runtime home to know which file to load. The shipped art is therefore
+# passed in as a path rather than read out of the binary; the placeholder still
+# comes from the binary, since nothing else carries it.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -33,6 +34,13 @@ head -n $((cut - 1)) "$src" > "$work/gen.swift"
 # The one global a still-included type reaches for: the Controller's pet menu
 # reads examplesRoot, whose definition lives below the cut.
 echo 'let examplesRoot: URL? = nil' >> "$work/gen.swift"
+# Two more globals the still-included code reaches for. They moved BELOW this
+# cut when the built-in's art left the binary — `builtinPet` needs the runtime
+# home to know which file to load — so the harness supplies the no-home answer,
+# which is the embedded placeholder.
+echo 'let builtinLoaded = builtinFrom(nil)' >> "$work/gen.swift"
+echo 'let builtinText = builtinLoaded.text' >> "$work/gen.swift"
+echo 'let builtinPet = builtinLoaded.pet' >> "$work/gen.swift"
 cat "$here/art-harness.swift" >> "$work/gen.swift"
 
 swiftc -o "$work/gen" "$work/gen.swift"
