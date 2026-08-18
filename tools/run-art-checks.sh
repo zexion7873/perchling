@@ -14,7 +14,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 # Overridable so the harness can be pointed at a pet.swift with a hole punched
-# back into BUILTIN_MANIFEST and shown to FAIL. Six green lines prove nothing on
+# back into one of the manifests and shown to FAIL. Green lines prove nothing on
 # their own — they would also all pass against an `enclosed()` that returned 0:
 #     python3 - <<'P'   # reopen one interior pixel
 #     ...rewrite one row of moods.waiting with a '.' inside the sprite...

@@ -83,8 +83,12 @@ Verify without launching:
 - **Rendered frames** — copy `pet.swift` to a scratch directory, cut everything
   from `let argv = CommandLine.arguments` onward, and append a harness that
   calls `cacheDisplay(in:to:)` on a `PetView` per tick into a filmstrip PNG.
-  The cut has to keep `BUILTIN_MANIFEST` and `builtinPet`, which sit just above
-  the runtime-home block — a `PetView` with no pet draws nothing.
+  The cut has to keep `builtinPet`, or a `PetView` with no pet draws nothing —
+  and `builtinPet` sits BELOW the runtime-home block, not above it, because it
+  needs `root` to know which file to load. Cutting at `let argv` keeps it;
+  cutting where the session harness cuts does not, and a harness that cuts
+  there has to stub it the way that one does. (There is no `BUILTIN_MANIFEST`
+  to keep. The built-in's art has been a file since 1.14.)
   This exercises the real `draw()`, so what you see is what ships.
   `tools/moods-gif.swift` is a worked example of the same cut. Give the view no
   window: `gaze()` returns neutral without one, whereas a view in a window aims
@@ -100,8 +104,10 @@ Verify without launching:
   that block at load time, which touches `~/.claude/perchling/` — the very
   directory this file forbids writing to. `bash tools/run-session-harness.sh`
   already does exactly this — it cuts `pet.swift` before `// Runtime home:`,
-  stubs the one global a still-included type reaches for
-  (`let examplesRoot: URL? = nil`), appends `tools/session-harness.swift`, and
+  stubs the four globals a still-included type reaches for (`examplesRoot`,
+  then `builtinLoaded`, `builtinText` and `builtinPet`, which moved below the
+  cut when the built-in's art became a file), appends
+  `tools/session-harness.swift`, and
   compiles and runs the result — so reach for it rather than hand-rolling the
   cut again. The reasoning above is not a one-off justification for that
   script; it is why any future addition to this layer belongs above that line
@@ -366,8 +372,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   preference.** The cursor must be on the pet to click it, so `hoverSeqStart` is
   always armed when a tap arrives; a `tap` ranked below it could never play on
   any pet declaring both. The procedural two-cell hop survives for pets that
-  declare no `tap` — which is every shipped pet — so `hopUntil` is live code and
-  `mouseUp` arms exactly one of the two.
+  declare no `tap`, and `mouseUp` arms exactly one of the two.
+
+  **No shipped pet is one of those, so `hopUntil` is live code that the repo's
+  own art never reaches.** Verified by parsing all six: chinchilla, husky,
+  otter, sea-lion, shark and whale each declare `done, drag, error, hover,
+  idle, running, tap, waiting`. Both arming sites are therefore unreachable
+  here — the `else` at the `mouseUp` site needs no `tap`, and the arrival hop
+  needs `sequence(for: .done) == nil`. It stays because a third-party manifest
+  may omit either, which is exactly the pet that has nothing else to move. Do
+  not read a green harness run as evidence it works: nothing in `tools/`
+  mentions `hopUntil`, and no fixture in the repo exercises either branch.
 - **A sequence's timing is `steps`, it is required, and `frames` is an unordered
   pose pool.** Each entry is `[frameIndex, ms]`, and a pose may appear several
   times under different holds — which is the whole point, because a real
@@ -574,15 +589,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 - **A row string is walked as utf8 BYTES, and the Character walk beside it is
   the fallback rather than dead code.** Iterating a `String` by `Character`
   segments grapheme clusters on every pixel, and a pet is tens of thousands of
-  them: measured across the ten shipped examples, that walk alone was 140ms of a
-  220ms parse, against 3.7ms for the same walk over `row.utf8`. It matters
+  them: that walk alone was 140ms of a 220ms parse, against 3.7ms for the same
+  walk over `row.utf8`. **Every aggregate in this bullet was measured against a
+  twelve-file `examples/`; six ship today**, so treat the totals as upper
+  bounds and the per-pet figures as the part that transfers. It matters
   because `petChoices()` parses EVERY manifest in `examples/` and `pets/`
   synchronously on the main thread before the Pets menu can be drawn — 220ms of
   right-click latency that no user could mistake for anything but a hang. The
   whole parse is now 44ms. Three things about the shape of that fix.
   The bytes are MATERIALISED with `Array(row.utf8)` rather than walked lazily,
   because the utf8 view charges per-element bookkeeping an array walk does not:
-  84ms against 46ms across the same ten pets. A separate `asciiPalette` flag was
+  84ms against 46ms across that same library. A separate `asciiPalette` flag was
   written first and deleted as dead weight — a row can only USE a non-ASCII
   palette key by carrying a byte over 127, which the byte walk already declines,
   so one condition covers both cases. And the fallback is not only about
@@ -592,8 +609,8 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   and an emoji palette key must LOAD, and a non-ASCII glyph under an ASCII
   palette must be rejected by its character — and every one of them was shown to
   go red when the fallback is removed. The change was also diffed against the
-  pre-change binary over 13 hand-built edge cases plus all ten examples, whole
-  output and exit status, three runs each: identical.
+  pre-change binary over 13 hand-built edge cases plus every example in that
+  twelve-file library, whole output and exit status, three runs each: identical.
 
   **Do not write that diff against fixtures that put the same defect in several
   moods.** `loadCustomPet` walks `moods` as a Swift Dictionary, whose iteration
@@ -690,8 +707,10 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   line, or one of the nine lines in `pet.swift` that contain that text — the
   `moodRank`/`moodTTL` tables and the mood-wording table. And a column anchor
   does not save it: swiftc right-aligns each excerpt's line number to the width
-  of the WHOLE FILE, so at 4244 lines every quoted line from 1000 up starts at
-  column 0 too, and eight of those nine sit up there. What every excerpt line
+  of the WHOLE FILE, so in a four-digit source every quoted line from 1000 up
+  starts at column 0 too, and eight of those nine sit up there. (The line count
+  is deliberately not written down here — it moves with every change, and what
+  the argument needs is only that the file is over a thousand lines.) What every excerpt line
   does carry is the ` | ` gutter, so the headline drops those and takes the
   first `error:` among what remains.
 
@@ -1011,8 +1030,9 @@ without knowing what the art is supposed to look like. It is not a substitute
 for rendering a frame and looking at it, and it cannot be: a pet drawn as a
 featureless blob passes.
 
-`--export` hands the embedded string straight back, so whatever formatting goes
-in is what a user's `--export > draft.json` gets. Match what is there:
+`--export` hands back the TEXT of `examples/$PERCHLING_BUILTIN.json` as loaded,
+not a re-serialisation of it, so whatever formatting is in that file is what a
+user's `--export > draft.json` gets. Match what is there:
 `JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
 `json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
 

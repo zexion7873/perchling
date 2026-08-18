@@ -91,7 +91,8 @@ check "tap is recognised" 0 "$(fixture tap "$TAP_SEQS")" \
 
 # parseGrid walks utf8 bytes through a 128-entry table, because iterating a row
 # by Character costs grapheme-cluster segmentation on every pixel and that alone
-# was 140ms of the 220ms it took to parse the ten shipped examples. The table
+# was 140ms of the 220ms it took to parse a twelve-file examples/ (six ship
+# today, so that total is an upper bound on what a user pays). The table
 # cannot represent a palette key outside ASCII, and a row byte over 127 cannot
 # index it, so both fall back to the original Character walk. These pin the two
 # paths together: the fast one must never accept what the slow one rejects, and

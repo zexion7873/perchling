@@ -336,7 +336,7 @@ cmd_status() {
   # works — swiftc prints the message first and its source excerpt after, so a
   # tail reports `951 |  }` — and no column anchor works either: the excerpt's
   # line numbers are right-aligned to the width of the WHOLE FILE, so in a
-  # 4244-line source every quoted line from 1000 up also starts at column 0,
+  # four-digit source every quoted line from 1000 up also starts at column 0,
   # and eight of pet.swift's own lines up there contain the text `error:`.
   # What every excerpt line does carry is the ` | ` gutter. Drop those and what
   # remains is messages; the fallbacks cover a log that is all excerpt, and a

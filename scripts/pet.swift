@@ -601,7 +601,7 @@ struct PetChoice {
 // `builtinPet` for its name rather than hardcoding one, so renaming the
 // built-in cannot leave a duplicate row behind. It reads a global declared far
 // below, which is safe only because this is a function: a top-level `let` doing
-// the same thing runs before BUILTIN_MANIFEST exists and segfaults on launch.
+// the same thing runs before `builtinPet` exists and segfaults on launch.
 func petChoices(root: URL, examples: URL?) -> [PetChoice] {
     let fm = FileManager.default
     let pet = root.appendingPathComponent("pet.json")
@@ -1353,12 +1353,12 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
 // rather than half-eaten, so nothing here invents a character.
 func cleanCaption(_ s: String) -> String {
     var out = String.UnicodeScalarView()
-    var it = Array(s.unicodeScalars)
+    let scalars = Array(s.unicodeScalars)
     var i = 0
-    while i < it.count {
-        let c = it[i]
-        if c == "\\", i + 1 < it.count {
-            let n = it[i + 1]
+    while i < scalars.count {
+        let c = scalars[i]
+        if c == "\\", i + 1 < scalars.count {
+            let n = scalars[i + 1]
             switch n {
             case "n", "t", "r", "b", "f": out.append(" ")
             case "\"", "\\", "/":         out.append(n)
