@@ -11,10 +11,14 @@
 #                 user gets no pet and `pet.sh status` says `running`.
 #   STAGGERED     callers offset by less than the time it takes the child to
 #                 reach the process table each see nothing and each launch.
-#                 Measured window on the machine this was written on: 4-16 ms.
-#                 At 20 ms the first pet is already visible and the rest
-#                 correctly stand down, so a stagger sweep that starts too
-#                 coarse will report a green that means nothing.
+#                 The window is a property of the machine and it MOVES: catch
+#                 rate against a naked TOCTOU, 6 runs each against two race-y
+#                 scripts, was 4 ms 10/10, 8 ms 10/10, 12 ms 8/10, 16 ms 1/10,
+#                 20 ms 0/10 — so its top now sits between 12 and 16 ms here,
+#                 where an earlier comment claimed 16. Past the top the first
+#                 pet is already visible and the rest correctly stand down, so
+#                 those offsets pass against a broken script too and a sweep
+#                 that starts too coarse reports a green that means nothing.
 #
 # Nothing here can open a window: CLAUDE_CONFIG_DIR points at a scratch home and
 # the binary is a stub. The stub is COMPILED rather than a shebang script on
@@ -80,8 +84,11 @@ scenario() {
 
 echo "launch race:"
 scenario simultaneous       8 0     1
-# Every offset inside the measured window, because a fix can close the top of it
-# and leave the bottom open.
+# The three offsets inside the window, because a fix can close the top of it and
+# leave the bottom open. 16 and 20 are kept as NEGATIVE controls: they assert
+# correct behaviour but no longer discriminate, so they must not be counted as
+# coverage — the line below reads "11 passed" and only eight of those are
+# guarantees.
 scenario staggered-4ms      4 0.004 1
 scenario staggered-8ms      4 0.008 1
 scenario staggered-12ms     4 0.012 1
@@ -130,6 +137,31 @@ lock_case() {
 lock_case stale-lock-is-stolen  202001010000 1
 lock_case fresh-lock-is-honoured ""           0
 
+# Reclaiming a stale lock is itself a critical section, and the two cases above
+# cannot see that: both run a SINGLE caller, so the reclaim never contends with
+# anything. Under concurrency every caller that finds the same stale lock runs
+# its own reclaim, and the second one removes the FRESH lock the first has
+# already taken — so the pet the first caller is still launching is joined by a
+# second. This is the assertion the 1.13.0 fix shipped without.
+stale_lock_race() {
+  local home="$SCRATCH/stale-lock-race" log i
+  mkdir -p "$home/perchling/bin"
+  log="$home/launches.log"; : > "$log"
+  cp "$SCRATCH/stub" "$home/perchling/bin/perchling"
+  touch "$home/perchling/bin/perchling"
+  mkdir -p "$home/perchling/.launch.lock"
+  touch -t 202001010000 "$home/perchling/.launch.lock"
+  for i in $(seq 1 8); do
+    CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up "s$i" >/dev/null 2>&1 &
+  done
+  wait; sleep 3
+  local got; got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
+  if [ "$got" -eq 1 ]; then printf '  ok   %-26s 8 callers, one reclaim, launched=1\n' "stale-lock-contended"; pass=$((pass + 1))
+  else printf '  FAIL %-26s launched=%s, want 1\n' "stale-lock-contended" "$got"; fail=$((fail + 1)); fi
+  pkill -x -f "$home/perchling/bin/perchling" 2>/dev/null
+}
+stale_lock_race
+
 # `running()` must not be satisfied by the probes themselves. Asserted directly,
 # because every scenario above would also go green on a running() that simply
 # always returned false.
@@ -143,11 +175,28 @@ probe_selfmatch() {
   out=$(
     BIN="$SCRATCH/no-such-binary"
     eval "$(sed -n '/^running()/p' "$PET")"
+    # Extracting a rule from the code under test needs a precondition check, or
+    # it is the same failure the hardcoded version had, wearing a better
+    # argument. This `sed` prints ONE line, so it only reconstructs a running()
+    # that is written on one: a two-line body yields `running() {`, whose eval
+    # is a parse error; an indented one or `function running {` matches nothing
+    # and evals the empty string. All three leave `running` undefined, all 8
+    # probes exit 127 and print `miss`, and this assertion reports "0 false
+    # hits" having tested nothing at all. Four of the five ways to spell the
+    # function disarm it that way, and a mutant carrying the released bug
+    # reformatted onto two lines scored a clean 10 passed, three runs of three.
+    # Asserting the name is callable closes every spelling; widening the sed
+    # closes only the first.
+    declare -F running >/dev/null 2>&1 || { echo NOTAFUNCTION; exit 0; }
     for _ in 1 2 3 4 5 6 7 8; do
       ( running && echo HIT || echo miss ) &
     done
     wait
   )
+  if grep -q NOTAFUNCTION <<<"$out"; then
+    printf '  FAIL %-26s no callable running() extracted from %s\n' "probe-self-match" "$PET"
+    fail=$((fail + 1)); return
+  fi
   hits=$(grep -c HIT <<<"$out"); hits=${hits:-0}
   # No process is running from that path, so every hit is one probe seeing another.
   if [ "$hits" -eq 0 ]; then printf '  ok   %-26s 8 concurrent running() calls, 0 false hits\n' "probe-self-match"; pass=$((pass + 1))

@@ -40,13 +40,30 @@ a bare invocation is not.
 wrong diagnosis.** Three overlays were observed on the user's desktop at once
 with no agent involved: three ordinary sessions hit `SessionStart` inside the
 same few milliseconds and `cmd_up`'s check-and-launch had nothing atomic
-between its halves. Measured window on this machine: callers staggered by
-**4–16 ms each launch their own pet**, and at 20 ms the first one is visible
-and the rest correctly stand down. `launch_once` closes it with a `mkdir`
-mutex — macOS ships no `flock(1)` — and the lock is held until the child is
-VISIBLE to `running()`, not merely until `nohup` returns, because releasing at
-spawn time only narrows the window rather than closing it. It is stolen after a
-minute so a process killed mid-launch cannot wedge every future session start.
+between its halves. The window is a property of the machine and it MOVES:
+callers staggered by **4–12 ms each launch their own pet** here, where the
+figure was 4–16 when first measured, and past the top of it the first pet is
+already visible and the rest correctly stand down. `launch_once` closes it with
+a `mkdir` mutex — macOS ships no `flock(1)` — and the lock is held until the
+child is VISIBLE to `running()`, not merely until `nohup` returns, because
+releasing at spawn time only narrows the window rather than closing it. It is
+reclaimed after a minute so a process killed mid-launch cannot wedge every
+future session start.
+
+**Reclaiming that lock is a second critical section, and 1.13.0 shipped it as a
+plain check-then-act — the same defect one level in.** `[ stale ] && rmdir` ran
+in every caller that found the same stale lock, so the second rmdir removed the
+FRESH lock the first had just taken, and so on: instrumented at 8 concurrent
+callers, four reclaimed in a chain and four pets launched. Making the reclaim
+itself atomic does NOT fix it and was measured failing at four pets too —
+`rmdir` really is an exclusive claim, but the verdict it acts on comes from a
+`find`, and a fork+exec is milliseconds during which another caller reclaims and
+takes the lock, leaving the first one holding a stale verdict about a directory
+that is no longer at that path. So the reclaim has a lock of its own and repeats
+the freshness test INSIDE it, and that repeat is load-bearing rather than
+belt-and-braces: dropping it alone still launches two. The inner lock expires
+after an hour rather than a minute, because nothing inside it blocks, so an
+hour-old one provably has no live holder.
 
 Verify without launching:
 
