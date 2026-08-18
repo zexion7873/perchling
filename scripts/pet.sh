@@ -50,7 +50,44 @@ supported() {
   [ -n "$probe" ] && printf '%s\n' "$probe" >&2
   return 1
 }
-running() { pgrep -f "$BIN" >/dev/null 2>&1; }
+# `-x` is load-bearing, not tidiness. Without it `pgrep -f "$BIN"` matches any
+# process whose argv merely CONTAINS the path — including the other concurrent
+# `pgrep -f "$BIN"` probes, whose own argv is the pattern. Measured with eight
+# simultaneous probes against a path no process was running from: all eight
+# reported a hit. So several sessions starting at once could each conclude the
+# pet was already up and none would launch it, which is the silent inverse of
+# the duplicate-pet race launch_once exists for. `-x` requires the whole argv to
+# equal "$BIN", which the overlay's does (it is exec'd as `nohup "$BIN"`) and a
+# probe's never can.
+running() { pgrep -x -f "$BIN" >/dev/null 2>&1; }
+
+# Serialises the check-and-launch. `mkdir` is the atomic primitive available —
+# macOS ships no flock(1) — and two details are what make it work:
+#
+#   * The lock is held until the new process is VISIBLE to running(), not merely
+#     until nohup returns. Releasing at spawn time only narrows the window: the
+#     next holder's pgrep still runs before the child reaches the process table,
+#     sees nothing, and launches a second pet.
+#   * A lock left behind by a process killed mid-launch would block every future
+#     session start forever, so it is stolen once it is older than any launch
+#     could legitimately take.
+#
+# A caller that loses the race returns without launching rather than waiting:
+# cmd_up runs on every SessionStart, so a launch that genuinely failed is
+# retried by the next session rather than by blocking this one.
+launch_once() {
+  lock="$ROOT/.launch.lock"
+  [ -d "$lock" ] && [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
+  mkdir "$lock" 2>/dev/null || return 0
+  trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+  if ! running; then
+    PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
+    waited=0
+    while [ "$waited" -lt 50 ] && ! running; do sleep 0.1; waited=$((waited + 1)); done
+  fi
+  rmdir "$lock" 2>/dev/null
+  trap - EXIT INT TERM
+}
 
 compile() {
   supported || { echo "perchling needs macOS with a working Swift toolchain (xcode-select --install)" >&2; return 1; }
@@ -125,7 +162,7 @@ cmd_up() {
   done
   # (Re)build when missing or when a plugin update shipped newer source.
   if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
-    pkill -f "$BIN" 2>/dev/null
+    pkill -x -f "$BIN" 2>/dev/null
     # Silent here is fine — cmd_build has already put the reason in $BUILDLOG,
     # where `pet.sh status` reads it. Discarding it was what made a failed
     # build indistinguishable from a clean install.
@@ -141,7 +178,9 @@ cmd_up() {
     # binary it calls `(built)`.
     rm -f "$BUILDLOG"
   fi
-  running || PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
+  # Backgrounded so a SessionStart hook still returns immediately: launch_once
+  # blocks until the pet is visible, and the hook must not wait on that.
+  launch_once &
   exit 0
 }
 
@@ -180,13 +219,13 @@ cmd_status() {
 
 cmd_stop() {
   rm -f "$SESSIONS"/* "$OWNERS"/* 2>/dev/null
-  pkill -f "$BIN" 2>/dev/null
+  pkill -x -f "$BIN" 2>/dev/null
   echo "perchling stopped"
 }
 
 cmd_disable() {
   touch "$ROOT/disabled"
-  pkill -f "$BIN" 2>/dev/null
+  pkill -x -f "$BIN" 2>/dev/null
   echo "perchling disabled ('pet.sh enable' to undo)"
 }
 

@@ -36,6 +36,18 @@ parallel litters the desktop with pets that outlive the terminals that spawned
 them. Unknown arguments print usage and exit 2, so a mistyped flag is safe, but
 a bare invocation is not.
 
+**Agents are not the only way to get several pets, and blaming them was the
+wrong diagnosis.** Three overlays were observed on the user's desktop at once
+with no agent involved: three ordinary sessions hit `SessionStart` inside the
+same few milliseconds and `cmd_up`'s check-and-launch had nothing atomic
+between its halves. Measured window on this machine: callers staggered by
+**4–16 ms each launch their own pet**, and at 20 ms the first one is visible
+and the rest correctly stand down. `launch_once` closes it with a `mkdir`
+mutex — macOS ships no `flock(1)` — and the lock is held until the child is
+VISIBLE to `running()`, not merely until `nohup` returns, because releasing at
+spawn time only narrows the window rather than closing it. It is stolen after a
+minute so a process killed mid-launch cannot wedge every future session start.
+
 Verify without launching:
 
 - **Manifest correctness** — `perchling --validate <path>` runs the same parser
@@ -67,13 +79,29 @@ Verify without launching:
   compiles and runs the result — so reach for it rather than hand-rolling the
   cut again. The reasoning above is not a one-off justification for that
   script; it is why any future addition to this layer belongs above that line
-  too. The shell side has the same trap: `pet.sh up` ends in `running || ...
-  nohup "$BIN" ...`, so calling it directly starts a real overlay. Point
+  too. The shell side has the same trap: `pet.sh up` ends in `launch_once &`,
+  so calling it directly starts a real overlay. Point
   `CLAUDE_CONFIG_DIR` at a scratch directory, then neutralise the launch path
-  by dropping a no-op executable at `<scratch>/perchling/bin/perchling` with a
+  by dropping a stub at `<scratch>/perchling/bin/perchling` with a
   mtime newer than `pet.swift` — `cmd_up` then skips its rebuild check and
-  `nohup` launches the stub, which exits immediately instead of opening a
-  window.
+  launches the stub instead of opening a window. THREE things about that stub,
+  and the third one exists because the first two, written on their own, walked
+  a later agent straight into opening two real pets on the user's desktop:
+  it must be a COMPILED executable, because a script's argv is
+  `/bin/bash <path>` and `running()`'s `pgrep -x -f "$BIN"` rightly will not
+  match that — so a script stub is invisible to the check under test; it
+  must STAY ALIVE, because a stub that exits immediately is never visible to
+  `running()` either, so every caller legitimately launches one and a harness
+  measures nothing; and it must **NOT be a copy of the real binary**. That last
+  one is not obvious, it is the CHEAPEST way to satisfy the other two, and it is
+  wrong for the one reason this whole section exists: a copy of
+  `~/.claude/perchling/bin/perchling` is a compiled executable that stays alive
+  by opening a pet window. Copies were found in 55 scratch directories from a
+  single fan-out, two of them running. `cp` the real binary here and you have
+  written a harness whose passing condition is littering the desktop.
+  `tools/run-launch-race.sh` compiles a five-line C stub for exactly this and is
+  the worked example: the stub must be something you BUILT, whose entire
+  behaviour you can read.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
@@ -495,6 +523,22 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   subcommand needs no auth. `PermissionRequest` was cleared this way back to
   2.1.109, over a hundred releases; 2.0.x demands auth before validating and was
   not measured.
+- **`pgrep -f "$BIN"` cannot answer "is the pet running", because the probes see
+  each other.** `-f` matches any process whose whole argv CONTAINS the pattern,
+  and a concurrent `pgrep -f "$BIN"` has that path in its own argv. Measured:
+  eight simultaneous probes against a path **no process was running from** all
+  eight reported a hit. So the same burst of session starts that can launch
+  several pets can also launch NONE — every caller concludes one is already up —
+  and `pet.sh status` will say `running` beside an empty screen. `running()`
+  therefore uses `pgrep -x -f`, which requires the argv to EQUAL "$BIN": the
+  overlay's does, since it is exec'd as `nohup "$BIN"`, and a probe's never can.
+  The three `pkill` sites carry `-x` for the same reason — without it a teardown
+  can match and kill somebody's in-flight `pgrep`. Two consequences for anyone
+  writing a harness: a shebang-script stub is invisible to `-x -f`, because its
+  argv is `/bin/bash <path>`, so the stub has to be a real compiled executable;
+  and `pgrep -x perchling` was rejected as the alternative precisely because it
+  matches by process NAME and would see an unrelated install, which breaks the
+  scratch-`CLAUDE_CONFIG_DIR` isolation every test here depends on.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
@@ -734,6 +778,7 @@ bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
+bash tools/run-launch-race.sh       # cmd_up launches exactly one pet under concurrency
 bash tools/run-deform-checks.sh    # the built-in's generator still draws the shipped pet
 python3 tools/hippo/emit_swiftfmt.py           # regenerate BUILTIN_MANIFEST's text
 python3 tools/hippo/sheet_deform.py /tmp/s.png # contact sheet of the deformation range
@@ -741,12 +786,18 @@ python3 tools/hippo/sheet_deform.py /tmp/s.png # contact sheet of the deformatio
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Three layers have harnesses now — the session/tray layer
+Four layers have harnesses now — the session/tray layer
 (`tools/run-session-harness.sh`), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
-runtime-home block, because `PetView` lives below that line). Nothing else here
+runtime-home block, because `PetView` lives below that line) and `cmd_up`'s
+launch path (`tools/run-launch-race.sh`, which is shell only and compiles a C
+stub rather than touching `pet.swift`). That last one takes
+`PERCHLING_PET_SH` so it can be pointed at an older `pet.sh` and shown to FAIL,
+which is the only reason to trust its ten green lines: its first version
+asserted `pgrep -x -f` as its own literal text and passed against the broken
+script it was written to catch. Nothing else here
 has a test suite. `tools/run-hooks-check.sh` is not a fourth harness — it tests
 no Swift at all, it asks the installed CLI whether `hooks/hooks.json` is
 loadable — but it belongs to the same release gate, because the failure it
