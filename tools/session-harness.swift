@@ -459,5 +459,110 @@ do {
           rows.first { $0.sid == "s2" }?.mood, .waiting)
 }
 
+// MARK: - the pet library, and the one path that can delete a user's only copy
+
+// `clearPetLink` is two lines, and the whole safety property is their ORDER
+// plus the `try` on the first: a rescue that cannot finish must throw, so the
+// removal below it never runs. Swapping them, or weakening that `try` to
+// `try?`, deletes a hand-drawn pet that has no other copy and passes every
+// other check in this repo. Both mutations fail `a rescue that cannot finish
+// refuses the removal` below, which is the only reason these lines are worth
+// anything.
+//
+// Everything here is a pure function of a scratch directory, and this harness
+// already compiles all of it — the cut is at the runtime-home block and the
+// library sits well above it. It was simply never called.
+
+// The smallest manifest the parser accepts: 8x8 is the minimum canvas, and one
+// mood is enough. Named, because the name is what becomes the library slug.
+// Delimited `##"…"##`, not `#"…"#`: a hex colour is `"#FFFFFF"`, and that `"#`
+// closes the shorter form mid-manifest.
+func petJSON(_ name: String) -> String {
+    let flat = ##"["........","........","..oooo..","..oooo..","..oooo..","..oooo..","........","........"]"##
+    return ##"{ "name": "\##(name)", "palette": { "o": "#FFFFFF" }, "moods": { "idle": \##(flat) } }"##
+}
+
+func isSymlink(_ url: URL) -> Bool {
+    let a = try? FileManager.default.attributesOfItem(atPath: url.path)
+    return (a?[.type] as? FileAttributeType) == .typeSymbolicLink
+}
+
+do {
+    let root = tempDir("library-migrate")
+    let pet = root.appendingPathComponent("pet.json")
+    writeFile(root, "pet.json", petJSON("Hand Drawn"))
+    try! migrateLoosePet(root: root)
+    check("a loose pet.json is rescued into pets/ under its own name",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("hand-drawn.json").path), true)
+    check("and pet.json becomes a link to it", isSymlink(pet), true)
+    check("the rescued file still holds the original manifest",
+          (try? String(contentsOf: petsDir(root).appendingPathComponent("hand-drawn.json"),
+                       encoding: .utf8))?.contains("Hand Drawn"), true)
+}
+
+do {
+    // A second loose pet of the same name must not overwrite the first. This is
+    // the same "their only copy" property one step along: the collision suffix
+    // is what stops the rescue from destroying what an earlier rescue saved.
+    let root = tempDir("library-collide")
+    writeFile(root, "pet.json", petJSON("Twin"))
+    try! migrateLoosePet(root: root)
+    try? FileManager.default.removeItem(at: root.appendingPathComponent("pet.json"))
+    writeFile(root, "pet.json", petJSON("Twin"))
+    try! migrateLoosePet(root: root)
+    check("a name already in the library gets a suffix rather than a clobber",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("twin-2.json").path), true)
+}
+
+do {
+    // A pet.json that is already a link is not loose, and re-migrating one
+    // would move the library entry it points at out from under itself.
+    let root = tempDir("library-symlink")
+    try! FileManager.default.createDirectory(at: petsDir(root), withIntermediateDirectories: true)
+    writeFile(petsDir(root), "kept.json", petJSON("Kept"))
+    try! FileManager.default.createSymbolicLink(
+        atPath: root.appendingPathComponent("pet.json").path,
+        withDestinationPath: "pets/kept.json")
+    try! migrateLoosePet(root: root)
+    check("an existing link is left alone",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("kept.json").path), true)
+    check("and no second copy is invented",
+          (try? FileManager.default.contentsOfDirectory(atPath: petsDir(root).path))?.count, 1)
+}
+
+do {
+    // The whole point. `clearPetLink` runs from the Pets menu, arbitrarily long
+    // after launch, and pet.json can be a loose regular file again by then.
+    let root = tempDir("library-clear")
+    writeFile(root, "pet.json", petJSON("Only Copy"))
+    try! clearPetLink(root: root)
+    check("clearing a loose pet.json saves it before removing it",
+          (try? String(contentsOf: petsDir(root).appendingPathComponent("only-copy.json"),
+                       encoding: .utf8))?.contains("Only Copy"), true)
+    check("and pet.json itself is gone afterwards",
+          FileManager.default.fileExists(atPath: root.appendingPathComponent("pet.json").path),
+          false)
+}
+
+do {
+    // A rescue that CANNOT finish must abandon the removal rather than delete
+    // what it failed to save. An unwritable pets/ is the reachable version of
+    // that: a directory the user's own umask or a restore left read-only.
+    let root = tempDir("library-refuse")
+    let pet = root.appendingPathComponent("pet.json")
+    writeFile(root, "pet.json", petJSON("Precious"))
+    try! FileManager.default.createDirectory(at: petsDir(root), withIntermediateDirectories: true)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: petsDir(root).path)
+    var threw = false
+    do { try clearPetLink(root: root) } catch { threw = true }
+    check("a rescue that cannot finish throws", threw, true)
+    check("a rescue that cannot finish refuses the removal",
+          (try? String(contentsOf: pet, encoding: .utf8))?.contains("Precious"), true)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: petsDir(root).path)
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

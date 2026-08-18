@@ -501,6 +501,16 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   in it, so every path that removes `pet.json` rescues it first and refuses the
   removal outright when the rescue cannot finish. A rescue that fails quietly
   and then deletes is the same data loss with more steps.
+
+  The whole property is two lines of `clearPetLink` — their ORDER, and the
+  `try` on the first, which makes a failed rescue throw before the removal
+  below it can run. Swapping them or weakening that `try` to `try?` deletes a
+  pet with no other copy, is a one-line diff, and reads in review like tidying.
+  `tools/run-session-harness.sh` now calls this layer rather than merely
+  compiling it: an unwritable `pets/` makes `clearPetLink` throw and leaves
+  `pet.json` intact, and both mutations were shown to fail that pair. The
+  collision suffix is asserted beside it, because a second rescue overwriting
+  the first is the same loss one step along.
 - **A checkmark means "on screen", which is not "what the link points at".**
   A manifest that fails to load leaves `pet.json` pointing at it while the
   built-in is what renders, and a dotfiles `pet.json` can point outside `pets/`
@@ -914,7 +924,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 70 assertions over the session/tray layer
+bash tools/run-session-harness.sh  # 80 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
@@ -925,7 +935,7 @@ bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop show
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Six layers have harnesses — the session/tray layer
+Six layers have harnesses — the session/tray layer and the pet library
 (`tools/run-session-harness.sh`), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
