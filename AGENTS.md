@@ -564,9 +564,11 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   overlay's does, since it is exec'd as `nohup "$BIN"`, and a probe's never can.
   The three `pkill` sites carry `-x` for the same reason — without it a teardown
   can match and kill somebody's in-flight `pgrep`. Two consequences for anyone
-  writing a harness: a shebang-script stub is invisible to `-x -f`, because its
-  argv is `/bin/bash <path>`, so the stub has to be a real compiled executable;
-  and `pgrep -x perchling` was rejected as the alternative precisely because it
+  writing a harness. A shebang-script stub is invisible to `-x -f`, because its
+  argv is `/bin/bash <path>` — but do not read that as "so copy the real
+  binary", which satisfies it and opens a pet window; the stub rule has a third
+  clause and it is under "Do not launch the overlay to see if it works" above.
+  And `pgrep -x perchling` was rejected as the alternative precisely because it
   matches by process NAME and would see an unrelated install, which breaks the
   scratch-`CLAUDE_CONFIG_DIR` isolation every test here depends on.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
