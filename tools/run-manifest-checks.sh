@@ -88,6 +88,48 @@ TAP_SEQS="$TAP_SEQS \"tap\": { \"frames\": [$FLAT, $HIGH], \"steps\": [[0,140],[
 check "tap is recognised" 0 "$(fixture tap "$TAP_SEQS")" \
   "tap     2 frames, 3 steps x2" "(12 ticks, 1.20s total)"
 
+
+# parseGrid walks utf8 bytes through a 128-entry table, because iterating a row
+# by Character costs grapheme-cluster segmentation on every pixel and that alone
+# was 140ms of the 220ms it took to parse the ten shipped examples. The table
+# cannot represent a palette key outside ASCII, and a row byte over 127 cannot
+# index it, so both fall back to the original Character walk. These pin the two
+# paths together: the fast one must never accept what the slow one rejects, and
+# a rejection must still name the CHARACTER the author wrote rather than one
+# byte of it. Every case here was also diffed against the pre-change binary,
+# whole output and exit status, and matched.
+glyphs() { # glyphs <char> -> an 8x8 idle grid of that character, JSON
+  local c="$1" row=""
+  local i; for i in 1 2 3 4 5 6 7 8; do row="$row$c"; done
+  printf '["%s","%s","%s","%s","%s","%s","%s","%s"]' "$row" "$row" "$row" "$row" "$row" "$row" "$row" "$row"
+}
+petfile() { # petfile <name> <palette-json> <idle-grid-json> -> path
+  local path="$SCRATCH/$1.json"
+  printf '{ "name": "%s", "palette": %s, "moods": { "idle": %s } }\n' "$1" "$2" "$3" > "$path"
+  printf '%s' "$path"
+}
+
+check "non-ascii palette key loads" 0 \
+  "$(petfile star '{ "★": "#FF0000" }' "$(glyphs '★')")" "8x8"
+check "cjk palette key loads" 0 \
+  "$(petfile cjk '{ "貓": "#00FF00" }' "$(glyphs '貓')")" "8x8"
+check "emoji palette key loads" 0 \
+  "$(petfile emoji '{ "🐶": "#0000FF" }' "$(glyphs '🐶')")" "8x8"
+# An ASCII palette takes the byte path; a non-ASCII glyph in the row must still
+# be reported as that glyph, which is the whole reason the fallback exists.
+check "non-ascii glyph names the character" 1 \
+  "$(petfile mixed '{ "a": "#FF0000" }' '["aaaaaaaa","aaaaaaaa","aaaaaaa★","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa"]')" \
+  'idle row 2' 'is not in the palette'
+check "unknown ascii glyph still rejected" 1 \
+  "$(petfile unk '{ "a": "#FF0000" }' '["aaaaaaaa","aaaaaaaz","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa"]')" \
+  'idle row 1' '"z" is not in the palette'
+check "short row still rejected" 1 \
+  "$(petfile short '{ "a": "#FF0000" }' '["aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa"]')" \
+  'idle row 3' 'length 5 != 8'
+# Both transparent glyphs are known to the byte table, not just ".".
+check "0 and . both transparent" 0 \
+  "$(petfile clear '{ "a": "#FF0000" }' '["a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a."]')" "8x8"
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

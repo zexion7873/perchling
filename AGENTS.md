@@ -495,6 +495,36 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   subcommand needs no auth. `PermissionRequest` was cleared this way back to
   2.1.109, over a hundred releases; 2.0.x demands auth before validating and was
   not measured.
+- **A row string is walked as utf8 BYTES, and the Character walk beside it is
+  the fallback rather than dead code.** Iterating a `String` by `Character`
+  segments grapheme clusters on every pixel, and a pet is tens of thousands of
+  them: measured across the ten shipped examples, that walk alone was 140ms of a
+  220ms parse, against 3.7ms for the same walk over `row.utf8`. It matters
+  because `petChoices()` parses EVERY manifest in `examples/` and `pets/`
+  synchronously on the main thread before the Pets menu can be drawn — 220ms of
+  right-click latency that no user could mistake for anything but a hang. The
+  whole parse is now 44ms. Three things about the shape of that fix.
+  The bytes are MATERIALISED with `Array(row.utf8)` rather than walked lazily,
+  because the utf8 view charges per-element bookkeeping an array walk does not:
+  84ms against 46ms across the same ten pets. A separate `asciiPalette` flag was
+  written first and deleted as dead weight — a row can only USE a non-ASCII
+  palette key by carrying a byte over 127, which the byte walk already declines,
+  so one condition covers both cases. And the fallback is not only about
+  reaching the same verdict: a rejection has to name the CHARACTER the author
+  wrote, not one byte of it, which only the Character walk can do.
+  `tools/run-manifest-checks.sh` pins the pair with seven cases — a star, a CJK
+  and an emoji palette key must LOAD, and a non-ASCII glyph under an ASCII
+  palette must be rejected by its character — and every one of them was shown to
+  go red when the fallback is removed. The change was also diffed against the
+  pre-change binary over 13 hand-built edge cases plus all ten examples, whole
+  output and exit status, three runs each: identical.
+
+  **Do not write that diff against fixtures that put the same defect in several
+  moods.** `loadCustomPet` walks `moods` as a Swift Dictionary, whose iteration
+  order is randomised per process, so whichever broken mood is visited first is
+  the one named — the OLD binary alone reported four different moods across
+  eight runs of one file. Put the defect in exactly one mood and the comparison
+  is deterministic.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
