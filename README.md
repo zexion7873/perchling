@@ -273,8 +273,10 @@ flowchart LR
 ```
 
 Each session's mood is a file, and the same file is the liveness refcount —
-re-stamped on every prompt, removed when the session ends. That's the whole
-protocol: no IPC, no daemon framework, and no network traffic at runtime.
+re-stamped on every prompt, removed when the session ends, and retired an hour
+after it stops being re-stamped for the sessions that end without saying so.
+That's the whole protocol: no IPC, no daemon framework, and no network traffic
+at runtime.
 
 ---
 

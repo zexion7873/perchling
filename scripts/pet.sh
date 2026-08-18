@@ -258,8 +258,25 @@ cmd_up() {
   else
     rm -f "$OWNERS/$sid"
   fi
+  # Removal is NOT symmetric on its own, which is the case the owner machinery
+  # exists for: a force-quit fires no SessionEnd, so cmd_down never runs, and
+  # the loop below then prunes owners/<sid> while sessions/<sid> stays forever.
+  # Nothing in the renderer deletes one either — liveSessions and pollSessions
+  # compute the staleness predicate and use it only to HIDE. Left alone that
+  # retains up to 300 bytes of prompt or reply text per abnormally-ended
+  # session indefinitely, and makes `pet.sh status` over-report.
+  #
+  # The window is the renderer's own hour, so this removes nothing that was
+  # still being shown: liveSessions requires the stamp to be inside the cutoff
+  # REGARDLESS of whether the owner is alive, so a session too stale to draw is
+  # too stale to keep. A session that is genuinely still alive re-announces
+  # itself on its next hook. Runs at SessionStart only, never on the hot path,
+  # so one `find` is affordable here in a way it would not be in state.sh.
+  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null
   # An owner file whose session is already gone is the same leak the manual
-  # lease was, one directory over.
+  # lease was, one directory over. It runs AFTER the prune above, so a session
+  # retired for staleness takes its owner with it and the pair stays matched
+  # without this loop needing to know the cutoff.
   for f in "$OWNERS"/*; do
     [ -e "$f" ] || continue
     [ -e "$SESSIONS/${f##*/}" ] || rm -f "$f"

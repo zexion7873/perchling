@@ -948,10 +948,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `cmd_up`'s `!= "$$"` guard exists to reject. Closing it properly means
   inventing a third state, which buys back a self-healing hour.
 
-  What DOES hold, and is worth keeping: removal is symmetric. `cmd_down`
-  removes both halves at `SessionEnd` whatever the owner situation was, and
-  `cmd_up` prunes owner files whose session is already gone, so neither
-  directory leaks.
+  **Removal is symmetric only when `SessionEnd` fires, and the owner machinery
+  exists precisely because it sometimes does not.** `cmd_down` removes both
+  halves whatever the owner situation was; a force-quit runs it never, and the
+  owner-prune loop then removed `owners/<sid>` while `sessions/<sid>` stayed
+  forever. Nothing in the renderer deletes one either — `liveSessions` and
+  `pollSessions` compute the staleness predicate and use it only to HIDE. A
+  session file four days old was found on a live install.
+
+  `cmd_up` therefore retires session files past the renderer's own hour before
+  the owner loop runs, which is what makes that loop's job right rather than
+  inverted: the session goes first and its owner follows, so the pair stays
+  matched without the loop knowing the cutoff. The window is not a choice —
+  `liveSessions` requires the stamp to be inside the cutoff regardless of
+  whether the owner is alive, so a session too stale to draw is too stale to
+  keep, and one that is genuinely alive re-announces itself on its next hook.
+  Pinned in `tools/run-prune-checks.sh`, including the half that matters more:
+  a FRESH session must survive `cmd_up` untouched.
 - **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
   the pause between one session ending and the next starting — a resume, a
   `/clear`, a new window. Both ways of losing every session skip it: refcounts
@@ -975,15 +988,19 @@ bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejec
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
 bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
 bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
+bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Seven layers have harnesses — the session/tray layer and the pet library
+Eight layers have harnesses — the session/tray layer and the pet library
 (`tools/run-session-harness.sh`), `state.sh` itself
 (`tools/run-state-checks.sh`, shell only, since that script compiles nothing
-and launches nothing), the manifest parser
+and launches nothing), `cmd_up`'s housekeeping
+(`tools/run-prune-checks.sh` — kept apart from the launch and build harnesses
+because they are three unrelated properties of one function and one file would
+make a failure ambiguous), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
