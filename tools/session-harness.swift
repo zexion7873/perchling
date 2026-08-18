@@ -459,6 +459,29 @@ do {
           rows.first { $0.sid == "s2" }?.mood, .waiting)
 }
 
+// MARK: - cleanCaption
+
+check("an escaped newline becomes a space", cleanCaption(#"two\nlines"#), "two lines")
+check("an escaped tab becomes a space", cleanCaption(#"a\tb"#), "a b")
+check("an escaped quote becomes a quote", cleanCaption(#"he said \"go\""#), #"he said "go""#)
+// The case a chain of replacements cannot get right in either order: the user
+// typed a backslash and then an n, so the backslash survives and the n is an n.
+check("an escaped backslash does not eat the character after it",
+      cleanCaption(#"C:\\nope"#), #"C:\nope"#)
+check("an escape this sed cannot decode is passed through whole",
+      cleanCaption(#"\u4e2d"#), #"\u4e2d"#)
+check("a bare backslash at the end survives", cleanCaption(#"trailing \"#), #"trailing \"#)
+
+// The bug this existed to fix: the SESSION caption is what the bubble shows,
+// and it was the one that never got cleaned.
+do {
+    let dir = tempDir("caption-escapes")
+    writeFile(dir, "s1", #"running"# + "\n/Users/x/p\n" + #"fix the \"bug\"\nthen ship"#)
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    check("a session caption reaches the bubble unescaped",
+          rows.first?.say, #"fix the "bug" then ship"#)
+}
+
 // MARK: - the pet library, and the one path that can delete a user's only copy
 
 // `clearPetLink` is two lines, and the whole safety property is their ORDER

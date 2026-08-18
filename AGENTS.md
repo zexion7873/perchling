@@ -855,6 +855,20 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   The listing cache needs no prune, unlike the parse cache: a removal moves the
   directory's mtime, so a stale listing is replaced on the next poll rather than
   answering forever.
+- **A caption arrives still JSON-escaped, and BOTH captions are cleaned in one
+  place.** `state.sh` captures the string body with a `sed`, so a two-line
+  prompt reaches the file as the literal characters backslash and n.
+  `cleanCaption` is the only unescaper and `liveSessions` and `pollSay` both
+  call it. Putting it in `pollSay` alone was the shape of the bug worth
+  remembering: `bubbleText` prefers `top.say` and only falls back to the global
+  `say`, so the cleaned path was the one nobody normally sees and the escapes
+  were on screen in every ordinary case. It is ONE PASS rather than a chain of
+  `replacingOccurrences`, because a chain gets `\\n` wrong in either order — a
+  user who typed a backslash before an n loses the backslash or gains a
+  space — and an escape it does not recognise (`\uXXXX`, which that `sed`
+  cannot decode anyway) passes through whole rather than half-eaten. Both
+  mutations are pinned in `tools/run-session-harness.sh` and each was shown to
+  fail alone.
 - **The bubble quotes the session the face is reporting.** `menuRows()` already
   sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
   `bubbleText()` takes its line three and its name. Before this the caption came
@@ -924,7 +938,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 80 assertions over the session/tray + pet library
+bash tools/run-session-harness.sh  # 87 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
