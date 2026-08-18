@@ -60,6 +60,16 @@ reclaim and take the lock. Serialising reclaim is what works, and the freshness
 re-test inside that lock is load-bearing rather than belt-and-braces: dropping
 it alone still launches two.
 
+The reclaim also has to survive a lock it cannot `rmdir`. That call refuses a
+non-empty directory and nothing else clears the lock, so anything that ever
+lands inside one wedges every future launch permanently — the exact failure the
+reclaim exists to prevent. Nothing writes in there, so it takes an outside
+cause, which is the kind of thing a lock has to survive rather than assume away.
+A stale lock that will not `rmdir` is RENAMED aside: one syscall, works on a
+non-empty directory, and leaves the debris where a human can look at it.
+`rm -rf` on a path built from an environment variable is not something this
+script should own.
+
 Verify without launching:
 
 - **Manifest correctness** — `perchling --validate <path>` runs the same parser
@@ -570,6 +580,26 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   And `pgrep -x perchling` was rejected as the alternative precisely because it
   matches by process NAME and would see an unrelated install, which breaks the
   scratch-`CLAUDE_CONFIG_DIR` isolation every test here depends on.
+
+  **`-x` is not enough on its own, because the pattern is a REGEX and `$BIN` is
+  a path the user chose.** A config directory named `cfg+test (1)` makes `+` a
+  quantifier and `(1)` a group, and the pattern then matches nothing: measured
+  against a process genuinely running from such a path, `pgrep -x -f "$BIN"`
+  reports NOT FOUND. Both halves break at once and neither says so — `running()`
+  reports stopped beside a visible pet, so each session start adds another, and
+  all three `pkill` sites match nothing, so `stop` and `disable` stop nothing.
+  `BIN_RE` is escaped once beside `BIN` and is what all four uses match on.
+  Matching literally with `ps -Awwo args= | grep -qxF` removes the class of bug
+  instead of escaping it, and lost on cost: 33.9ms against pgrep's 20.7 per
+  call, in a function polled up to 50 times per launch.
+
+  The assertion for this must be the ALREADY-RUNNING shape, never a stampede.
+  A stampede cannot see it: the lock serialises the callers, the holder spins
+  out its full five seconds waiting for a pet `running()` will never admit to,
+  and the rest stand down against a genuinely fresh lock — one launch, green,
+  against the broken script. The damage lands between session starts, where no
+  lock is left to mask it. The first version of that assertion scored 13/13
+  against the mutant it existed to catch.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
   let it fail a hook, and do not add a `jq` dependency — the existing `sed`
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
@@ -809,7 +839,7 @@ bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
-bash tools/run-launch-race.sh       # cmd_up launches exactly one pet under concurrency
+bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -836,8 +866,14 @@ subtler reason: it reconstructs `running()` by `sed`-ing one line out of the
 script under test, which silently yields nothing callable for four of the five
 ways to spell that function — every probe then exits 127, prints `miss`, and the
 assertion reports "0 false hits" having tested nothing. It now asserts the
-extracted name is callable before trusting the count. And eleven green lines are
-not eleven guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
+extracted name is callable before trusting the count — and, because that proved
+insufficient the same afternoon, that all eight probes came back with a VERDICT.
+`BIN_RE` was added to `pet.sh` hours later; the extracted `running()` referenced
+it, the probe did not set it, every subshell died on `set -u`, and the
+assertion counted zero hits among zero verdicts and reported ok. Both failures
+were "the extracted function did not run", so the guard now counts what came
+back rather than naming a cause. And thirteen green lines are not thirteen
+guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
 the race window, so they pass against a broken script too and the file labels
 them negative controls rather than coverage.
 

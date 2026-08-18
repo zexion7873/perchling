@@ -8,6 +8,19 @@ ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 SRC="$(cd "$(dirname "$0")" && pwd)/pet.swift"
 EXAMPLES="$(cd "$(dirname "$0")/.." && pwd)/examples"
 BIN="$ROOT/bin/perchling"
+# pgrep and pkill match a REGEX, never a literal, so every metacharacter in this
+# path is an operator. A config directory called `cfg+test (1)` makes `+` a
+# quantifier and `(1)` a group, and the pattern then matches nothing: measured
+# against a process genuinely running from that path, `pgrep -x -f "$BIN"`
+# reports NOT FOUND. Both halves of the script break at once and neither says
+# so — `running()` reports stopped beside a visible pet, so every session start
+# launches another one, and all three `pkill` sites match nothing, so `stop`
+# and `disable` stop nothing. Escaped once here rather than at each of the four
+# uses. Matching literally with `ps -Awwo args= | grep -qxF` was the runner-up
+# and removes the whole class of bug rather than escaping it, but it costs
+# 33.9ms against pgrep's 20.7 per call, and `running()` is polled up to 50
+# times per launch.
+BIN_RE=$(printf '%s' "$BIN" | sed 's/[][(){}.*+?^$|\\]/\\&/g')
 SESSIONS="$ROOT/sessions"
 OWNERS="$ROOT/owners"
 BUILDLOG="$ROOT/build.log"
@@ -59,7 +72,7 @@ supported() {
 # the duplicate-pet race launch_once exists for. `-x` requires the whole argv to
 # equal "$BIN", which the overlay's does (it is exec'd as `nohup "$BIN"`) and a
 # probe's never can.
-running() { pgrep -x -f "$BIN" >/dev/null 2>&1; }
+running() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }
 
 # Serialises the check-and-launch. `mkdir` is the atomic primitive available —
 # macOS ships no flock(1) — and two details are what make it work:
@@ -114,7 +127,15 @@ launch_once() {
     [ -n "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] && return 0
     [ -d "$reclaim" ] && [ -z "$(find "$reclaim" -maxdepth 0 -mmin -60 2>/dev/null)" ] && rmdir "$reclaim" 2>/dev/null
     mkdir "$reclaim" 2>/dev/null || return 0
-    [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
+    # `rmdir` refuses a non-empty directory, and nothing else here clears the
+    # lock, so anything that ever lands inside it wedges every future launch
+    # permanently. Nothing writes in there, so this needs an outside cause —
+    # which is exactly the kind of thing a lock has to survive. Renaming works
+    # on a non-empty directory and is one syscall; `rm -rf` on a path built
+    # from an environment variable is not something this script should own, and
+    # the debris is inspectable rather than gone.
+    [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] &&
+      { rmdir "$lock" 2>/dev/null || mv "$lock" "$ROOT/.launch.wedged.$$" 2>/dev/null; }
     rmdir "$reclaim" 2>/dev/null
     mkdir "$lock" 2>/dev/null || return 0
   fi
@@ -201,7 +222,7 @@ cmd_up() {
   done
   # (Re)build when missing or when a plugin update shipped newer source.
   if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
-    pkill -x -f "$BIN" 2>/dev/null
+    pkill -x -f "$BIN_RE" 2>/dev/null
     # Silent here is fine — cmd_build has already put the reason in $BUILDLOG,
     # where `pet.sh status` reads it. Discarding it was what made a failed
     # build indistinguishable from a clean install.
@@ -258,19 +279,24 @@ cmd_status() {
 
 cmd_stop() {
   rm -f "$SESSIONS"/* "$OWNERS"/* 2>/dev/null
-  pkill -x -f "$BIN" 2>/dev/null
+  pkill -x -f "$BIN_RE" 2>/dev/null
   echo "perchling stopped"
 }
 
 cmd_disable() {
   touch "$ROOT/disabled"
-  pkill -x -f "$BIN" 2>/dev/null
+  pkill -x -f "$BIN_RE" 2>/dev/null
   echo "perchling disabled ('pet.sh enable' to undo)"
 }
 
 cmd_enable() {
   rm -f "$ROOT/disabled"
-  echo "perchling enabled"
+  # Intent, not outcome. cmd_up backgrounds the launch and exits, so nothing
+  # here can see whether it worked: a lock leaked by a process killed
+  # mid-launch is honoured for its full minute, and the old wording announced
+  # success into that silence. Reporting the truth would mean cmd_up not
+  # exiting, which is the one thing the SessionStart hook needs it to do.
+  echo "perchling enabled — starting it; 'pet.sh status' says whether it came up"
   cmd_up manual
 }
 
@@ -280,7 +306,8 @@ cmd_wake() {
     exit 1
   fi
   touch "$ROOT/wake"
-  echo "perchling waking"
+  # Same as enable: this is what we asked for, not what happened.
+  echo "perchling waking — 'pet.sh status' says whether it came up"
   running || cmd_up manual
 }
 

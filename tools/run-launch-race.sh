@@ -174,7 +174,10 @@ probe_selfmatch() {
   local out hits
   out=$(
     BIN="$SCRATCH/no-such-binary"
-    eval "$(sed -n '/^running()/p' "$PET")"
+    # running() is not self-contained — it matches on a pattern the script
+    # derives from $BIN — so the derivation is extracted too rather than
+    # restated here, for the same reason the function itself is.
+    eval "$(sed -n '/^BIN_RE=/p;/^running()/p' "$PET")"
     # Extracting a rule from the code under test needs a precondition check, or
     # it is the same failure the hardcoded version had, wearing a better
     # argument. This `sed` prints ONE line, so it only reconstructs a running()
@@ -197,12 +200,77 @@ probe_selfmatch() {
     printf '  FAIL %-26s no callable running() extracted from %s\n' "probe-self-match" "$PET"
     fail=$((fail + 1)); return
   fi
+  # Every probe must come back with a verdict. `declare -F` above proves the
+  # name exists; only this proves calling it does anything. Both times this
+  # assertion has silently stopped testing, the cause was an extracted function
+  # that could not RUN — first undefined, then referencing a variable the probe
+  # had not set — and both times it scored a clean pass by counting zero hits
+  # among zero verdicts.
+  local verdicts; verdicts=$(grep -c -E '^(HIT|miss)$' <<<"$out"); verdicts=${verdicts:-0}
+  if [ "$verdicts" -ne 8 ]; then
+    printf '  FAIL %-26s %s of 8 probes returned a verdict — running() did not run\n' "probe-self-match" "$verdicts"
+    fail=$((fail + 1)); return
+  fi
   hits=$(grep -c HIT <<<"$out"); hits=${hits:-0}
   # No process is running from that path, so every hit is one probe seeing another.
   if [ "$hits" -eq 0 ]; then printf '  ok   %-26s 8 concurrent running() calls, 0 false hits\n' "probe-self-match"; pass=$((pass + 1))
   else printf '  FAIL %-26s %s of 8 running() calls matched each other\n' "probe-self-match" "$hits"; fail=$((fail + 1)); fi
 }
 probe_selfmatch
+
+# `$BIN` is interpolated straight into a pgrep/pkill pattern, and those match a
+# REGEX. A config directory the user named `cfg+test (1)` turns `+` into a
+# quantifier and `(1)` into a group, so the pattern matches nothing at all —
+# measured against a process genuinely running from such a path, `pgrep -x -f
+# "$BIN"` reports NOT FOUND, and `running()` reports stopped beside a visible
+# pet.
+#
+# This has to be the already-running shape, not the stampede one. A stampede
+# cannot see the defect: the lock serialises the callers, the one holder spins
+# out its full five seconds waiting for a pet running() will never admit to, and
+# the other seven stand down against a lock that is genuinely fresh — exactly
+# one launch, green, against the broken script. The damage lands BETWEEN session
+# starts, where no lock is left to mask it. The first version of this assertion
+# was the stampede and scored 13/13 against the mutant it was written to catch.
+regex_home() {
+  local home="$SCRATCH/cfg+test (1)" log i
+  mkdir -p "$home/perchling/bin"
+  log="$home/launches.log"; : > "$log"
+  cp "$SCRATCH/stub" "$home/perchling/bin/perchling"
+  touch "$home/perchling/bin/perchling"
+  STUB_LOG="$log" "$home/perchling/bin/perchling" & sleep 0.5
+  for i in $(seq 1 8); do
+    CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up "s$i" >/dev/null 2>&1 &
+  done
+  wait; sleep 2
+  local got; got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
+  if [ "$got" -eq 1 ]; then printf '  ok   %-26s metacharacters in the path, 8 calls added none\n' "regex-safe-path"; pass=$((pass + 1))
+  else printf '  FAIL %-26s launched=%s, want 1 — running() cannot see the pet\n' "regex-safe-path" "$got"; fail=$((fail + 1)); fi
+  pkill -x -f "$SCRATCH/.*/perchling" 2>/dev/null
+}
+regex_home
+
+# `rmdir` refuses a non-empty directory. Nothing writes inside the lock, so this
+# needs an outside cause — but a lock that cannot be reclaimed blocks every
+# future launch FOREVER, which is the one failure the reclaim exists to prevent.
+# Distinguishable from "the lock is honoured" only by the age: this one is
+# stale, so it must be got out of the way rather than waited on.
+wedged_lock() {
+  local home="$SCRATCH/wedged-lock" log
+  mkdir -p "$home/perchling/bin" "$home/perchling/.launch.lock"
+  log="$home/launches.log"; : > "$log"
+  cp "$SCRATCH/stub" "$home/perchling/bin/perchling"
+  touch "$home/perchling/bin/perchling"
+  touch "$home/perchling/.launch.lock/debris"
+  touch -t 202001010000 "$home/perchling/.launch.lock"
+  CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up s1 >/dev/null 2>&1
+  sleep 2
+  local got; got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
+  if [ "$got" -eq 1 ]; then printf '  ok   %-26s stale lock with a file in it, launched=1\n' "wedged-lock-cleared"; pass=$((pass + 1))
+  else printf '  FAIL %-26s launched=%s, want 1\n' "wedged-lock-cleared" "$got"; fail=$((fail + 1)); fi
+  pkill -x -f "$home/perchling/bin/perchling" 2>/dev/null
+}
+wedged_lock
 
 echo
 echo "$pass passed, $fail failed"
