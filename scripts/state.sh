@@ -13,14 +13,37 @@ if [ ! -t 0 ]; then
   # so one session's "running" can't stomp another's "waiting". The write also
   # re-stamps mtime, which the 1h staleness guard reads as liveness.
   sid=$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  # The extraction is greedy and takes the LAST match, so a payload carrying a
+  # nested object with its own "session_id" wins over the top-level one. For
+  # every other field that is a cosmetic wrong answer; for this one it is a
+  # FILENAME, written with mv below and removed with rm in pet.sh. A nested
+  # `"session_id":"../../../evil"` resolves three levels above the sessions
+  # directory and clobbers an arbitrary file whose third line the same payload
+  # chose. Real ids are UUIDs, so the shape is checkable without a parser.
+  # Rejected rather than repaired: an empty sid degrades to no refcount for
+  # this hook, where a sanitised one still names a file somebody else picked.
+  case "$sid" in ''|*[!A-Za-z0-9_-]*) sid= ;; esac
   # Verified against a real payload, not assumed: every hook event carries cwd.
   # Same greedy shape as the extractions around it — a tool payload with its
   # own "cwd" key would win and put a wrong directory name on one menu row
-  # until the next hook fires, which is not worth a second parser.
+  # until the next hook fires, which is not worth a second parser. That
+  # tradeoff holds only because this value is drawn, never resolved: it is a
+  # label on a tray row, not a path this script opens.
   cwd=$(printf '%s' "$payload" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
   # UserPromptSubmit payloads carry the prompt; snippet it for the speech
   # bubble. Stops at the first escaped quote — it's a teaser, not a transcript.
-  snippet=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | head -c 300 | sed 's/\\*$//')
+  # The 300 is BYTES and will land mid-codepoint on CJK about two times in
+  # three. `cut -c1-300` is not the fix: hooks run with LANG, LC_ALL and
+  # LC_CTYPE all unset, and measured under that C locale `cut -c` counts bytes
+  # exactly like `head -c` — it only splits characters correctly on a developer
+  # machine with a UTF-8 locale, which is the worst possible place for a test
+  # to pass. The repair belongs to the reader, and `liveSessions` decodes
+  # leniently so a dangling continuation byte costs one replacement character
+  # instead of the whole file. The stderr redirect matters for the same reason
+  # from the other side: under a UTF-8 locale this sed refuses invalid bytes
+  # with `illegal byte sequence`, and this script must never write to a hook's
+  # stderr. Losing the snippet there is already handled — line 3 is re-read.
+  snippet=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | head -c 300 | sed 's/\\*$//' 2>/dev/null)
   # Not every UserPromptSubmit is a person typing. The harness re-enters the
   # session with its own machinery — a finished background task, a reminder, a
   # slash command's stdout — through the same event, so the bubble was showing
@@ -56,7 +79,7 @@ if [ ! -t 0 ]; then
       reply=$(printf '%s\n' "$chunk" \
         | grep '"role":"assistant"' | grep '"type":"text","text":"' | tail -1 \
         | sed -nE 's/.*"type":"text","text":"(([^"\]|\\.)*)".*/\1/p' \
-        | head -c 300 | sed 's/\\*$//')
+        | head -c 300 | sed 's/\\*$//' 2>/dev/null)
       [ -n "$reply" ] && snippet="$reply"
     fi
   fi

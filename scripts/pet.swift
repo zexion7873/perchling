@@ -1312,7 +1312,16 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
         guard alive(sid),
               let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
               stamp > cutoff else { continue }
-        let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        // Decoded leniently, unlike the state and owner files beside it. Those
+        // hold a mood word and a pid; this one holds a caption cut to 300
+        // BYTES by state.sh, so a multi-byte character lands astride the cut
+        // routinely. A strict decoder answers nil for the whole file on one
+        // dangling continuation byte, and `Mood.parse("")` is `.idle` — so a
+        // truncated CJK prompt would silently park an actively working session
+        // at idle, with no label and no caption, for as long as it kept
+        // writing the same line 3 back. One replacement character in a teaser
+        // that already ends mid-sentence is the cheaper failure by a mile.
+        let raw = (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } ?? ""
         let mood = Mood.parse(raw)
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
         let cwd = lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""

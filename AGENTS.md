@@ -719,8 +719,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `PreToolUse`,
   `PostToolUse` and `PostToolBatch` — each from a real headless CLI run, not
   read off the docs. In every one of those seven, `"cwd"` occurred exactly
-  once, including on tool events carrying `tool_input`, so the greedy-`sed`
-  hazard the extraction knowingly accepts has not actually bitten yet.
+  once, including on tool events carrying `tool_input`.
+- **That survey covers `cwd`, and `session_id` is not the same question.** The
+  extraction is greedy and takes the LAST match, so a payload whose
+  `tool_input` carries a key of the same name wins over the top-level one. For
+  `cwd` the cost is a wrong directory on one tray row until the next hook,
+  which is why the extraction accepts it. For `session_id` the value becomes a
+  FILENAME: `mv -f` in `state.sh` and `cmd_up`, `rm -f` in `cmd_down`. Measured
+  end to end — a nested `"session_id":"../../../evil"` resolves three levels
+  above the sessions directory and clobbers an arbitrary file whose third line
+  the same payload chose, and `PostToolBatch` carries no matcher, so every tool
+  batch is a delivery route. `state.sh` and `pet.sh` therefore both check the
+  SHAPE (`case "$sid" in ''|*[!A-Za-z0-9_-]*)`), which costs no fork, and
+  reject rather than sanitise: an empty sid degrades to no refcount for that
+  hook, where a repaired one still names a file somebody else picked. The
+  general form of the trap is worth more than the fix — a measurement of the
+  harmless field read as a verdict on the dangerous one, in prose that looks
+  exactly like the measured bullets around it.
 - **`sessions/` is read for moods in exactly one place.** `liveSessions()`
   owns the owner-alive guard, the one-hour staleness cutoff, and the per-mood
   TTL decay, and both the attention fold and the tray rows consume its

@@ -433,5 +433,31 @@ check("no title falls through to the registry name",
                       name: "perchling-de")),
       "perchling-de")
 
+// MARK: - a caption cut mid-codepoint
+
+// state.sh truncates the caption to 300 BYTES, so a CJK prompt straddles the
+// cut roughly two times in three. A strict decoder answers nil for the WHOLE
+// file on one dangling continuation byte, and `Mood.parse("")` is `.idle` — so
+// the pet would report an actively working session as idle, with no label and
+// no caption, and keep doing it: state.sh reads line 3 back and republishes
+// the same bad bytes on every tool batch. The bytes are written as Data
+// because the fixture is by definition not expressible as a Swift String,
+// which is also why writeFile cannot build it.
+do {
+    let dir = tempDir("truncated-utf8")
+    var bytes = Array("running\n/Users/x/Project/perchling\nhello ".utf8)
+    bytes.append(contentsOf: [0xE4, 0xB8])   // lead byte + one of two continuations
+    try! Data(bytes).write(to: dir.appendingPathComponent("s1"))
+    writeFile(dir, "s2", "waiting\n/Users/x/Project/perchling\nfine")
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    let s1 = rows.first { $0.sid == "s1" }
+    check("a caption cut mid-codepoint keeps its mood", s1?.mood, .running)
+    check("a caption cut mid-codepoint keeps its cwd", s1?.cwd, "/Users/x/Project/perchling")
+    check("a caption cut mid-codepoint still reaches the bubble",
+          s1?.say?.hasPrefix("hello") ?? false, true)
+    check("a clean session beside it is unaffected",
+          rows.first { $0.sid == "s2" }?.mood, .waiting)
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

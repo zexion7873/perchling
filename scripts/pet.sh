@@ -50,6 +50,21 @@ payload_field() {
   printf '%s' "$payload" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1
 }
 
+# The one payload field that becomes a FILENAME, so the only one whose shape
+# has to be checked. payload_field is greedy and takes the LAST match, so a
+# nested object carrying its own "session_id" beats the real one — and this
+# value reaches `mv -f "$ROOT/.up.$$" "$SESSIONS/$sid"` and `rm -f
+# "$SESSIONS/$sid" "$OWNERS/$sid"`, where `../../../evil` resolves three levels
+# above the sessions directory. Real ids are UUIDs. An id that fails the shape
+# test yields nothing, and cmd_up's own `|| sid="manual"` then covers it: a
+# launch with no usable session behind it is exactly what the manual bridge is
+# for, where a sanitised id would still name a file the payload picked.
+payload_sid() {
+  sid_raw=$(payload_field session_id)
+  case "$sid_raw" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
+  printf '%s' "$sid_raw"
+}
+
 # The outermost process this session hangs off — Claude desktop for a session
 # started there, the terminal app for one started from a shell. Its death is
 # the one end-of-session signal a missing SessionEnd cannot swallow. One ps,
@@ -194,7 +209,7 @@ cmd_up() {
   cwd=""
   if [ -z "$sid" ]; then
     read_payload
-    sid="$(payload_field session_id)"
+    sid="$(payload_sid)"
     cwd="$(payload_field cwd)"
   fi
   [ -n "$sid" ] || sid="manual"
@@ -270,7 +285,7 @@ cmd_up() {
 
 cmd_down() {
   sid="${1:-}"
-  if [ -z "$sid" ]; then read_payload; sid="$(payload_field session_id)"; fi
+  if [ -z "$sid" ]; then read_payload; sid="$(payload_sid)"; fi
   [ -n "$sid" ] && rm -f "$SESSIONS/$sid" "$OWNERS/$sid"
   # A bridge left over from an enable/wake that happened while sessions were
   # live: on its own it is not a reason for the pet to exist.
