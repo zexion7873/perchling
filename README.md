@@ -2,7 +2,7 @@
 
 # 🐣 Perchling
 
-<img src="docs/moods.gif" width="560" alt="The perchling pet — a small coral hippo — in its five moods: idle with heavy lids, running with its snout drawn in, waiting wide-eyed, done with its eyes closed in an arch and sparkles overhead, and error with a dark cross through each eye.">
+<img src="docs/moods.gif" width="540" alt="The perchling pet — a small husky in blue goggles — in its five moods: idle sitting calmly, running hunched over a laptop, waiting sat up and watching, done with its mouth open in a grin, and error with a red cross through each eye.">
 
 **A tiny pixel creature that perches on the corner of your screen and reacts to
 Claude Code — so you can look away from the terminal and still know when it
@@ -58,11 +58,11 @@ launch — a few seconds, once.
 
 |   | State | Trigger | What you see |
 |:-:|-------|---------|--------------|
-| 👁️ | **running** | you submit a prompt, tools execute | bounces, snout drawn in, eyes narrowed to work |
+| 👁️ | **running** | you submit a prompt, tools execute | hunches over a laptop and works |
 | 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, wide-eyed, twitching |
-| 🎉 | **done** | turn or agent completed | hops under a twinkle, eyes closed in a happy arch |
-| 😢 | **error** | an API failure ended the turn | droops, a dark cross through each eye |
-| 💤 | **idle** | nothing happening | breathes slowly, lids heavy |
+| 🎉 | **done** | turn or agent completed | sits up grinning, ears perked |
+| 😢 | **error** | an API failure ended the turn | droops, a red cross through each eye |
+| 💤 | **idle** | nothing happening | sits and breathes, tail curled |
 
 Drag it and it leans into the pull, feet planted, and rights
 itself when you let go. Click it and it hops, then throws you back to Claude —
@@ -227,8 +227,8 @@ a burst and a resting state have no direction of travel.
 > It declares `eyes` at `"range": 0` — so it blinks while it waits and does not
 > follow your cursor — and `sequences` for `done`, `error`, `hover`, `idle` and
 > `tap`. It ships no `drag` frames, so it leans on the shear when dragged.
-> `examples/perchling.json` is `perchling --export`, so it is the worked example
-> for every one of these blocks.
+> `perchling --export` prints it, so the worked example for every one of these
+> blocks is one command away.
 
 ### 📚 Your pet library
 
@@ -236,12 +236,10 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Ten worked examples
-ship in [`examples/`](examples/): a leafy slime, the first mascot (`classic`),
-the CRT terminal robot that was the built-in through 1.6 (`robot`), the
-built-in creature itself, and six animals that animate every mood and every
-reaction, `drag` included — `husky`, `otter` and `chinchilla` on land,
-`whale`, `shark` and `sea-lion` in the water.
+copied into your library the first time you pick one. Six ship in
+[`examples/`](examples/), all of them animals that animate every mood and every
+reaction, `drag` included — `husky`, `otter` and `chinchilla` on land, `whale`,
+`shark` and `sea-lion` in the water.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:
