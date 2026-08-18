@@ -7,6 +7,18 @@ set -u
 ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 SRC="$(cd "$(dirname "$0")" && pwd)/pet.swift"
 EXAMPLES="$(cd "$(dirname "$0")/.." && pwd)/examples"
+# The built-in's art is a file now, not 449KB compiled into the binary, and
+# WHICH shipped pet it is comes from a name rather than a path — so changing the
+# default creature is this one line, and no file moves. The menu follows on its
+# own: petChoices hides whichever shipped pet matches builtinPet.name, so the
+# new built-in leaves the list and the old one joins it.
+BUILTIN_PET="${PERCHLING_BUILTIN:-husky}"
+BUILTIN_SRC="$EXAMPLES/$BUILTIN_PET.json"
+# Copied into the runtime home rather than read from the plugin directory, so an
+# overlay launched by hand — with no idea which plugin started it — still finds
+# its art. Same reason the binary is compiled to there: the plugin path carries
+# a version and is replaced wholesale on update.
+BUILTIN="$ROOT/builtin.json"
 BIN="$ROOT/bin/perchling"
 # pgrep and pkill match a REGEX, never a literal, so every metacharacter in this
 # path is an operator. A config directory called `cfg+test (1)` makes `+` a
@@ -220,6 +232,18 @@ cmd_up() {
     [ -e "$f" ] || continue
     [ -e "$SESSIONS/${f##*/}" ] || rm -f "$f"
   done
+  # Staged through a temp name: the overlay reads this file once at launch, and
+  # a launch landing mid-copy would fall back to the placeholder and look like a
+  # broken install. Silent because a missing shipped file is survivable — the
+  # placeholder is exactly what it is for.
+  # Compared by CONTENT, not by mtime. Switching which pet is the built-in
+  # points this at a different file that may well be OLDER than the copy already
+  # in place, and an mtime test would then decline to update — the swap would
+  # silently do nothing. `cmp` also answers "missing" and "changed" in the same
+  # breath, so there is one predicate rather than three.
+  if [ -f "$BUILTIN_SRC" ] && ! cmp -s "$BUILTIN_SRC" "$BUILTIN"; then
+    cp "$BUILTIN_SRC" "$ROOT/.builtin.$$" 2>/dev/null && mv -f "$ROOT/.builtin.$$" "$BUILTIN" 2>/dev/null
+  fi
   # (Re)build when missing or when a plugin update shipped newer source.
   if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
     pkill -x -f "$BIN_RE" 2>/dev/null

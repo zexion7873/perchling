@@ -226,8 +226,9 @@ like. Two sources, and which one you want depends on the question:
 
 - **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — `otter`, `chinchilla`, `whale`,
   `shark`, `sea-lion`. Five animals at scale 1, each declaring all eight
-  sequences off five frames apiece. Same family as the built-in husky, which is
-  not among them because it IS the built-in and already has its own menu row.
+  sequences off five frames apiece. The husky is one of them and is also the
+  built-in, which is why it has no row of its own — the built-in row already is
+  it.
 
   **Read them for FORMAT, never for art.** They were quantised from raster
   renders: 44 inks each, and around half of their pixels share a colour with no

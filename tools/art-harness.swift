@@ -8,11 +8,10 @@
 // at 192 px. They are quantisation residue rather than drawing mistakes, which
 // is why nobody caught them by reading the manifest.
 //
-// This runs against `builtinPet` — the pet parsed from BUILTIN_MANIFEST by the
-// same loadCustomPet a user's pet.json goes through — and against whatever
-// manifest paths are passed as arguments. It is deliberately bound to that
-// string and not to a copy: AGENTS.md's whole complaint about the built-in
-// having no guard is that a check one indirection away cannot see drift.
+// This runs against every manifest path it is given — assets/builtin.json and
+// examples/ — plus the placeholder compiled into the binary, which no path can
+// reach. There is one copy of each of those, so there is nothing for a check to
+// drift away from: the file the runner passes is the file that ships.
 
 import Foundation
 
@@ -91,7 +90,11 @@ func check(_ label: String, _ pet: CustomPet) {
 }
 
 print("shipped art:")
-check("built-in (\(builtinPet.name))", builtinPet)
+// `builtinPet` is declared below this harness's cut now — it needs the runtime
+// home to know which file to load. What ships is checked as a file instead,
+// passed in by the runner alongside examples/, and the embedded placeholder is
+// checked here because no argument can reach it.
+check("placeholder (embedded)", builtinFrom(nil).pet)
 
 for path in CommandLine.arguments.dropFirst() {
     let url = URL(fileURLWithPath: path)

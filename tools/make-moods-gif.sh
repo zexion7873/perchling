@@ -26,4 +26,10 @@ head -n $((cut - 1)) "$src" > "$work/gen.swift"
 cat "$here/moods-gif.swift" >> "$work/gen.swift"
 
 swiftc -O -o "$work/gen" "$work/gen.swift"
-"$work/gen" "$out"
+# The built-in loads its art from the runtime home now, so the hero would
+# otherwise be regenerated from whatever the USER has installed rather than
+# from this checkout. Point the runtime home at a scratch copy of this
+# checkout's art — which also keeps the generator from touching the live one.
+mkdir -p "$work/home"
+cp "$repo/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
+PERCHLING_HOME="$work/home" "$work/gen" "$out"
