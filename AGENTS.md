@@ -661,6 +661,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
+
+  **It honours `disabled` too, and that is what makes `disable` mean it.**
+  `cmd_up` has always read the flag, so a disabled install launched no pet, but
+  the hot path kept running a `dd`, five `sed`s and three writes on every
+  prompt and every tool batch of every session for a user who had turned the
+  pet off. The test is a shell builtin before the `mkdir`, so a disabled
+  install also stops recreating the runtime home. Refcounts stop being
+  re-stamped while it is set, which is the intended shape rather than a cost:
+  `cmd_down` still removes them at `SessionEnd` so nothing leaks, a live
+  session re-announces itself on its next hook after `enable`, and one too
+  stale to do that is one the staleness window would have retired anyway.
 - **Whether the machine can build is a different question from whether the pet
   can run, and four separate ways of conflating them are all silent.** Nothing
   here has a harness, and every one of these was found by measurement after
@@ -963,13 +974,16 @@ bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
 bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
+bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Six layers have harnesses — the session/tray layer and the pet library
-(`tools/run-session-harness.sh`), the manifest parser
+Seven layers have harnesses — the session/tray layer and the pet library
+(`tools/run-session-harness.sh`), `state.sh` itself
+(`tools/run-state-checks.sh`, shell only, since that script compiles nothing
+and launches nothing), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the

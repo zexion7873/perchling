@@ -2,6 +2,20 @@
 # Hot path: fires on every prompt / tool batch. Keep it cheap and never fail a hook.
 [ "$(uname)" = Darwin ] || exit 0
 d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
+# `disable` has to reach the hot path or it only half means it. `cmd_up` has
+# always honoured this flag, so a disabled install launched no pet — but every
+# prompt and every tool batch of every session still ran a dd, five seds and
+# three writes on behalf of a user who turned the pet off, for as long as the
+# flag stayed. One builtin test, no fork, which is the whole budget this file
+# has. Before the mkdir, so a disabled install stops recreating the runtime
+# home; after `$d`, because the flag lives inside it.
+#
+# Refcounts stop being re-stamped while disabled and that is the intended
+# shape: `cmd_down` still removes them at SessionEnd, so nothing leaks, and a
+# session that is still alive when `enable` runs re-announces itself on its
+# next hook. A session too stale to do that is one the staleness window would
+# have retired anyway.
+[ -e "$d/disabled" ] && exit 0
 [ -d "$d" ] || mkdir -p "$d"
 printf '%s' "${1:-idle}" > "$d/.state.$$" 2>/dev/null && mv -f "$d/.state.$$" "$d/state" 2>/dev/null
 if [ ! -t 0 ]; then
