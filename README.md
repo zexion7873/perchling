@@ -169,10 +169,9 @@ has to sit on a flat field. `range` (default 2) is how far they travel and
 `perchling --validate` reports the box it read and what it could build from it.
 
 `"range": 0` is worth knowing about: it buys the blink and switches the gaze
-off. Use it when the eyes have no flat margin to slide into — the built-in pet
-is exactly that case, its eyes running the full width of the flat part of its
-face — because the blink repaints the whole box and so needs no margin at all,
-while a gaze with nowhere to go smears the face instead.
+off. Use it when the eyes have no flat margin to slide into, because the blink
+repaints the whole box and so needs no margin at all, while a gaze with nowhere
+to go smears the face instead.
 
 ### 🎞️ Anything that needs more than one frame
 
@@ -223,10 +222,11 @@ a burst and a resting state have no direction of travel.
 > The sideways twitch moves the whole body rather than just the eyes.
 > The drag lean works on any pet — it bends the pixels that are already there.
 >
-> The built-in is a manifest like any other, so all of this applies to it too.
-> It declares `eyes` at `"range": 0` — so it blinks while it waits and does not
-> follow your cursor — and `sequences` for `done`, `error`, `hover`, `idle` and
-> `tap`. It ships no `drag` frames, so it leans on the shear when dragged.
+> The built-in is a manifest like any other, so all of this applies to it too,
+> and it is the pet that spends the whole trade above rather than dodging it. It
+> declares all eight sequences — every mood, plus `hover`, `drag` and `tap`,
+> with `"mirror": true` on the drag — and it declares no `eyes` at all. So it
+> never follows your cursor and never blinks, and in exchange every mood moves.
 > `perchling --export` prints it, so the worked example for every one of these
 > blocks is one command away.
 
@@ -236,10 +236,11 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Six ship in
+copied into your library the first time you pick one. Five ship in
 [`examples/`](examples/), all of them animals that animate every mood and every
-reaction, `drag` included — `husky`, `otter` and `chinchilla` on land, `whale`,
-`shark` and `sea-lion` in the water.
+reaction, `drag` included — `otter` and `chinchilla` on land, `whale`, `shark`
+and `sea-lion` in the water. The husky is not among them because it is the
+built-in; `--export` is how you get its manifest.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:

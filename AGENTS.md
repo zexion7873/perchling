@@ -51,19 +51,14 @@ reclaimed after a minute so a process killed mid-launch cannot wedge every
 future session start.
 
 **Reclaiming that lock is a second critical section, and 1.13.0 shipped it as a
-plain check-then-act — the same defect one level in.** `[ stale ] && rmdir` ran
-in every caller that found the same stale lock, so the second rmdir removed the
-FRESH lock the first had just taken, and so on: instrumented at 8 concurrent
-callers, four reclaimed in a chain and four pets launched. Making the reclaim
-itself atomic does NOT fix it and was measured failing at four pets too —
-`rmdir` really is an exclusive claim, but the verdict it acts on comes from a
-`find`, and a fork+exec is milliseconds during which another caller reclaims and
-takes the lock, leaving the first one holding a stale verdict about a directory
-that is no longer at that path. So the reclaim has a lock of its own and repeats
-the freshness test INSIDE it, and that repeat is load-bearing rather than
-belt-and-braces: dropping it alone still launches two. The inner lock expires
-after an hour rather than a minute, because nothing inside it blocks, so an
-hour-old one provably has no live holder.
+plain check-then-act — the same defect one level in**, measured at four pets
+from eight callers. The trap worth carrying out of `launch_once`'s own comment:
+making the reclaim ATOMIC does not fix it, and was measured failing the same
+way. `rmdir` is a genuinely exclusive claim, but the staleness verdict it acts
+on comes from a `find`, and a fork+exec is long enough for somebody else to
+reclaim and take the lock. Serialising reclaim is what works, and the freshness
+re-test inside that lock is load-bearing rather than belt-and-braces: dropping
+it alone still launches two.
 
 Verify without launching:
 
@@ -175,48 +170,31 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   pet's ink palette, which was fine while one enum described both. A pet is a
   manifest now: borrowing would mean a user's pet repainting the bubble and the
   chip. The hexes are unchanged from 1.6 on purpose — the panels look identical.
-- **Six behaviours died with the engine in 1.7.0. Four are back; the other two
-  are below what this pet's art can carry, which is not the same as unfunded.**
-  The hover startle, error's tear, done's sparkle, idle's doze-and-peek, the
-  cursor-following gaze and the blink were all gated on `custom == nil` and all
-  drew through the deleted overlays. Where each one now stands:
+- **Six behaviours died with the engine in 1.7.0, and which of them a pet has is
+  now a property of the pet rather than of the code.** The hover startle,
+  error's tear, done's sparkle, idle's doze-and-peek, the cursor-following gaze
+  and the blink were all gated on `custom == nil` and all drew through the
+  deleted overlays. A manifest can express every one of them, so the question is
+  only ever what the shipped pet declares.
 
-  - **blink** — back, as a declared `eyes` block with `range: 0`. Still
-    `waiting`-only, still suppressed if `waiting` ever gains a sequence.
-  - **done's sparkle** and **idle's doze** — back in a different form, as mood
-    loops. Not the old drawings: squash and stretch, because the grid has three
-    free rows above the art and none below it, so there is no altitude to
-    spend and a drawn jump cannot out-travel the procedural hop it replaces.
-  - **the gaze** — **not unfunded but unreachable, and that is an art problem
-    rather than a format one.** The gaze shifts the eye box's contents and
-    refills the vacated strip with `socket`, so the box needs flat colour under
-    its border. This pet's eyes run edge to edge: at rows 21-22 the amber
-    reaches x27 and x68 and the very next pixel each side is the eye outline,
-    then the head's shading band. Zero coral margin. Every box formed by padding
-    each mood's amber bbox by 0..9 on each side was searched — 10,000 per mood,
-    all five moods — and not one has a single-ink border. Buying gaze means
-    narrowing the eyes, which reverses the round where they won by AREA. Do not
-    re-derive this; it is not a matter of choosing a better box.
-  - **the hover startle** — back, as a `sequences.hover` burst, and it is the
-    exact inverse of `tap`: a poke compresses, a surprise recoils. Both earlier
-    attempts failed on shape (see the hover bullet below); a deformation is at
-    least two frames by construction, so neither objection reaches it.
-  - **error's tear** — **gone for the same reason as the gaze: it is below what
-    this art can carry.** A droplet is a 2x2 or 2x3 ellipse, 4-6 px, against an
-    18 px legibility floor — the ivory catchlight, the smallest mark on this
-    sprite that reads at all. The runway is five rows: the coral corridor under
-    the eye runs rows 29..33 before the muzzle starts at 35. The old tear fell
-    glass → casing → chin on a taller face that no longer exists. Do not
-    re-propose it as a `sequences` entry; the entry is not what is missing.
+  - **hover, done, idle and error** are sequences on the husky. `error`'s is a
+    slump rather than a tear, and it separates from `idle`'s breath by DIRECTION
+    rather than amplitude (idle stretches up, error squashes down), so telling
+    them apart does not depend on noticing how far either moved. `hover`'s is
+    the exact inverse of `tap`: a poke compresses, a surprise recoils. Why a
+    deformation and not a drawn startle is under the hover bullet below.
+  - **gaze and blink are gone, and a RULE removes them rather than an art
+    budget.** A mood loop takes the eye box; `waiting` is the only mood that
+    ever carried either; the husky animates `waiting`. So a pet that animates
+    everything has neither whatever it declares — and the husky declares no
+    `eyes` at all, which settles it twice.
 
-  What `error` got instead is a slump — a squash it sinks into and comes back
-  out of. It separates from `idle`'s breath by DIRECTION rather than amplitude
-  (idle stretches up, error squashes down), so telling them apart does not
-  depend on noticing how far either moved.
-
-  1.7.0's trade was priced and accepted, not an oversight, and the reasoning
-  that paid it back is in this file rather than in a design document you cannot
-  see: everything above was measured, and the numbers are the argument.
+  Earlier editions argued gaze and tear out on measured geometry: amber bboxes,
+  a coral margin, a five-row runway under the eye. Every one of those numbers
+  came off the hippo and none survived the 1.13.0 swap — the husky's 44-ink
+  palette contains no amber, and its art leaves 13 free rows above and 5 below
+  where the hippo left 3 and 0. **A rejection binds only the art it was measured
+  against.** Re-measure before treating either as ruled out.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -310,8 +288,8 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   and refilling the vacated pixels with `socket`, and blink, from a frame
   synthesised once at load. Everything about that block exists because
   the eyes cannot be FOUND: on a soft-shaded sprite the brightest inks inside
-  the screen are the bezel's own rim highlights, so every detector returns a
-  second copy of the bezel and shifting it smears the frame. Two consequences
+  the eyes are the surrounding rim's own highlights, so every detector returns a
+  second copy of that rim and shifting it smears the frame. Two consequences
   worth not rediscovering. The box's border has to sit on flat colour, because
   a shift rewrites the whole box and a border crossing a gradient leaves a
   seam — verify with a difference map against the unshifted frame, where a
@@ -447,7 +425,7 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   sprite, so the eye offset needs its own `eyeDX`/`eyeDY` — reusing `dx` drags
   the body along with the glance. `gazeVector()` returns a DIRECTION, one of
   sixteen sectors with a deadzone dead ahead; callers scale x and y by
-  different amounts because the glass is wider than it is tall. Sixteen
+  different amounts because an eye box is wider than it is tall. Sixteen
   survives the rounding even at a two-pixel radius — all sixteen sectors land
   on distinct integer offsets — so the resolution is not decorative.
 - **The side margin is one bounce unit and the twitch already spends all of
