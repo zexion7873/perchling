@@ -69,16 +69,55 @@ running() { pgrep -x -f "$BIN" >/dev/null 2>&1; }
 #     next holder's pgrep still runs before the child reaches the process table,
 #     sees nothing, and launches a second pet.
 #   * A lock left behind by a process killed mid-launch would block every future
-#     session start forever, so it is stolen once it is older than any launch
+#     session start forever, so it is reclaimed once it is older than any launch
 #     could legitimately take.
 #
 # A caller that loses the race returns without launching rather than waiting:
 # cmd_up runs on every SessionStart, so a launch that genuinely failed is
 # retried by the next session rather than by blocking this one.
+#
+# Reclaiming is a critical section of its own, and 1.13.0 shipped treating it as
+# a plain check-then-act: `[ stale ] && rmdir` ran in EVERY caller that found the
+# same stale lock, so the second rmdir removed the FRESH lock the first had just
+# taken, and so on down the line. Instrumented at 8 concurrent callers: four
+# reclaimed in a chain and four pets launched.
+#
+# Making the reclaim itself atomic does not fix it, which is worth stating
+# because it is the obvious repair and it was measured failing. `rmdir` really
+# is an exclusive claim — of N callers only one can remove a given directory —
+# but the verdict it acts on comes from a `find`, and a fork+exec is milliseconds
+# during which somebody else reclaims and takes the lock. The stale verdict is
+# then correct about a directory that no longer exists at that path. That
+# version still launched four pets.
+#
+# So the reclaim gets a lock, and the freshness test is REPEATED inside it: a
+# caller that arrives while another is reclaiming must judge the lock that
+# caller took, not the one it saw on the way in. Everything above the reclaim
+# stays as it was — the outer test is what keeps this second lock off the
+# ordinary contended path, where it would be taken on every simultaneous session
+# start rather than only after a mid-launch kill.
+#
+# The reclaim lock expires too, or a caller killed inside those few milliseconds
+# would wedge reclaim forever — the exact failure the reclaim exists to clear,
+# one level up. An hour, not a minute: nothing inside that section blocks, so an
+# hour-old reclaim lock provably has no live holder, where a minute-old launch
+# lock only probably has none. Clearing it is a check-then-act like the one
+# above and can let two callers reclaim at once; it takes a stale launch lock AND
+# an hour-stale reclaim lock AND an unlucky interleaving to reach, it costs one
+# extra pet when it does, and the next session start leaves both locks clean.
 launch_once() {
   lock="$ROOT/.launch.lock"
-  [ -d "$lock" ] && [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
-  mkdir "$lock" 2>/dev/null || return 0
+  reclaim="$ROOT/.launch.reclaim"
+  if ! mkdir "$lock" 2>/dev/null; then
+    # Held. Non-empty output means the lock was created within the minute, so
+    # somebody is legitimately inside the section and this caller stands down.
+    [ -n "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] && return 0
+    [ -d "$reclaim" ] && [ -z "$(find "$reclaim" -maxdepth 0 -mmin -60 2>/dev/null)" ] && rmdir "$reclaim" 2>/dev/null
+    mkdir "$reclaim" 2>/dev/null || return 0
+    [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
+    rmdir "$reclaim" 2>/dev/null
+    mkdir "$lock" 2>/dev/null || return 0
+  fi
   trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
   if ! running; then
     PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &

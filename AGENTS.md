@@ -40,13 +40,25 @@ a bare invocation is not.
 wrong diagnosis.** Three overlays were observed on the user's desktop at once
 with no agent involved: three ordinary sessions hit `SessionStart` inside the
 same few milliseconds and `cmd_up`'s check-and-launch had nothing atomic
-between its halves. Measured window on this machine: callers staggered by
-**4–16 ms each launch their own pet**, and at 20 ms the first one is visible
-and the rest correctly stand down. `launch_once` closes it with a `mkdir`
-mutex — macOS ships no `flock(1)` — and the lock is held until the child is
-VISIBLE to `running()`, not merely until `nohup` returns, because releasing at
-spawn time only narrows the window rather than closing it. It is stolen after a
-minute so a process killed mid-launch cannot wedge every future session start.
+between its halves. The window is a property of the machine and it MOVES:
+callers staggered by **4–12 ms each launch their own pet** here, where the
+figure was 4–16 when first measured, and past the top of it the first pet is
+already visible and the rest correctly stand down. `launch_once` closes it with
+a `mkdir` mutex — macOS ships no `flock(1)` — and the lock is held until the
+child is VISIBLE to `running()`, not merely until `nohup` returns, because
+releasing at spawn time only narrows the window rather than closing it. It is
+reclaimed after a minute so a process killed mid-launch cannot wedge every
+future session start.
+
+**Reclaiming that lock is a second critical section, and 1.13.0 shipped it as a
+plain check-then-act — the same defect one level in**, measured at four pets
+from eight callers. The trap worth carrying out of `launch_once`'s own comment:
+making the reclaim ATOMIC does not fix it, and was measured failing the same
+way. `rmdir` is a genuinely exclusive claim, but the staleness verdict it acts
+on comes from a `find`, and a fork+exec is long enough for somebody else to
+reclaim and take the lock. Serialising reclaim is what works, and the freshness
+re-test inside that lock is load-bearing rather than belt-and-braces: dropping
+it alone still launches two.
 
 Verify without launching:
 
@@ -158,48 +170,31 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   pet's ink palette, which was fine while one enum described both. A pet is a
   manifest now: borrowing would mean a user's pet repainting the bubble and the
   chip. The hexes are unchanged from 1.6 on purpose — the panels look identical.
-- **Six behaviours died with the engine in 1.7.0. Four are back; the other two
-  are below what this pet's art can carry, which is not the same as unfunded.**
-  The hover startle, error's tear, done's sparkle, idle's doze-and-peek, the
-  cursor-following gaze and the blink were all gated on `custom == nil` and all
-  drew through the deleted overlays. Where each one now stands:
+- **Six behaviours died with the engine in 1.7.0, and which of them a pet has is
+  now a property of the pet rather than of the code.** The hover startle,
+  error's tear, done's sparkle, idle's doze-and-peek, the cursor-following gaze
+  and the blink were all gated on `custom == nil` and all drew through the
+  deleted overlays. A manifest can express every one of them, so the question is
+  only ever what the shipped pet declares.
 
-  - **blink** — back, as a declared `eyes` block with `range: 0`. Still
-    `waiting`-only, still suppressed if `waiting` ever gains a sequence.
-  - **done's sparkle** and **idle's doze** — back in a different form, as mood
-    loops. Not the old drawings: squash and stretch, because the grid has three
-    free rows above the art and none below it, so there is no altitude to
-    spend and a drawn jump cannot out-travel the procedural hop it replaces.
-  - **the gaze** — **not unfunded but unreachable, and that is an art problem
-    rather than a format one.** The gaze shifts the eye box's contents and
-    refills the vacated strip with `socket`, so the box needs flat colour under
-    its border. This pet's eyes run edge to edge: at rows 21-22 the amber
-    reaches x27 and x68 and the very next pixel each side is the eye outline,
-    then the head's shading band. Zero coral margin. Every box formed by padding
-    each mood's amber bbox by 0..9 on each side was searched — 10,000 per mood,
-    all five moods — and not one has a single-ink border. Buying gaze means
-    narrowing the eyes, which reverses the round where they won by AREA. Do not
-    re-derive this; it is not a matter of choosing a better box.
-  - **the hover startle** — back, as a `sequences.hover` burst, and it is the
-    exact inverse of `tap`: a poke compresses, a surprise recoils. Both earlier
-    attempts failed on shape (see the hover bullet below); a deformation is at
-    least two frames by construction, so neither objection reaches it.
-  - **error's tear** — **gone for the same reason as the gaze: it is below what
-    this art can carry.** A droplet is a 2x2 or 2x3 ellipse, 4-6 px, against an
-    18 px legibility floor — the ivory catchlight, the smallest mark on this
-    sprite that reads at all. The runway is five rows: the coral corridor under
-    the eye runs rows 29..33 before the muzzle starts at 35. The old tear fell
-    glass → casing → chin on a taller face that no longer exists. Do not
-    re-propose it as a `sequences` entry; the entry is not what is missing.
+  - **hover, done, idle and error** are sequences on the husky. `error`'s is a
+    slump rather than a tear, and it separates from `idle`'s breath by DIRECTION
+    rather than amplitude (idle stretches up, error squashes down), so telling
+    them apart does not depend on noticing how far either moved. `hover`'s is
+    the exact inverse of `tap`: a poke compresses, a surprise recoils. Why a
+    deformation and not a drawn startle is under the hover bullet below.
+  - **gaze and blink are gone, and a RULE removes them rather than an art
+    budget.** A mood loop takes the eye box; `waiting` is the only mood that
+    ever carried either; the husky animates `waiting`. So a pet that animates
+    everything has neither whatever it declares — and the husky declares no
+    `eyes` at all, which settles it twice.
 
-  What `error` got instead is a slump — a squash it sinks into and comes back
-  out of. It separates from `idle`'s breath by DIRECTION rather than amplitude
-  (idle stretches up, error squashes down), so telling them apart does not
-  depend on noticing how far either moved.
-
-  1.7.0's trade was priced and accepted, not an oversight, and the reasoning
-  that paid it back is in this file rather than in a design document you cannot
-  see: everything above was measured, and the numbers are the argument.
+  Earlier editions argued gaze and tear out on measured geometry: amber bboxes,
+  a coral margin, a five-row runway under the eye. Every one of those numbers
+  came off the hippo and none survived the 1.13.0 swap — the husky's 44-ink
+  palette contains no amber, and its art leaves 13 free rows above and 5 below
+  where the hippo left 3 and 0. **A rejection binds only the art it was measured
+  against.** Re-measure before treating either as ruled out.
 - **`canvasSize()` is the only place window dimensions are decided.** It
   reserves `3 × bounceUnit` cells below the art for the bounce and
   `bounceUnit` on each side for the twitch. A hardcoded margin here previously
@@ -242,11 +237,13 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   chrome breathes along with the pet.
 
   **The shipped pet now exercises this**, so the paragraph above is a live cost
-  rather than a hypothetical. Its sequences reach row 0 where its mood grids
-  stop at 3, and `--validate` prints exactly that: `inkTop: 0 (moods alone: 3
-  — sequences reach higher, chrome moves up 3 rows)`. The bubble and the chip
-  therefore sit three points higher than the moods alone would put them, in
-  every mood, permanently. That it cannot become per-mood movement is
+  rather than a hypothetical. Its sequences reach higher than its mood grids do,
+  and `--validate` prints exactly that: `inkTop: 12 (moods alone: 13 —
+  sequences reach higher, chrome moves up 1 rows)`. The bubble and the chip
+  therefore sit one point higher than the moods alone would put them, in every
+  mood, permanently. (The figures were 0 and 3 while the built-in was the hippo;
+  they are a property of whichever pet ships, so re-read them from `--validate`
+  rather than from here.) That it cannot become per-mood movement is
   structural rather than lucky: `artTopInset` reads `activePet.inkTop`, which
   is one stored value on `CustomPet`.
 - **The bubble and the chip ARE vibrancy views; their drawing is a subview.**
@@ -291,8 +288,8 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   and refilling the vacated pixels with `socket`, and blink, from a frame
   synthesised once at load. Everything about that block exists because
   the eyes cannot be FOUND: on a soft-shaded sprite the brightest inks inside
-  the screen are the bezel's own rim highlights, so every detector returns a
-  second copy of the bezel and shifting it smears the frame. Two consequences
+  the eyes are the surrounding rim's own highlights, so every detector returns a
+  second copy of that rim and shifting it smears the frame. Two consequences
   worth not rediscovering. The box's border has to sit on flat colour, because
   a shift rewrites the whole box and a border crossing a gradient leaves a
   seam — verify with a difference map against the unshifted frame, where a
@@ -428,7 +425,7 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   sprite, so the eye offset needs its own `eyeDX`/`eyeDY` — reusing `dx` drags
   the body along with the glance. `gazeVector()` returns a DIRECTION, one of
   sixteen sectors with a deadzone dead ahead; callers scale x and y by
-  different amounts because the glass is wider than it is tall. Sixteen
+  different amounts because an eye box is wider than it is tall. Sixteen
   survives the rounding even at a two-pixel radius — all sixteen sectors land
   on distinct integer offsets — so the resolution is not decorative.
 - **The side margin is one bounce unit and the twitch already spends all of
@@ -813,41 +810,65 @@ bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejection
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet under concurrency
+bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Four layers have harnesses — the session/tray layer
+Five layers have harnesses — the session/tray layer
 (`tools/run-session-harness.sh`), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
 runtime-home block, because `PetView` lives below that line) and `cmd_up`'s
 launch path (`tools/run-launch-race.sh`, which is shell only and compiles a C
-stub rather than touching `pet.swift`). That last one takes
-`PERCHLING_PET_SH` so it can be pointed at an older `pet.sh` and shown to FAIL,
-which is the only reason to trust its ten green lines: its first version
-asserted `pgrep -x -f` as its own literal text and passed against the broken
-script it was written to catch. Nothing else here
-has a test suite. `tools/run-hooks-check.sh` is not a fourth harness — it tests
-no Swift at all, it asks the installed CLI whether `hooks/hooks.json` is
-loadable — but it belongs to the same release gate, because the failure it
-catches takes the whole plugin down without printing anything.
+stub rather than touching `pet.swift`) and the shipped art
+(`tools/run-art-checks.sh`, which cuts where the session harness cuts so it can
+reach `builtinPet`).
+
+The last two take an override — `PERCHLING_PET_SH` and `PERCHLING_PET_SWIFT` —
+so each can be pointed at a mutant carrying exactly the defect it is named after
+and shown to FAIL. That is the only reason to believe either, and the launch one
+has now been wrong twice in a way its own green lines could not show. Its first
+version asserted `pgrep -x -f` as its own literal text and passed against the
+broken script it was written to catch. The replacement went the same way for a
+subtler reason: it reconstructs `running()` by `sed`-ing one line out of the
+script under test, which silently yields nothing callable for four of the five
+ways to spell that function — every probe then exits 127, prints `miss`, and the
+assertion reports "0 false hits" having tested nothing. It now asserts the
+extracted name is callable before trusting the count. And eleven green lines are
+not eleven guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
+the race window, so they pass against a broken script too and the file labels
+them negative controls rather than coverage.
+
+Nothing else here has a test suite. `tools/run-hooks-check.sh` is not a sixth
+harness — it tests no Swift at all, it asks the installed CLI whether
+`hooks/hooks.json` is loadable — but it belongs to the same release gate,
+because the failure it catches takes the whole plugin down without printing
+anything.
 "Verified" still means: it compiles, the examples still validate, `--export`
 still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it
 covers, not a replacement for any of those.
 
-**The built-in's art has no generator, and nothing checks it.** `BUILTIN_MANIFEST`
-is 449KB of row strings quantised from raster art, so changing the built-in
-means replacing the whole embedded string — there is no `build()` to re-run, and
-no guard anywhere that will notice if you get it wrong. That is a real
-regression against 1.7–1.12, where the manifest was emitted from parametric
-geometry and a guard held the two together; the generator only ever drew the
-hippo, so it went when the hippo did. If the built-in is ever generated again,
-bind the guard to this string and nothing else — a copy parked under `examples/`
-puts the check one indirection from what ships, and a drift between them is
-invisible to it.
+**The built-in's art has no generator, and only one thing checks it.**
+`BUILTIN_MANIFEST` is 449KB of row strings quantised from raster art, so
+changing the built-in means replacing the whole embedded string — there is no
+`build()` to re-run, and nothing that will notice if the DRAWING comes out
+wrong. That is a real regression against 1.7–1.12, where the manifest was
+emitted from parametric geometry and a guard held the two together; the
+generator only ever drew the hippo, so it went when the hippo did. If the
+built-in is ever generated again, bind the guard to this string and nothing
+else — a copy parked under `examples/` puts the check one indirection from what
+ships, and a drift between them is invisible to it.
+
+`tools/run-art-checks.sh` is the one check that does exist, and it is bound that
+way: it cuts before the runtime-home block and asks `builtinPet` itself, plus
+every manifest in `examples/`. It answers exactly one question — is any
+transparent pixel unreachable from the border — because that one is decidable
+without knowing what the art is supposed to look like. It is not a substitute
+for rendering a frame and looking at it, and it cannot be: a pet drawn as a
+featureless blob passes.
 
 `--export` hands the embedded string straight back, so whatever formatting goes
 in is what a user's `--export > draft.json` gets. Match what is there:
