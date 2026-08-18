@@ -125,15 +125,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 - **There is no drawing code. The built-in pet is a manifest.** `pet.swift`
   carries it as `BUILTIN_MANIFEST`, parses it once through the same
   `loadCustomPet` a user's `pet.json` goes through, and `--export` hands that
-  text straight back — so the export is an exact round-trip and
-  `examples/perchling.json` is a copy of it, not a re-serialisation. The whole
+  text straight back — so the export is an exact round-trip rather than a
+  re-serialisation, and `BUILTIN_MANIFEST` is the only copy of that text in the
+  repo. Do not park a second one under `examples/`: a copy can drift from the
+  string the app renders, and nothing would see it. The whole
   programmatic engine that used to draw the robot — `Ink`, its palette,
   `buildBase`, `lathe`, `shade`, `cell`, `merge`, `rrect`, and the `eyeRects` /
   `startledRects` / `tearRects` / `sparkleRects` overlays — is gone as of 1.7.0.
   Do not go looking for it, and do not restore a piece of it to add a behaviour:
   anything the pet does that a manifest cannot declare has nowhere to live.
-  The 1.0–1.6 robot is frozen at `examples/robot.json` and is the only record
-  of what that engine drew.
+  Git history is the only record of what that engine drew — the manifest is at
+  `examples/robot.json` in the 1.12 tree, and nowhere in the working one.
 - **`custom` means "the user picked something"; `activePet` means "what is on
   screen".** They were the same question while the built-in was drawing code and
   are not now — `custom` is still nil when no `pet.json` resolves, because the
@@ -564,9 +566,11 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   overlay's does, since it is exec'd as `nohup "$BIN"`, and a probe's never can.
   The three `pkill` sites carry `-x` for the same reason — without it a teardown
   can match and kill somebody's in-flight `pgrep`. Two consequences for anyone
-  writing a harness: a shebang-script stub is invisible to `-x -f`, because its
-  argv is `/bin/bash <path>`, so the stub has to be a real compiled executable;
-  and `pgrep -x perchling` was rejected as the alternative precisely because it
+  writing a harness. A shebang-script stub is invisible to `-x -f`, because its
+  argv is `/bin/bash <path>` — but do not read that as "so copy the real
+  binary", which satisfies it and opens a pet window; the stub rule has a third
+  clause and it is under "Do not launch the overlay to see if it works" above.
+  And `pgrep -x perchling` was rejected as the alternative precisely because it
   matches by process NAME and would see an unrelated install, which breaks the
   scratch-`CLAUDE_CONFIG_DIR` isolation every test here depends on.
 - **`state.sh` runs on every prompt and every tool batch.** Keep it cheap, never
@@ -809,14 +813,11 @@ bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejection
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet under concurrency
-bash tools/run-deform-checks.sh    # the built-in's generator still draws the shipped pet
-python3 tools/hippo/emit_swiftfmt.py           # regenerate BUILTIN_MANIFEST's text
-python3 tools/hippo/sheet_deform.py /tmp/s.png # contact sheet of the deformation range
-~/.claude/perchling/bin/perchling --validate examples/sprout.json
+~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Four layers have harnesses now — the session/tray layer
+Four layers have harnesses — the session/tray layer
 (`tools/run-session-harness.sh`), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
@@ -837,30 +838,26 @@ still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it
 covers, not a replacement for any of those.
 
-**The built-in's art is generated, and `tools/hippo/` is what generates it.**
-`BUILTIN_MANIFEST` is 175KB of row strings; nobody edits that by hand. The
-manifest comes out of `emit_swiftfmt.py`, which composes the five moods and the
-five sequences from parametric geometry — `v6_deform.build(mood, sq, wd)` — and
-formats them byte-exactly the way Swift's `JSONSerialization(.prettyPrinted,
-.sortedKeys)` would, so `--export` can hand the embedded string straight back.
+**The built-in's art has no generator, and nothing checks it.** `BUILTIN_MANIFEST`
+is 449KB of row strings quantised from raster art, so changing the built-in
+means replacing the whole embedded string — there is no `build()` to re-run, and
+no guard anywhere that will notice if you get it wrong. That is a real
+regression against 1.7–1.12, where the manifest was emitted from parametric
+geometry and a guard held the two together; the generator only ever drew the
+hippo, so it went when the hippo did. If the built-in is ever generated again,
+bind the guard to this string and nothing else — a copy parked under `examples/`
+puts the check one indirection from what ships, and a drift between them is
+invisible to it.
 
-`bash tools/run-deform-checks.sh` is what keeps the generator honest, and its
-first guard is the one that matters here: it regenerates all five moods and
-compares them against `examples/perchling.json`. That file IS `--export`, which
-IS `BUILTIN_MANIFEST`, so the guard fails the moment the generator and the
-shipped pet drift apart — including if someone hand-edits the manifest.
+`--export` hands the embedded string straight back, so whatever formatting goes
+in is what a user's `--export > draft.json` gets. Match what is there:
+`JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
+`json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
 
-The deformation is applied to the parameter TABLES, never to a finished grid.
-`shade()` derives its outline, light and shade bands from neighbour tests on a
-mask, so a mask built at deformed coordinates comes out correctly shaded while a
-resample of shaded output lands the bands on notches.
-
-Changing the built-in's art still means the manifest inside `pet.swift` ends up
-different, and it leaves three artifacts behind that lie quietly rather than
-failing: `examples/perchling.json` *is* `--export` output, `docs/moods.gif` is
-the README hero, and the README's `width=` must equal the GIF's real pixel
-width or the browser resamples the pixel art into mush. Regenerate all of them
-in the same change. The GIF tool encodes its own output and decodes it back pixel-for-pixel
+Two things a change to the built-in's art still leaves behind, and both lie
+quietly rather than failing: `docs/moods.gif` is the README hero, and the
+README's `width=` must equal the GIF's real pixel width or the browser resamples
+the pixel art into mush. Regenerate both in the same change. The GIF tool encodes its own output and decodes it back pixel-for-pixel
 before it will exit 0, so a green run really does mean the file is right — and
 two runs of it are byte-identical, so a diff on `docs/moods.gif` means the art
 moved.

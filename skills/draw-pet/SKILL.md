@@ -127,10 +127,16 @@ Rules the loader enforces:
   no hover sequence has no hover reaction at all. The shipped one declares
   one, so it does — but that is a fact about its manifest, not about the
   renderer, which is the whole point of this section.
-  What the shipped pet *does* declare is worth copying from: an `eyes` block at
-  `"range": 0`, and `done`, `error`, `hover`, `idle` and `tap` sequences —
-  every sequence kind except `drag`. `examples/perchling.json` is `--export`, so
-  it is a working example of every block in this document.
+  What the shipped pet *does* declare is worth copying from: all eight
+  sequences, five frames apiece, including the `drag` row and its `mirror`
+  flag. `perchling --export` prints it.
+
+  **No shipped pet declares `eyes`, so this document is your only reference for
+  that block.** Every pet that ships animates all five moods, and a mood loop
+  suppresses the gaze and the blink, so the block would buy them nothing. If a
+  user wants eyes that follow, you are writing the first one — read the `eyes`
+  rules above carefully and lean on `--validate`, which prints the box it read
+  and says `blink UNAVAILABLE` when nothing in the box is bright enough.
 
 ## Workflow
 
@@ -143,19 +149,15 @@ Rules the loader enforces:
    ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
    ```
    The snapshot is a faithful copy: the built-in is itself a manifest, so the
-   export carries everything it has — including its `eyes` block and its three
-   sequences — and loses nothing.
+   export carries everything it has — all eight sequences at five frames each —
+   and loses nothing.
 
-   One thing about it will not transfer to a redesign: its `eyes` block declares
-   `"range": 0`, which buys the blink and no gaze, and that is a fact about the
-   art rather than a preference. The two lenses run the full width of the flat
-   part of the face, so any box covering both has the head's outline and shading
-   under its border, and a gaze rewrites the whole box. Blink is fine there
-   because it repaints the box entirely. Gaze on a remix of the default means
-   redrawing the eye region onto a flat field first — narrower eyes with coral
-   either side — not raising four numbers to something nonzero.
-1. Settle the creature with the user: species, colors, vibe. An outline
-   color, 2–3 body colors, and 1–2 face colors is the sweet spot.
+   Two things about it shape what a remix can be. It is 449KB and about 4700
+   lines, so do not read it whole; slice out the part you are changing. And it
+   declares no `eyes`, because animating every mood gives up the gaze and the
+   blink anyway — adding eyes to a remix means dropping at least one mood's
+   sequence first, not just appending a block.
+1. Settle the creature with the user: species, colors, vibe.
 2. Draw the five grids. Design `idle` first, then copy it per mood and
    re-stamp the face:
    - `idle` — neutral open eyes
@@ -163,9 +165,14 @@ Rules the loader enforces:
    - `waiting` — wide staring eyes (it wants the user's attention)
    - `done` — happy closed eyes, smile
    - `error` — X eyes, distress
-   Pixel-art craft: dark outline around the silhouette, lighter color toward
-   the top-left, shade toward the bottom-right; at this scale faces carry the
-   art, fine detail doesn't.
+   Pixel-art craft, and none of this is house taste — it is what the medium
+   and the size will carry. A dark outline around the silhouette, because the
+   pet sits on the user's wallpaper with a transparent background and a pale
+   creature on a pale desktop is invisible. Lighter color toward the top-left,
+   shade toward the bottom-right, so one light direction reads across every
+   mood. And at this scale the face carries the art while fine detail does
+   not — 92x96 at scale 1 is 92x96 points on screen, so a whisker is one pixel
+   and reads as dirt.
 3. Validate the draft **before** installing:
    ```
    ~/.claude/perchling/bin/perchling --validate /path/to/draft.json
@@ -199,31 +206,50 @@ Rules the loader enforces:
    then iterate on feedback — recolor, resize, fix the face — by editing a
    draft and re-installing it the same way.
 
-Ten worked examples ship with this plugin, under `$CLAUDE_PLUGIN_ROOT/examples/`
-— read them by that path, not a bare relative one, since the skill runs with
-the user's project as the working directory:
+## Worked examples
 
-- `sprout.json` — a leafy slime, 48×40 at scale 2, shaded and blushing. Shows
-  how the pieces fit together at the fine-detail end.
-- `perchling.json` — the built-in pet, exported: 96×100 at scale 1. The only
-  shipped pet that declares `eyes` or `sequences`, and it declares every
-  sequence kind except `drag`, so it is the reference for both.
-- `classic.json` — the first mascot, retired when the built-in became the CRT
-  terminal robot; same footprint as the export it was frozen from.
-- `robot.json` — that terminal robot, the built-in from 1.0 through 1.6, frozen
-  when the hippo replaced it. The engine that drew it is deleted, so this file
-  is the only record of it.
-- `husky.json`, `otter.json`, `chinchilla.json`, `whale.json`, `shark.json`,
-  `sea-lion.json` — six animals at scale 1, each declaring all eight sequences
-  off five frames apiece. They are the only shipped pets with a `drag`
-  sequence, so they are the reference for `mirror`. They are also the only pets
-  that animate all five moods, which is why none declares `eyes`: a mood loop
-  suppresses the gaze and the blink, so there would be nothing for the block to
-  buy. The three land
-  animals stand upright and are sized off their height (92–110 wide); the three
-  sea animals are long and horizontal, so all three hit the 128 ceiling on
-  width and come out shorter instead — which is what a pet looks like when the
-  canvas budget binds on the other axis.
+**Do not read a file under `examples/` whole.** The six that ship are 449–589 KB
+and 4,500–6,000 lines each — one of them will not fit in your context, and the
+one thing you would learn from the whole file is what a wall of row strings looks
+like. Two sources, and which one you want depends on the question:
+
+- **`perchling --export`** — the built-in pet, 92×96 at scale 1, declaring all
+  eight sequences at five frames apiece. About 449KB, so pull the part you need
+  rather than printing it all:
+
+  ```bash
+  ~/.claude/perchling/bin/perchling --export | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["name"], d["scale"], len(d["palette"]), "inks"); print({k:v["steps"] for k,v in d["sequences"].items()})'
+  ```
+
+- **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — `otter`, `chinchilla`, `whale`,
+  `shark`, `sea-lion`. Five animals at scale 1, each declaring all eight
+  sequences off five frames apiece. Same family as the built-in husky, which is
+  not among them because it IS the built-in and already has its own menu row.
+
+  **Read them for FORMAT, never for art.** They were quantised from raster
+  renders: 44 inks each, and around half of their pixels share a colour with no
+  neighbour at all. That is not something a character grid can be written to
+  produce by hand, and aiming at it gets you noise rather than shading — the
+  craft rules above are what this medium actually expresses. What these files
+  are good for is the shape of a `steps` timeline, where `mirror` goes, and how
+  a sequence block is assembled.
+
+  Read them by that full path, not a bare relative one, since the skill runs
+  with the user's project as the working directory — and read a SLICE:
+
+  ```bash
+  python3 -c 'import json;d=json.load(open("'"$CLAUDE_PLUGIN_ROOT"'/examples/otter.json"));print(json.dumps({k:d[k] for k in ("name","scale")}));print(len(d["palette"]),"inks");print({k:v["steps"] for k,v in d["sequences"].items()})'
+  ```
+
+  The three land animals stand upright and are sized off their height (92–110
+  wide); the three sea animals are long and horizontal, so all three hit the 128
+  ceiling on width and come out shorter instead — which is what a pet looks like
+  when the canvas budget binds on the other axis.
+
+For the shape of a whole manifest at a size you can actually hold, use the
+`blob` under **Manifest format** at the top of this document. It is complete and
+valid, and it is there for exactly this: nothing under `examples/` is small
+enough to serve as one any more.
 
 ## Revert
 
