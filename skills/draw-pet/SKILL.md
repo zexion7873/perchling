@@ -6,10 +6,13 @@ description: Design and install a custom pixel pet for Perchling, the desktop pe
 # Draw a custom Perchling pet
 
 Perchling renders whatever `~/.claude/perchling/pet.json` describes and
-live-reloads within a second of the file changing — no rebuild, no restart,
-no image files. You are the pixel artist: author palette-indexed text grids,
-install the file, and the creature on screen transforms while the user
-watches.
+live-reloads within a second of the file changing — no rebuild, no restart, and
+the manifest itself carries no image files. In this skill you are the pixel
+artist: author palette-indexed text grids, install the file, and the creature on
+screen transforms while the user watches. That is the method here rather than
+the only method the format allows: the built-in husky and every pet under
+`examples/` were quantised from raster renders, which is why the note on reading
+them says to read them for format and never for art.
 
 ## Manifest format
 

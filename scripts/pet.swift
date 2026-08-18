@@ -54,8 +54,11 @@ enum Mood: String {
 // A custom pet replaces the whole sprite: one pixel grid per mood, colors
 // from a per-manifest palette. "0" or "." is transparent; anything else must
 // be a palette key. All moods share one canvas size; missing moods fall back
-// to idle. Authored by hand or by the bundled draw-pet skill — no imagegen,
-// no network; sharing a pet is sharing one JSON file.
+// to idle. Nothing in here generates or fetches art: the renderer reads a
+// manifest and nothing else, and sharing a pet is sharing one JSON file. How
+// the pixels were arrived at is the author's affair — the bundled draw-pet
+// skill writes them by hand, and the husky this ships with was quantised from
+// raster art.
 struct PetError: Error, CustomStringConvertible {
     let description: String
     init(_ m: String) { description = m }
