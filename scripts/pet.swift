@@ -222,7 +222,12 @@ func synthBlinkFrame(_ rows: [[Character]], _ pal: [Character: NSColor],
     // The 3% floor is what stops a single specular pixel winning: the very
     // brightest ink inside a screen is usually one cell of catchlight, and a
     // lid drawn in it comes out white instead of the eye's own colour.
-    let auto = counts.filter { $0.value * 100 >= area * 3 }
+    // A transparent cell is counted above but can never be a lid: `pal` has no
+    // entry for it, and force-unwrapping one here trapped. Two keys are what
+    // makes `max(by:)` call the comparator at all, so a box over nothing but
+    // transparency survived while a realistic one — transparency beside a
+    // single ink — did not.
+    let auto = counts.filter { $0.value * 100 >= area * 3 && pal[$0.key] != nil }
         .max(by: { srgbLuma(pal[$0.key]!) < srgbLuma(pal[$1.key]!) })?.key
     guard let lid = lidCh ?? auto, let lidColor = pal[lid] else { return nil }
 
@@ -387,8 +392,16 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
         guard let b = spec["box"] as? [Int], b.count == 4 else {
             throw PetError("eyes.box must be [x, y, width, height] in pixels")
         }
+        // Compared by SUBTRACTION. `b[0] + b[2]` on two untrusted Ints traps
+        // on overflow and kills the process instead of falling back to the
+        // built-in — and the process it killed was usually `--validate`, the
+        // one tool that exists to tell an author what is wrong with their
+        // manifest. The subtraction cannot trap in turn: `b[2]` is already
+        // known positive, so `dims.w - b[2]` bottoms out near `-Int.max` and
+        // stays inside `Int`. A guard bounding each extent first was written,
+        // pointed at a mutant, found to change no verdict, and removed.
         guard b[2] > 0, b[3] > 0, b[0] >= 0, b[1] >= 0,
-              b[0] + b[2] <= dims.w, b[1] + b[3] <= dims.h else {
+              b[0] <= dims.w - b[2], b[1] <= dims.h - b[3] else {
             throw PetError("eyes.box \(b[0]),\(b[1]) \(b[2])x\(b[3]) does not fit the \(dims.w)x\(dims.h) canvas")
         }
         guard let sk = spec["socket"] as? String, sk.count == 1,

@@ -342,6 +342,22 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `blink` is not guaranteed by declaring a box: synthesis needs pixels inside
   it brighter than `socket`, and `--validate` says `blink UNAVAILABLE` rather
   than failing when there are none.
+
+  **This block had no coverage at all until 2026-08-19, and it killed the
+  process two ways.** No shipped pet declares `eyes`, so nothing here had ever
+  run — in the app or in a test. `box` is two untrusted `Int`s that were ADDED
+  before being range-checked, so an origin near `Int.max` trapped on overflow;
+  it is compared by subtraction now. And the lid search force-unwrapped the
+  palette for a transparent cell, which has no entry — that one needed TWO
+  distinct non-socket inks inside the box, because a single key never makes
+  `max(by:)` call its comparator, so a box over nothing but transparency
+  survived and a realistic one did not. Both took down `--validate` itself,
+  which is the only tool an author has for finding out what is wrong with a
+  manifest: it died on the mistake it exists to diagnose. Pinned by eight
+  fixtures in `tools/run-manifest-checks.sh`, and the happy paths were measured
+  working before either fix — the feature was never broken, only unguarded.
+  One of the eight is labelled a negative control: `0 + Int.max` does not
+  overflow, so the extent case passes against the pre-fix parser too.
 - **Hover is a sequence or it is nothing.** `mouseEntered` arms
   `hoverSeqStart` only when the active pet declares `sequences.hover`, and the
   burst expires by elapsing rather than on `mouseExited` — there is no
