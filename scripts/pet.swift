@@ -2368,7 +2368,9 @@ final class Controller: NSObject, NSWindowDelegate {
     func pollSessions() -> (live: Bool, retired: Bool) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)
-        let items = (try? fm.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let items = (try? fm.contentsOfDirectory(at: sessionsURL,
+                                                 includingPropertiesForKeys: [.contentModificationDateKey],
+                                                 options: [.skipsHiddenFiles])) ?? []
         var live = false, retired = false
         var owners: Set<pid_t> = []
         for url in items {
