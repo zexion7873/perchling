@@ -10,7 +10,10 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
-src="$repo/scripts/pet.swift"
+# Takes PERCHLING_PET_SWIFT so it can be pointed at a mutant and shown to FAIL.
+# Nothing here is worth believing without that: this repo has shipped green
+# assertions that tested nothing at least four times.
+src="${PERCHLING_PET_SWIFT:-$repo/scripts/pet.swift}"
 
 command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)" >&2; exit 1; }
 
