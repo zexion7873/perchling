@@ -43,6 +43,10 @@ read_payload() {
   # Hook payload arrives as one JSON blob on stdin. The harness keeps the pipe
   # open after writing, so never read until EOF — dd does exactly one read()
   # and returns whatever the first write delivered. No jq dependency.
+  # A terminal is not a hook. `up` and `down` are both in the usage line, and
+  # dd on a tty blocks until the user types EOF — which reads as a hang with no
+  # output at all, from a command whose whole job is to return immediately.
+  if [ -t 0 ]; then return 0; fi
   payload=$(dd bs=65536 count=1 2>/dev/null)
 }
 
@@ -333,7 +337,7 @@ cmd_up() {
   [ -x "$BIN" ] || exit 0
   # Backgrounded so a SessionStart hook still returns immediately: launch_once
   # blocks until the pet is visible, and the hook must not wait on that.
-  launch_once &
+  launch_once >/dev/null 2>&1 &
   exit 0
 }
 

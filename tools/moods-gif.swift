@@ -343,9 +343,23 @@ func verify() -> String? {
 var report = "wrote \(outURL.path) — \(W)x\(H), \(FRAMES) frames @ \(DELAY)0ms, "
 report += "\((try! Data(contentsOf: outURL)).count / 1024)KB\n"
 report += "palette: \(observed.count) colours, all of them stored verbatim\n"
-report += drift == 0
+// Gated like the round-trip below it rather than merely reported, because a
+// colour-management change that silently repainted the pet is exactly what
+// this measurement exists to catch. The bound is 1, not 0: the render puts
+// every ink through NSColor and CGImage, and that round trip costs ±1 per
+// channel on the shipped palette. Measured, not assumed — demanding 0 was
+// tried first and fails on art that is otherwise byte-identical run to run.
+// So this pins the drift at what it IS, and a change that pushes it further
+// is the regression worth failing on.
+let perChannel = Int(Double(drift).squareRoot())
+if perChannel > 1 {
+    report += "PROFILE DRIFT: rendered inks drift up to \(perChannel) per channel from the manifest's palette\n"
+    FileHandle.standardError.write(report.data(using: .utf8)!)
+    exit(1)
+}
+report += perChannel == 0
     ? "profile: the rendered inks match the manifest's palette exactly\n"
-    : "profile: rendered inks drift up to \(Int(Double(drift).squareRoot())) per channel from the manifest's palette\n"
+    : "profile: rendered inks within the \(perChannel)-per-channel bound\n"
 if let failure = verify() {
     report += "ROUND-TRIP FAILED: \(failure)\n"
     FileHandle.standardError.write(report.data(using: .utf8)!)

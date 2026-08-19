@@ -104,10 +104,16 @@ already_up() {
   cp "$SCRATCH/stub" "$home/perchling/bin/perchling"
   touch "$home/perchling/bin/perchling"
   STUB_LOG="$log" "$home/perchling/bin/perchling" & sleep 0.5
+  # Wait on the CALLERS by pid, never bare. A bare `wait` also waits for the
+  # stub above, which sleeps 25 seconds on purpose so it stays visible to
+  # running() — so this one case cost 27 of the harness's 83 seconds while
+  # measuring nothing during 25 of them.
+  local pids=""
   for i in $(seq 1 8); do
     CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up "s$i" >/dev/null 2>&1 &
+    pids="$pids $!"
   done
-  wait; sleep 2
+  wait $pids; sleep 2
   local got; got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
   if [ "$got" -eq 1 ]; then printf '  ok   %-26s 8 more calls added none\n' "already-running"; pass=$((pass + 1))
   else printf '  FAIL %-26s launched=%s, want 1\n' "already-running" "$got"; fail=$((fail + 1)); fi
@@ -239,10 +245,16 @@ regex_home() {
   cp "$SCRATCH/stub" "$home/perchling/bin/perchling"
   touch "$home/perchling/bin/perchling"
   STUB_LOG="$log" "$home/perchling/bin/perchling" & sleep 0.5
+  # Wait on the CALLERS by pid, never bare. A bare `wait` also waits for the
+  # stub above, which sleeps 25 seconds on purpose so it stays visible to
+  # running() — so this one case cost 27 of the harness's 83 seconds while
+  # measuring nothing during 25 of them.
+  local pids=""
   for i in $(seq 1 8); do
     CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up "s$i" >/dev/null 2>&1 &
+    pids="$pids $!"
   done
-  wait; sleep 2
+  wait $pids; sleep 2
   local got; got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
   if [ "$got" -eq 1 ]; then printf '  ok   %-26s metacharacters in the path, 8 calls added none\n' "regex-safe-path"; pass=$((pass + 1))
   else printf '  FAIL %-26s launched=%s, want 1 — running() cannot see the pet\n' "regex-safe-path" "$got"; fail=$((fail + 1)); fi

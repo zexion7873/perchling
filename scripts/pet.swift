@@ -722,8 +722,7 @@ final class PetView: NSView {
     var activePet: CustomPet { custom ?? builtinPet }
     var scale: CGFloat = builtinPet.scale
     var xpad = sidePad(builtinPet.scale)
-    var startledUntil = -1
-    // `-1` is disarmed, matching hopUntil and startledUntil. Armed off
+    // `-1` is disarmed, matching hopUntil. Armed off
     // `activePet`, so the built-in's own sequences arm these too.
     // Hover is one-shot and expires by elapsing; drag loops until mouseUp; tap
     // is one-shot like hover and outranks it, because the cursor is on the pet
@@ -2368,7 +2367,9 @@ final class Controller: NSObject, NSWindowDelegate {
     func pollSessions() -> (live: Bool, retired: Bool) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)
-        let items = (try? fm.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let items = (try? fm.contentsOfDirectory(at: sessionsURL,
+                                                 includingPropertiesForKeys: [.contentModificationDateKey],
+                                                 options: [.skipsHiddenFiles])) ?? []
         var live = false, retired = false
         var owners: Set<pid_t> = []
         for url in items {
