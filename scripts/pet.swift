@@ -322,6 +322,18 @@ func parseGrid(_ rows: [String], _ pal: [Character: NSColor], _ w: Int,
     return grid
 }
 
+// The highest row any of these frames reaches, or nil when none of them carries
+// any ink. A fully transparent frame contributes NOTHING: it has no top, and
+// scoring it as row 0 collapsed the whole measurement — one blank frame put the
+// chrome at the very top of the canvas, and made --validate explain the result
+// with a sentence about sequences reaching higher that was arithmetically
+// impossible. Returned as an Optional rather than defaulted here, because the
+// two callers want different things from "nothing has ink": the pet needs a
+// number, and the explanation needs to stay silent.
+func inkTopOf(_ frames: [[[NSColor?]]]) -> Int? {
+    frames.compactMap { $0.firstIndex { $0.contains { $0 != nil } } }.min()
+}
+
 func loadCustomPet(_ url: URL) throws -> CustomPet {
     guard let data = try? Data(contentsOf: url) else { throw PetError("cannot read \(url.path)") }
     return try loadCustomPet(data)
@@ -522,9 +534,7 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     // chrome hangs off this one number. Leaving them out would sit the bubble
     // where a hovering pet's head goes through it — precisely when the user is
     // looking, since hover is the cursor being on the pet.
-    let inkTop = (Array(frames.values) + sequences.values.flatMap { $0.frames })
-        .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
-        .min() ?? 0
+    let inkTop = inkTopOf(Array(frames.values) + sequences.values.flatMap { $0.frames }) ?? 0
     return CustomPet(name: (top["name"] as? String) ?? "custom",
                      width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
                      eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame,
@@ -2193,8 +2203,12 @@ final class Controller: NSObject, NSWindowDelegate {
                 let y = min(max(f.minY, vf.minY), vf.maxY - f.height)
                 if x != f.minX || y != f.minY { window.setFrameOrigin(NSPoint(x: x, y: y)) }
             }
-            repositionBubble()
         }
+        // Outside the size test, not inside it. The chrome hangs off the pet's
+        // `inkTop`, which is a property of the ART — so two pets sharing a
+        // canvas size but starting their ink on different rows need the bubble
+        // and the chip moved even though the window did not change shape.
+        repositionBubble()
     }
 
     func setTucked(_ t: Bool) {
@@ -2688,10 +2702,7 @@ if argv.count >= 2 {
             if seqLines.isEmpty { print("  no sequences") } else { print(seqLines.joined(separator: "\n")) }
             // In grid rows, not points: the on-screen distance is rows * scale,
             // so the same manifest at scale 2 moves the chrome twice as far.
-            let moodTop = pet.frames.values
-                .map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }
-                .min() ?? 0
-            if moodTop != pet.inkTop {
+            if let moodTop = inkTopOf(Array(pet.frames.values)), moodTop > pet.inkTop {
                 print("inkTop: \(pet.inkTop) (moods alone: \(moodTop) — sequences reach higher, chrome moves up \(moodTop - pet.inkTop) rows)")
             }
             // Silently ignoring it would be indistinguishable from a mirror that

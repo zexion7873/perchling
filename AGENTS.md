@@ -291,6 +291,29 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   rather than from here.) That it cannot become per-mood movement is
   structural rather than lucky: `artTopInset` reads `activePet.inkTop`, which
   is one stored value on `CustomPet`.
+
+  **A frame with no ink at all has no top, and scoring it as row 0 broke both
+  halves of this.** `inkTopOf` is now the single implementation — it was
+  computed twice, once for the pet and once for `--validate`'s explanation of
+  it, so the two could disagree. One blank frame anywhere in the moods or the
+  sequences collapsed `inkTop` to 0, which put the chrome at the very top of
+  the canvas, and then made `--validate` announce that the sequences reached
+  higher and the chrome had moved up N rows — a sentence about a frame that is
+  empty. It returns an Optional rather than defaulting inside, because the two
+  callers want different things from "nothing has ink": the pet needs a number,
+  the explanation needs to stay silent. Both halves are pinned in
+  `run-manifest-checks.sh`, including the half that matters second — a sequence
+  that GENUINELY starts higher must still be reported, or the fix would have
+  silenced a true warning too.
+
+  **The chrome is repositioned on every pet change, not only when the window
+  resizes.** `pollPet` used to call `repositionBubble()` inside its
+  `frame.size != size` branch, so two pets sharing a canvas size but starting
+  their ink on different rows swapped cleanly and left the bubble and the chip
+  where the previous pet had put them. There is no harness for that one:
+  `pollPet` is a `Controller` method and `Controller.init` builds three
+  NSWindows, the same wall `foldMoods` was extracted through. It is the next
+  candidate for the same treatment.
 - **The bubble and the chip ARE vibrancy views; their drawing is a subview.**
   A view's own `draw()` runs before every one of its subviews, so an
   `NSVisualEffectView` added *under* a painting view lands on top of the text
