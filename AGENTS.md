@@ -96,8 +96,8 @@ Verify without launching:
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns a handful of flat inks into a million.
-- **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
-  `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
+- **Session/tray logic** — `Mood.parse`, `liveSessions`, `foldMoods`,
+  `menuRows`, `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
   `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above
   the runtime-home block, so a harness for them has to cut there instead of
   at `let argv`: cutting at `let argv` still runs
@@ -921,7 +921,13 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   that file's 300s leash while the caption reports the top live row. A harness
   that recomputes the face from `liveSessions` alone shares the blind spot and
   will assert the gap away — take the fold's own inputs, or assert against a
-  literal.
+  literal. That fold is `foldMoods`, a free function: it was inside
+  `Controller.pollMoods`, where `Controller.init`'s three NSWindows put the one
+  rule deciding what the user sees out of reach of every harness. It takes the
+  state file's mood and stamp as an EXPLICIT parameter for precisely the reason
+  above, so a caller cannot accidentally derive it from the rows; `pollMoods` is
+  now the IO around it, and the assertions live in `tools/session-harness.swift`
+  beside a literal for the gap itself.
 - **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
   pid of the outermost process the session hangs off — Claude desktop, or the
   terminal that ran `claude`. A dead owner retires the session on the next

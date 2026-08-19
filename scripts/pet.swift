@@ -1671,6 +1671,44 @@ func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
             top.say ?? globalSay)
 }
 
+// The fold that decides the face. It lives out here rather than inside
+// `Controller` because `Controller.init` builds three NSWindows, which put this
+// rule out of reach of any harness — the one layer whose job is deciding what
+// the user sees was also the one layer nothing could exercise.
+//
+// `state` is an explicit parameter rather than something derived from `live`,
+// and that is the whole point of the signature. The global state file has no
+// row behind it and no SessionEnd to clear it, so it can hold the face while
+// the rows report somebody else; a caller that recomputed the fold from the
+// session rows alone would share that blind spot and assert it away.
+func foldMoods(state: (mood: Mood, stamp: Date)?, live: [SessionRow],
+               now: Date, last: [String: Mood])
+     -> (display: Mood, entered: Set<Mood>, current: [String: Mood]) {
+    var inputs: [(String, Mood)] = []
+    if let s = state {
+        // The state file has no owner to clean it up on session end, so it
+        // gets a short leash: enough for manual puppeteering, too short to
+        // haunt the fold as a dead session's ghost. `min`, so a mood whose own
+        // TTL is already shorter than the leash keeps the shorter one.
+        let ttl = min(moodTTL[s.mood] ?? 0, 300)
+        inputs.append(("state", now.timeIntervalSince(s.stamp) > ttl ? .idle : s.mood))
+    }
+    inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
+
+    var display = Mood.idle
+    var current: [String: Mood] = [:]
+    var entered: Set<Mood> = []
+    for (key, m) in inputs {
+        current[key] = m
+        if moodRank[m]! > moodRank[display]! { display = m }
+        let prev = last[key] ?? .idle
+        if m != prev, m == .waiting || m == .done || m == .error {
+            entered.insert(m)
+        }
+    }
+    return (display, entered, current)
+}
+
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 54, BUB_BODY: CGFloat = 52
 
 // The bubble and the chip are the only surfaces that sit over the user's
@@ -2274,16 +2312,11 @@ final class Controller: NSObject, NSWindowDelegate {
     func pollMoods() -> (display: Mood, entered: Set<Mood>) {
         let fm = FileManager.default
         let now = Date()
-        var inputs: [(String, Mood)] = []
+        var state: (mood: Mood, stamp: Date)?
         if let attrs = try? fm.attributesOfItem(atPath: stateURL.path),
            let stamp = attrs[.modificationDate] as? Date,
            let raw = try? String(contentsOf: stateURL, encoding: .utf8) {
-            let m = Mood.parse(raw)
-            // The state file has no owner to clean it up on session end, so it
-            // gets a short leash: enough for manual puppeteering, too short to
-            // haunt the fold as a dead session's ghost.
-            let ttl = min(moodTTL[m] ?? 0, 300)
-            inputs.append(("state", now.timeIntervalSince(stamp) > ttl ? .idle : m))
+            state = (Mood.parse(raw), stamp)
         }
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
@@ -2292,19 +2325,9 @@ final class Controller: NSObject, NSWindowDelegate {
                                 titles: desktopTitles(titlesURL, cache: &titleCache))
         sessionRows = menuRows(live)
         sessionLabelsBySid = sessionLabels(sessionRows)
-        inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
 
-        var display = Mood.idle
-        var current: [String: Mood] = [:]
-        var entered: Set<Mood> = []
-        for (key, m) in inputs {
-            current[key] = m
-            if moodRank[m]! > moodRank[display]! { display = m }
-            let prev = lastInputMoods[key] ?? .idle
-            if m != prev, m == .waiting || m == .done || m == .error {
-                entered.insert(m)
-            }
-        }
+        let (display, entered, current) = foldMoods(state: state, live: live,
+                                                    now: now, last: lastInputMoods)
         lastInputMoods = current
         return (display, entered)
     }
