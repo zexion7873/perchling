@@ -5,7 +5,7 @@ description: Design and install a custom pixel pet for Perchling, the desktop pe
 
 # Draw a custom Perchling pet
 
-Perchling renders whatever `~/.claude/perchling/pet.json` describes and
+Perchling renders whatever `pet.json` in its runtime home describes, and
 live-reloads within a second of the file changing — no rebuild, no restart, and
 the manifest itself carries no image files. In this skill you are the pixel
 artist: author palette-indexed text grids, install the file, and the creature on
@@ -149,7 +149,7 @@ Rules the loader enforces:
    truncate the target to zero bytes before the command hangs:
    ```
    bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build
-   ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
+   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --export > /tmp/draft.json
    ```
    The snapshot is a faithful copy: the built-in is itself a manifest, so the
    export carries everything it has — all eight sequences at five frames each —
@@ -178,7 +178,7 @@ Rules the loader enforces:
    and reads as dirt.
 3. Validate the draft **before** installing:
    ```
-   ~/.claude/perchling/bin/perchling --validate /path/to/draft.json
+   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --validate /path/to/draft.json
    ```
    Errors name the exact mood/row/character; an unknown flag prints usage and
    exits 2. If the command instead hangs with no output and a second pet
@@ -191,15 +191,15 @@ Rules the loader enforces:
    dash — the same rule the app uses when it adopts a pet, so a pet named
    貓咪 becomes `貓咪.json`:
    ```bash
-   mkdir -p ~/.claude/perchling/pets
+   mkdir -p "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets"
    # A pet.json from before the library is a real file, not a link into pets/,
    # and `ln -sf` would delete it. Perchling rescues one when it launches, but
    # it may not have launched since the update — or at all.
-   if [ -f ~/.claude/perchling/pet.json ] && [ ! -L ~/.claude/perchling/pet.json ]; then
-     mv ~/.claude/perchling/pet.json ~/.claude/perchling/pets/previous-$(date +%s).json
+   if [ -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" ] && [ ! -L "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" ]; then
+     mv "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets/previous-$(date +%s).json"
    fi
-   mv /path/to/draft.json ~/.claude/perchling/pets/<slug>.json
-   ln -sf pets/<slug>.json ~/.claude/perchling/pet.json
+   mv /path/to/draft.json "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets/<slug>.json"
+   ln -sf pets/<slug>.json "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json"
    ```
    (If a security guard in your environment blocks `mv` into the home
    directory, plain `cp` is fine — the app re-reads on the next mtime
@@ -221,7 +221,7 @@ like. Two sources, and which one you want depends on the question:
   rather than printing it all:
 
   ```bash
-  ~/.claude/perchling/bin/perchling --export | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["name"], d["scale"], len(d["palette"]), "inks"); print({k:v["steps"] for k,v in d["sequences"].items()})'
+  "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --export | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["name"], d["scale"], len(d["palette"]), "inks"); print({k:v["steps"] for k,v in d["sequences"].items()})'
   ```
 
 - **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — `otter`, `chinchilla`, `whale`,
@@ -262,10 +262,10 @@ rather than delete it, for the same reason the install step does: a pre-library
 `pet.json` is the pet itself, not a link to one.
 
 ```bash
-if [ -f ~/.claude/perchling/pet.json ] && [ ! -L ~/.claude/perchling/pet.json ]; then
-  mkdir -p ~/.claude/perchling/pets
-  mv ~/.claude/perchling/pet.json ~/.claude/perchling/pets/previous-$(date +%s).json
+if [ -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" ] && [ ! -L "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" ]; then
+  mkdir -p "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets"
+  mv "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets/previous-$(date +%s).json"
 else
-  rm -f ~/.claude/perchling/pet.json
+  rm -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json"
 fi
 ```
