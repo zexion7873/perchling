@@ -31,7 +31,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Overridable so the harness can be pointed at an older pet.sh and shown to
-# FAIL. Ten green assertions prove nothing on their own — every one of them
+# FAIL. Green assertions prove nothing on their own — every one of them
 # would also pass against a `running()` that always returned false — so the
 # check that matters is:
 #     git show <before>:scripts/pet.sh > /tmp/old.sh
@@ -87,8 +87,8 @@ scenario simultaneous       8 0     1
 # The three offsets inside the window, because a fix can close the top of it and
 # leave the bottom open. 16 and 20 are kept as NEGATIVE controls: they assert
 # correct behaviour but no longer discriminate, so they must not be counted as
-# coverage — the line below reads "11 passed" and only eight of those are
-# guarantees.
+# coverage — the summary line counts all thirteen, and only eleven of those
+# are guarantees.
 scenario staggered-4ms      4 0.004 1
 scenario staggered-8ms      4 0.008 1
 scenario staggered-12ms     4 0.012 1

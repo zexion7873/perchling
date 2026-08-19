@@ -433,5 +433,159 @@ check("no title falls through to the registry name",
                       name: "perchling-de")),
       "perchling-de")
 
+// MARK: - a caption cut mid-codepoint
+
+// state.sh truncates the caption to 300 BYTES, so a CJK prompt straddles the
+// cut roughly two times in three. A strict decoder answers nil for the WHOLE
+// file on one dangling continuation byte, and `Mood.parse("")` is `.idle` — so
+// the pet would report an actively working session as idle, with no label and
+// no caption, and keep doing it: state.sh reads line 3 back and republishes
+// the same bad bytes on every tool batch. The bytes are written as Data
+// because the fixture is by definition not expressible as a Swift String,
+// which is also why writeFile cannot build it.
+do {
+    let dir = tempDir("truncated-utf8")
+    var bytes = Array("running\n/Users/x/Project/perchling\nhello ".utf8)
+    bytes.append(contentsOf: [0xE4, 0xB8])   // lead byte + one of two continuations
+    try! Data(bytes).write(to: dir.appendingPathComponent("s1"))
+    writeFile(dir, "s2", "waiting\n/Users/x/Project/perchling\nfine")
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    let s1 = rows.first { $0.sid == "s1" }
+    check("a caption cut mid-codepoint keeps its mood", s1?.mood, .running)
+    check("a caption cut mid-codepoint keeps its cwd", s1?.cwd, "/Users/x/Project/perchling")
+    check("a caption cut mid-codepoint still reaches the bubble",
+          s1?.say?.hasPrefix("hello") ?? false, true)
+    check("a clean session beside it is unaffected",
+          rows.first { $0.sid == "s2" }?.mood, .waiting)
+}
+
+// MARK: - cleanCaption
+
+check("an escaped newline becomes a space", cleanCaption(#"two\nlines"#), "two lines")
+check("an escaped tab becomes a space", cleanCaption(#"a\tb"#), "a b")
+check("an escaped quote becomes a quote", cleanCaption(#"he said \"go\""#), #"he said "go""#)
+// The case a chain of replacements cannot get right in either order: the user
+// typed a backslash and then an n, so the backslash survives and the n is an n.
+check("an escaped backslash does not eat the character after it",
+      cleanCaption(#"C:\\nope"#), #"C:\nope"#)
+check("an escape this sed cannot decode is passed through whole",
+      cleanCaption(#"\u4e2d"#), #"\u4e2d"#)
+check("a bare backslash at the end survives", cleanCaption(#"trailing \"#), #"trailing \"#)
+
+// The bug this existed to fix: the SESSION caption is what the bubble shows,
+// and it was the one that never got cleaned.
+do {
+    let dir = tempDir("caption-escapes")
+    writeFile(dir, "s1", #"running"# + "\n/Users/x/p\n" + #"fix the \"bug\"\nthen ship"#)
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    check("a session caption reaches the bubble unescaped",
+          rows.first?.say, #"fix the "bug" then ship"#)
+}
+
+// MARK: - the pet library, and the one path that can delete a user's only copy
+
+// `clearPetLink` is two lines, and the whole safety property is their ORDER
+// plus the `try` on the first: a rescue that cannot finish must throw, so the
+// removal below it never runs. Swapping them, or weakening that `try` to
+// `try?`, deletes a hand-drawn pet that has no other copy and passes every
+// other check in this repo. Both mutations fail `a rescue that cannot finish
+// refuses the removal` below, which is the only reason these lines are worth
+// anything.
+//
+// Everything here is a pure function of a scratch directory, and this harness
+// already compiles all of it — the cut is at the runtime-home block and the
+// library sits well above it. It was simply never called.
+
+// The smallest manifest the parser accepts: 8x8 is the minimum canvas, and one
+// mood is enough. Named, because the name is what becomes the library slug.
+// Delimited `##"…"##`, not `#"…"#`: a hex colour is `"#FFFFFF"`, and that `"#`
+// closes the shorter form mid-manifest.
+func petJSON(_ name: String) -> String {
+    let flat = ##"["........","........","..oooo..","..oooo..","..oooo..","..oooo..","........","........"]"##
+    return ##"{ "name": "\##(name)", "palette": { "o": "#FFFFFF" }, "moods": { "idle": \##(flat) } }"##
+}
+
+func isSymlink(_ url: URL) -> Bool {
+    let a = try? FileManager.default.attributesOfItem(atPath: url.path)
+    return (a?[.type] as? FileAttributeType) == .typeSymbolicLink
+}
+
+do {
+    let root = tempDir("library-migrate")
+    let pet = root.appendingPathComponent("pet.json")
+    writeFile(root, "pet.json", petJSON("Hand Drawn"))
+    try! migrateLoosePet(root: root)
+    check("a loose pet.json is rescued into pets/ under its own name",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("hand-drawn.json").path), true)
+    check("and pet.json becomes a link to it", isSymlink(pet), true)
+    check("the rescued file still holds the original manifest",
+          (try? String(contentsOf: petsDir(root).appendingPathComponent("hand-drawn.json"),
+                       encoding: .utf8))?.contains("Hand Drawn"), true)
+}
+
+do {
+    // A second loose pet of the same name must not overwrite the first. This is
+    // the same "their only copy" property one step along: the collision suffix
+    // is what stops the rescue from destroying what an earlier rescue saved.
+    let root = tempDir("library-collide")
+    writeFile(root, "pet.json", petJSON("Twin"))
+    try! migrateLoosePet(root: root)
+    try? FileManager.default.removeItem(at: root.appendingPathComponent("pet.json"))
+    writeFile(root, "pet.json", petJSON("Twin"))
+    try! migrateLoosePet(root: root)
+    check("a name already in the library gets a suffix rather than a clobber",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("twin-2.json").path), true)
+}
+
+do {
+    // A pet.json that is already a link is not loose, and re-migrating one
+    // would move the library entry it points at out from under itself.
+    let root = tempDir("library-symlink")
+    try! FileManager.default.createDirectory(at: petsDir(root), withIntermediateDirectories: true)
+    writeFile(petsDir(root), "kept.json", petJSON("Kept"))
+    try! FileManager.default.createSymbolicLink(
+        atPath: root.appendingPathComponent("pet.json").path,
+        withDestinationPath: "pets/kept.json")
+    try! migrateLoosePet(root: root)
+    check("an existing link is left alone",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("kept.json").path), true)
+    check("and no second copy is invented",
+          (try? FileManager.default.contentsOfDirectory(atPath: petsDir(root).path))?.count, 1)
+}
+
+do {
+    // The whole point. `clearPetLink` runs from the Pets menu, arbitrarily long
+    // after launch, and pet.json can be a loose regular file again by then.
+    let root = tempDir("library-clear")
+    writeFile(root, "pet.json", petJSON("Only Copy"))
+    try! clearPetLink(root: root)
+    check("clearing a loose pet.json saves it before removing it",
+          (try? String(contentsOf: petsDir(root).appendingPathComponent("only-copy.json"),
+                       encoding: .utf8))?.contains("Only Copy"), true)
+    check("and pet.json itself is gone afterwards",
+          FileManager.default.fileExists(atPath: root.appendingPathComponent("pet.json").path),
+          false)
+}
+
+do {
+    // A rescue that CANNOT finish must abandon the removal rather than delete
+    // what it failed to save. An unwritable pets/ is the reachable version of
+    // that: a directory the user's own umask or a restore left read-only.
+    let root = tempDir("library-refuse")
+    let pet = root.appendingPathComponent("pet.json")
+    writeFile(root, "pet.json", petJSON("Precious"))
+    try! FileManager.default.createDirectory(at: petsDir(root), withIntermediateDirectories: true)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: petsDir(root).path)
+    var threw = false
+    do { try clearPetLink(root: root) } catch { threw = true }
+    check("a rescue that cannot finish throws", threw, true)
+    check("a rescue that cannot finish refuses the removal",
+          (try? String(contentsOf: pet, encoding: .utf8))?.contains("Precious"), true)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: petsDir(root).path)
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

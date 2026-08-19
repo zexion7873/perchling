@@ -601,7 +601,7 @@ struct PetChoice {
 // `builtinPet` for its name rather than hardcoding one, so renaming the
 // built-in cannot leave a duplicate row behind. It reads a global declared far
 // below, which is safe only because this is a function: a top-level `let` doing
-// the same thing runs before BUILTIN_MANIFEST exists and segfaults on launch.
+// the same thing runs before `builtinPet` exists and segfaults on launch.
 func petChoices(root: URL, examples: URL?) -> [PetChoice] {
     let fm = FileManager.default
     let pet = root.appendingPathComponent("pet.json")
@@ -1312,11 +1312,20 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
         guard alive(sid),
               let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
               stamp > cutoff else { continue }
-        let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        // Decoded leniently, unlike the state and owner files beside it. Those
+        // hold a mood word and a pid; this one holds a caption cut to 300
+        // BYTES by state.sh, so a multi-byte character lands astride the cut
+        // routinely. A strict decoder answers nil for the whole file on one
+        // dangling continuation byte, and `Mood.parse("")` is `.idle` — so a
+        // truncated CJK prompt would silently park an actively working session
+        // at idle, with no label and no caption, for as long as it kept
+        // writing the same line 3 back. One replacement character in a teaser
+        // that already ends mid-sentence is the cheaper failure by a mile.
+        let raw = (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } ?? ""
         let mood = Mood.parse(raw)
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
         let cwd = lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        let say = lines.count > 2 ? lines[2].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        let say = lines.count > 2 ? cleanCaption(String(lines[2])) : ""
         let ttl = moodTTL[mood] ?? 0
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
@@ -1326,6 +1335,43 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
                               title: titles[sid]))
     }
     return out
+}
+
+// A caption is lifted verbatim out of the hook payload's JSON by a `sed` that
+// captures the string body, so it arrives still escaped: a two-line prompt is
+// the literal characters backslash and n. BOTH captions come through here —
+// the per-session one and the global fallback — because `bubbleText` prefers
+// `top.say` and only falls back to the global, so cleaning the fallback alone
+// left the escapes on screen in every ordinary case and hid them wherever
+// anyone would have thought to look.
+//
+// One pass rather than a chain of replacements. A chain is order-dependent and
+// gets `\\n` wrong in both orders: a user who typed a backslash before an n
+// either loses the backslash or gains a space. Whitespace escapes all collapse
+// to a space because the bubble is one line. An unrecognised escape — `\uXXXX`
+// above all, which this `sed` cannot decode anyway — is passed through whole
+// rather than half-eaten, so nothing here invents a character.
+func cleanCaption(_ s: String) -> String {
+    var out = String.UnicodeScalarView()
+    let scalars = Array(s.unicodeScalars)
+    var i = 0
+    while i < scalars.count {
+        let c = scalars[i]
+        if c == "\\", i + 1 < scalars.count {
+            let n = scalars[i + 1]
+            switch n {
+            case "n", "t", "r", "b", "f": out.append(" ")
+            case "\"", "\\", "/":         out.append(n)
+            default:                      out.append(c); out.append(n)
+            }
+            i += 2
+            continue
+        }
+        out.append(c)
+        i += 1
+    }
+    let stripped = String(String.UnicodeScalarView(out.filter { !CharacterSet.controlCharacters.contains($0) }))
+    return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 // The registry is written by another program, so this is a trust boundary. A
@@ -2216,14 +2262,7 @@ final class Controller: NSObject, NSWindowDelegate {
               let stamp = attrs[.modificationDate] as? Date, stamp != lastSayStamp else { return }
         lastSayStamp = stamp
         let data = (try? Data(contentsOf: sayURL)) ?? Data()
-        var s = String(decoding: data, as: UTF8.self)
-        // The snippet is lifted verbatim out of JSON, so it still carries the
-        // escapes: newlines become spaces, and a quoted phrase should read as
-        // a quoted phrase rather than a backslash storm.
-        s = s.replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\t", with: " ")
-        s = s.replacingOccurrences(of: "\\\"", with: "\"")
-        s = String(String.UnicodeScalarView(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }))
-        globalSay = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        globalSay = cleanCaption(String(decoding: data, as: UTF8.self))
     }
 
     // Inputs: every live session file (mood as content) plus the plain state

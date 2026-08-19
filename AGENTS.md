@@ -83,8 +83,12 @@ Verify without launching:
 - **Rendered frames** — copy `pet.swift` to a scratch directory, cut everything
   from `let argv = CommandLine.arguments` onward, and append a harness that
   calls `cacheDisplay(in:to:)` on a `PetView` per tick into a filmstrip PNG.
-  The cut has to keep `BUILTIN_MANIFEST` and `builtinPet`, which sit just above
-  the runtime-home block — a `PetView` with no pet draws nothing.
+  The cut has to keep `builtinPet`, or a `PetView` with no pet draws nothing —
+  and `builtinPet` sits BELOW the runtime-home block, not above it, because it
+  needs `root` to know which file to load. Cutting at `let argv` keeps it;
+  cutting where the session harness cuts does not, and a harness that cuts
+  there has to stub it the way that one does. (There is no `BUILTIN_MANIFEST`
+  to keep. The built-in's art has been a file since 1.14.)
   This exercises the real `draw()`, so what you see is what ships.
   `tools/moods-gif.swift` is a worked example of the same cut. Give the view no
   window: `gaze()` returns neutral without one, whereas a view in a window aims
@@ -100,8 +104,10 @@ Verify without launching:
   that block at load time, which touches `~/.claude/perchling/` — the very
   directory this file forbids writing to. `bash tools/run-session-harness.sh`
   already does exactly this — it cuts `pet.swift` before `// Runtime home:`,
-  stubs the one global a still-included type reaches for
-  (`let examplesRoot: URL? = nil`), appends `tools/session-harness.swift`, and
+  stubs the four globals a still-included type reaches for (`examplesRoot`,
+  then `builtinLoaded`, `builtinText` and `builtinPet`, which moved below the
+  cut when the built-in's art became a file), appends
+  `tools/session-harness.swift`, and
   compiles and runs the result — so reach for it rather than hand-rolling the
   cut again. The reasoning above is not a one-off justification for that
   script; it is why any future addition to this layer belongs above that line
@@ -366,8 +372,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   preference.** The cursor must be on the pet to click it, so `hoverSeqStart` is
   always armed when a tap arrives; a `tap` ranked below it could never play on
   any pet declaring both. The procedural two-cell hop survives for pets that
-  declare no `tap` — which is every shipped pet — so `hopUntil` is live code and
-  `mouseUp` arms exactly one of the two.
+  declare no `tap`, and `mouseUp` arms exactly one of the two.
+
+  **No shipped pet is one of those, so `hopUntil` is live code that the repo's
+  own art never reaches.** Verified by parsing all six: chinchilla, husky,
+  otter, sea-lion, shark and whale each declare `done, drag, error, hover,
+  idle, running, tap, waiting`. Both arming sites are therefore unreachable
+  here — the `else` at the `mouseUp` site needs no `tap`, and the arrival hop
+  needs `sequence(for: .done) == nil`. It stays because a third-party manifest
+  may omit either, which is exactly the pet that has nothing else to move. Do
+  not read a green harness run as evidence it works: nothing in `tools/`
+  mentions `hopUntil`, and no fixture in the repo exercises either branch.
 - **A sequence's timing is `steps`, it is required, and `frames` is an unordered
   pose pool.** Each entry is `[frameIndex, ms]`, and a pose may appear several
   times under different holds — which is the whole point, because a real
@@ -501,6 +516,16 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   in it, so every path that removes `pet.json` rescues it first and refuses the
   removal outright when the rescue cannot finish. A rescue that fails quietly
   and then deletes is the same data loss with more steps.
+
+  The whole property is two lines of `clearPetLink` — their ORDER, and the
+  `try` on the first, which makes a failed rescue throw before the removal
+  below it can run. Swapping them or weakening that `try` to `try?` deletes a
+  pet with no other copy, is a one-line diff, and reads in review like tidying.
+  `tools/run-session-harness.sh` now calls this layer rather than merely
+  compiling it: an unwritable `pets/` makes `clearPetLink` throw and leaves
+  `pet.json` intact, and both mutations were shown to fail that pair. The
+  collision suffix is asserted beside it, because a second rescue overwriting
+  the first is the same loss one step along.
 - **A checkmark means "on screen", which is not "what the link points at".**
   A manifest that fails to load leaves `pet.json` pointing at it while the
   built-in is what renders, and a dotfiles `pet.json` can point outside `pets/`
@@ -564,15 +589,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
 - **A row string is walked as utf8 BYTES, and the Character walk beside it is
   the fallback rather than dead code.** Iterating a `String` by `Character`
   segments grapheme clusters on every pixel, and a pet is tens of thousands of
-  them: measured across the ten shipped examples, that walk alone was 140ms of a
-  220ms parse, against 3.7ms for the same walk over `row.utf8`. It matters
+  them: that walk alone was 140ms of a 220ms parse, against 3.7ms for the same
+  walk over `row.utf8`. **Every aggregate in this bullet was measured against a
+  twelve-file `examples/`; six ship today**, so treat the totals as upper
+  bounds and the per-pet figures as the part that transfers. It matters
   because `petChoices()` parses EVERY manifest in `examples/` and `pets/`
   synchronously on the main thread before the Pets menu can be drawn — 220ms of
   right-click latency that no user could mistake for anything but a hang. The
   whole parse is now 44ms. Three things about the shape of that fix.
   The bytes are MATERIALISED with `Array(row.utf8)` rather than walked lazily,
   because the utf8 view charges per-element bookkeeping an array walk does not:
-  84ms against 46ms across the same ten pets. A separate `asciiPalette` flag was
+  84ms against 46ms across that same library. A separate `asciiPalette` flag was
   written first and deleted as dead weight — a row can only USE a non-ASCII
   palette key by carrying a byte over 127, which the byte walk already declines,
   so one condition covers both cases. And the fallback is not only about
@@ -582,8 +609,8 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   and an emoji palette key must LOAD, and a non-ASCII glyph under an ASCII
   palette must be rejected by its character — and every one of them was shown to
   go red when the fallback is removed. The change was also diffed against the
-  pre-change binary over 13 hand-built edge cases plus all ten examples, whole
-  output and exit status, three runs each: identical.
+  pre-change binary over 13 hand-built edge cases plus every example in that
+  twelve-file library, whole output and exit status, three runs each: identical.
 
   **Do not write that diff against fixtures that put the same defect in several
   moods.** `loadCustomPet` walks `moods` as a Swift Dictionary, whose iteration
@@ -634,6 +661,17 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   extraction style is deliberate. Hook payloads arrive as one blob on a pipe the
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
+
+  **It honours `disabled` too, and that is what makes `disable` mean it.**
+  `cmd_up` has always read the flag, so a disabled install launched no pet, but
+  the hot path kept running a `dd`, five `sed`s and three writes on every
+  prompt and every tool batch of every session for a user who had turned the
+  pet off. The test is a shell builtin before the `mkdir`, so a disabled
+  install also stops recreating the runtime home. Refcounts stop being
+  re-stamped while it is set, which is the intended shape rather than a cost:
+  `cmd_down` still removes them at `SessionEnd` so nothing leaks, a live
+  session re-announces itself on its next hook after `enable`, and one too
+  stale to do that is one the staleness window would have retired anyway.
 - **Whether the machine can build is a different question from whether the pet
   can run, and four separate ways of conflating them are all silent.** Nothing
   here has a harness, and every one of these was found by measurement after
@@ -680,14 +718,51 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   line, or one of the nine lines in `pet.swift` that contain that text — the
   `moodRank`/`moodTTL` tables and the mood-wording table. And a column anchor
   does not save it: swiftc right-aligns each excerpt's line number to the width
-  of the WHOLE FILE, so at 4244 lines every quoted line from 1000 up starts at
-  column 0 too, and eight of those nine sit up there. What every excerpt line
+  of the WHOLE FILE, so in a four-digit source every quoted line from 1000 up
+  starts at column 0 too, and eight of those nine sit up there. (The line count
+  is deliberately not written down here — it moves with every change, and what
+  the argument needs is only that the file is over a thousand lines.) What every excerpt line
   does carry is the ` | ` gutter, so the headline drops those and takes the
   first `error:` among what remains.
 
   A hand-written fake `swiftc` is why two of these shipped green: the fixture
   put its error on the last line, which the real compiler never does. Fake the
   interface, never the output format — capture that from one real run.
+
+  **A failed build gets three things right, and each of them is a separate
+  branch.** It must not corrupt the binary: `compile()` writes `swiftc`'s
+  output to a `$$`-suffixed staging name in `bin/` and renames on zero exit,
+  because a compile killed partway through the old in-place write left a
+  truncated 0755 file with an mtime newer than `$SRC` — exactly what the
+  rebuild gate reads as current, so nothing rebuilt it, `status` called it
+  `(built)`, and the install was wedged with no path back. A `$$` name rather
+  than a lock: concurrent session starts after a plugin update then build their
+  own copies of the same source and the last rename wins, which is harmless,
+  where a lock is a second wedgeable mutex bought to save CPU in a window that
+  opens once per release. It must not empty the desktop: the `pkill` runs only
+  on the branch where `cmd_build` SUCCEEDED, since a failure returns before
+  `launch_once` is ever reached and nothing puts a pet back — and `rename()`
+  over a running executable succeeds where a write returns `ETXTBSY`, so
+  clearing the path first buys nothing anyway. And it must not repeat: a
+  `$BUILDLOG` newer than `$SRC` means this exact source has already been tried,
+  and without that test a source that compiles for the author and not on this
+  machine burns a full `swiftc -O` inside the 30s hook timeout on every session
+  start, forever, and still ends with no pet. That third test is why the
+  log-retracting branch is now an explicit `elif` on "present AND current"
+  rather than a bare `else`: the `else` of the widened condition also catches
+  "needs a build, already failed", and deleting the reason there is deleting
+  the only thing that stops the loop.
+
+  `tools/run-build-gate.sh` pins the first, second and fourth of those, and
+  takes `PERCHLING_PET_SH` so it can be shown to FAIL: against the pre-fix
+  script it goes red on `pet-survives-failed-build` and `no-rebuild-loop`.
+  Only those two discriminate — `binary-untouched`, `reason-recorded` and
+  `no-staging-debris` pass against that mutant too, because `swiftc` writes no
+  output at all on a parse error, and they are negative controls rather than
+  coverage. Its mtimes are set with `touch -t`, never by writing the file: the
+  first version let `cc`, `touch` and `swiftc` land inside the same second and
+  `-nt` then answered differently run to run, which produced three verdicts
+  from three runs and none of them about the code.
 - **Only `cmd_up` launches the pet, and of the hook events only `SessionStart`
   reaches it.** Everything else — `UserPromptSubmit`, `PostToolBatch`, `Stop`,
   `StopFailure`, `PreToolUse`, `PermissionRequest`, `Notification` — runs
@@ -719,8 +794,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `PreToolUse`,
   `PostToolUse` and `PostToolBatch` — each from a real headless CLI run, not
   read off the docs. In every one of those seven, `"cwd"` occurred exactly
-  once, including on tool events carrying `tool_input`, so the greedy-`sed`
-  hazard the extraction knowingly accepts has not actually bitten yet.
+  once, including on tool events carrying `tool_input`.
+- **That survey covers `cwd`, and `session_id` is not the same question.** The
+  extraction is greedy and takes the LAST match, so a payload whose
+  `tool_input` carries a key of the same name wins over the top-level one. For
+  `cwd` the cost is a wrong directory on one tray row until the next hook,
+  which is why the extraction accepts it. For `session_id` the value becomes a
+  FILENAME: `mv -f` in `state.sh` and `cmd_up`, `rm -f` in `cmd_down`. Measured
+  end to end — a nested `"session_id":"../../../evil"` resolves three levels
+  above the sessions directory and clobbers an arbitrary file whose third line
+  the same payload chose, and `PostToolBatch` carries no matcher, so every tool
+  batch is a delivery route. `state.sh` and `pet.sh` therefore both check the
+  SHAPE (`case "$sid" in ''|*[!A-Za-z0-9_-]*)`), which costs no fork, and
+  reject rather than sanitise: an empty sid degrades to no refcount for that
+  hook, where a repaired one still names a file somebody else picked. The
+  general form of the trap is worth more than the fix — a measurement of the
+  harmless field read as a verdict on the dangerous one, in prose that looks
+  exactly like the measured bullets around it.
 - **`sessions/` is read for moods in exactly one place.** `liveSessions()`
   owns the owner-alive guard, the one-hour staleness cutoff, and the per-mood
   TTL decay, and both the attention fold and the tray rows consume its
@@ -795,6 +885,20 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   The listing cache needs no prune, unlike the parse cache: a removal moves the
   directory's mtime, so a stale listing is replaced on the next poll rather than
   answering forever.
+- **A caption arrives still JSON-escaped, and BOTH captions are cleaned in one
+  place.** `state.sh` captures the string body with a `sed`, so a two-line
+  prompt reaches the file as the literal characters backslash and n.
+  `cleanCaption` is the only unescaper and `liveSessions` and `pollSay` both
+  call it. Putting it in `pollSay` alone was the shape of the bug worth
+  remembering: `bubbleText` prefers `top.say` and only falls back to the global
+  `say`, so the cleaned path was the one nobody normally sees and the escapes
+  were on screen in every ordinary case. It is ONE PASS rather than a chain of
+  `replacingOccurrences`, because a chain gets `\\n` wrong in either order — a
+  user who typed a backslash before an n loses the backslash or gains a
+  space — and an escape it does not recognise (`\uXXXX`, which that `sed`
+  cannot decode anyway) passes through whole rather than half-eaten. Both
+  mutations are pinned in `tools/run-session-harness.sh` and each was shown to
+  fail alone.
 - **The bubble quotes the session the face is reporting.** `menuRows()` already
   sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
   `bubbleText()` takes its line three and its name. Before this the caption came
@@ -844,10 +948,23 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `cmd_up`'s `!= "$$"` guard exists to reject. Closing it properly means
   inventing a third state, which buys back a self-healing hour.
 
-  What DOES hold, and is worth keeping: removal is symmetric. `cmd_down`
-  removes both halves at `SessionEnd` whatever the owner situation was, and
-  `cmd_up` prunes owner files whose session is already gone, so neither
-  directory leaks.
+  **Removal is symmetric only when `SessionEnd` fires, and the owner machinery
+  exists precisely because it sometimes does not.** `cmd_down` removes both
+  halves whatever the owner situation was; a force-quit runs it never, and the
+  owner-prune loop then removed `owners/<sid>` while `sessions/<sid>` stayed
+  forever. Nothing in the renderer deletes one either — `liveSessions` and
+  `pollSessions` compute the staleness predicate and use it only to HIDE. A
+  session file four days old was found on a live install.
+
+  `cmd_up` therefore retires session files past the renderer's own hour before
+  the owner loop runs, which is what makes that loop's job right rather than
+  inverted: the session goes first and its owner follows, so the pair stays
+  matched without the loop knowing the cutoff. The window is not a choice —
+  `liveSessions` requires the stamp to be inside the cutoff regardless of
+  whether the owner is alive, so a session too stale to draw is too stale to
+  keep, and one that is genuinely alive re-announces itself on its next hook.
+  Pinned in `tools/run-prune-checks.sh`, including the half that matters more:
+  a FRESH session must survive `cmd_up` untouched.
 - **The 30s empty grace is for gaps, not for deaths.** It exists to ride out
   the pause between one session ending and the next starting — a resume, a
   `/clear`, a new window. Both ways of losing every session skip it: refcounts
@@ -864,31 +981,40 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 62 assertions over the session/tray layer
+bash tools/run-session-harness.sh  # 87 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
+bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
+bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
+bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Five layers have harnesses — the session/tray layer
-(`tools/run-session-harness.sh`), the manifest parser
+Eight layers have harnesses — the session/tray layer and the pet library
+(`tools/run-session-harness.sh`), `state.sh` itself
+(`tools/run-state-checks.sh`, shell only, since that script compiles nothing
+and launches nothing), `cmd_up`'s housekeeping
+(`tools/run-prune-checks.sh` — kept apart from the launch and build harnesses
+because they are three unrelated properties of one function and one file would
+make a failure ambiguous), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
 runtime-home block, because `PetView` lives below that line) and `cmd_up`'s
 launch path (`tools/run-launch-race.sh`, which is shell only and compiles a C
-stub rather than touching `pet.swift`) and the shipped art
-(`tools/run-art-checks.sh`, which cuts where the session harness cuts so it can
-reach `builtinPet`).
+stub rather than touching `pet.swift`) and what a failed build may do to a
+working install (`tools/run-build-gate.sh`, shell only for the same reason, and
+using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
+which cuts where the session harness cuts so it can reach `builtinPet`).
 
-The last two take an override — `PERCHLING_PET_SH` and `PERCHLING_PET_SWIFT` —
+Three of them take an override — `PERCHLING_PET_SH` and `PERCHLING_PET_SWIFT` —
 so each can be pointed at a mutant carrying exactly the defect it is named after
-and shown to FAIL. That is the only reason to believe either, and the launch one
-has now been wrong twice in a way its own green lines could not show. Its first
+and shown to FAIL. That is the only reason to believe any of them, and the
+launch one has now been wrong twice in a way its own green lines could not show. Its first
 version asserted `pgrep -x -f` as its own literal text and passed against the
 broken script it was written to catch. The replacement went the same way for a
 subtler reason: it reconstructs `running()` by `sed`-ing one line out of the
@@ -935,8 +1061,9 @@ without knowing what the art is supposed to look like. It is not a substitute
 for rendering a frame and looking at it, and it cannot be: a pet drawn as a
 featureless blob passes.
 
-`--export` hands the embedded string straight back, so whatever formatting goes
-in is what a user's `--export > draft.json` gets. Match what is there:
+`--export` hands back the TEXT of `examples/$PERCHLING_BUILTIN.json` as loaded,
+not a re-serialisation of it, so whatever formatting is in that file is what a
+user's `--export > draft.json` gets. Match what is there:
 `JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
 `json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
 

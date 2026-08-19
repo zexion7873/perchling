@@ -50,6 +50,21 @@ payload_field() {
   printf '%s' "$payload" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1
 }
 
+# The one payload field that becomes a FILENAME, so the only one whose shape
+# has to be checked. payload_field is greedy and takes the LAST match, so a
+# nested object carrying its own "session_id" beats the real one — and this
+# value reaches `mv -f "$ROOT/.up.$$" "$SESSIONS/$sid"` and `rm -f
+# "$SESSIONS/$sid" "$OWNERS/$sid"`, where `../../../evil` resolves three levels
+# above the sessions directory. Real ids are UUIDs. An id that fails the shape
+# test yields nothing, and cmd_up's own `|| sid="manual"` then covers it: a
+# launch with no usable session behind it is exactly what the manual bridge is
+# for, where a sanitised id would still name a file the payload picked.
+payload_sid() {
+  sid_raw=$(payload_field session_id)
+  case "$sid_raw" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
+  printf '%s' "$sid_raw"
+}
+
 # The outermost process this session hangs off — Claude desktop for a session
 # started there, the terminal app for one started from a shell. Its death is
 # the one end-of-session signal a missing SessionEnd cannot swallow. One ps,
@@ -164,7 +179,24 @@ launch_once() {
 compile() {
   supported || { echo "perchling needs macOS with a working Swift toolchain (xcode-select --install)" >&2; return 1; }
   mkdir -p "$ROOT/bin"
-  swiftc -O -o "$BIN" "$SRC"
+  # Staged and renamed, like every other file this script publishes. Pointing
+  # swiftc straight at $BIN makes a failed or interrupted compile leave a
+  # truncated 0755 file with an mtime newer than $SRC — which is precisely what
+  # the rebuild gate reads as "current", so nothing ever rebuilds it, `status`
+  # calls it `(built)`, and the install is wedged with no way back short of
+  # deleting the file by hand.
+  #
+  # The staging name carries $$ instead of taking a lock. Concurrent session
+  # starts after a plugin update then each compile their own copy of the same
+  # source and the last rename wins, which is harmless because they are the
+  # same binary; a lock would be a second wedgeable mutex bought to save CPU in
+  # a window that opens once per release.
+  stage="$ROOT/bin/.perchling.$$"
+  swiftc -O -o "$stage" "$SRC" || { rm -f "$stage"; return 1; }
+  # rename() over a RUNNING executable succeeds where a write returns ETXTBSY:
+  # the live process keeps the old inode. That is what lets cmd_up build first
+  # and retire the old pet only once there is something better to replace it.
+  mv -f "$stage" "$BIN"
 }
 
 # The log belongs to the build, not to whoever called it: every build writes
@@ -194,7 +226,7 @@ cmd_up() {
   cwd=""
   if [ -z "$sid" ]; then
     read_payload
-    sid="$(payload_field session_id)"
+    sid="$(payload_sid)"
     cwd="$(payload_field cwd)"
   fi
   [ -n "$sid" ] || sid="manual"
@@ -226,8 +258,25 @@ cmd_up() {
   else
     rm -f "$OWNERS/$sid"
   fi
+  # Removal is NOT symmetric on its own, which is the case the owner machinery
+  # exists for: a force-quit fires no SessionEnd, so cmd_down never runs, and
+  # the loop below then prunes owners/<sid> while sessions/<sid> stays forever.
+  # Nothing in the renderer deletes one either — liveSessions and pollSessions
+  # compute the staleness predicate and use it only to HIDE. Left alone that
+  # retains up to 300 bytes of prompt or reply text per abnormally-ended
+  # session indefinitely, and makes `pet.sh status` over-report.
+  #
+  # The window is the renderer's own hour, so this removes nothing that was
+  # still being shown: liveSessions requires the stamp to be inside the cutoff
+  # REGARDLESS of whether the owner is alive, so a session too stale to draw is
+  # too stale to keep. A session that is genuinely still alive re-announces
+  # itself on its next hook. Runs at SessionStart only, never on the hot path,
+  # so one `find` is affordable here in a way it would not be in state.sh.
+  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null
   # An owner file whose session is already gone is the same leak the manual
-  # lease was, one directory over.
+  # lease was, one directory over. It runs AFTER the prune above, so a session
+  # retired for staleness takes its owner with it and the pair stays matched
+  # without this loop needing to know the cutoff.
   for f in "$OWNERS"/*; do
     [ -e "$f" ] || continue
     [ -e "$SESSIONS/${f##*/}" ] || rm -f "$f"
@@ -244,14 +293,27 @@ cmd_up() {
   if [ -f "$BUILTIN_SRC" ] && ! cmp -s "$BUILTIN_SRC" "$BUILTIN"; then
     cp "$BUILTIN_SRC" "$ROOT/.builtin.$$" 2>/dev/null && mv -f "$ROOT/.builtin.$$" "$BUILTIN" 2>/dev/null
   fi
-  # (Re)build when missing or when a plugin update shipped newer source.
-  if [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
-    pkill -x -f "$BIN_RE" 2>/dev/null
+  # (Re)build when missing or when a plugin update shipped newer source —
+  # unless this exact source has already been tried and failed, which a
+  # $BUILDLOG newer than $SRC records. Without that arm, source that compiles
+  # for the author and not on this machine (an SDK bump, a Swift bump) burns a
+  # full `swiftc -O` of the whole app inside the 30s hook timeout on EVERY
+  # session start, forever, and still ends with no pet. Nothing else on disk
+  # can stop that loop: the gate below reads only the exec bit and an mtime,
+  # and neither of them moves when a build fails.
+  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && [ ! "$BUILDLOG" -nt "$SRC" ]; then
     # Silent here is fine — cmd_build has already put the reason in $BUILDLOG,
     # where `pet.sh status` reads it. Discarding it was what made a failed
     # build indistinguishable from a clean install.
-    cmd_build >/dev/null 2>&1 || exit 0
-  else
+    if cmd_build >/dev/null 2>&1; then
+      # Only a build that SUCCEEDED retires the running pet. Killing first
+      # means a failed build takes the pet off the screen as well as leaving it
+      # unbuilt — and cmd_build's non-zero exit returns before launch_once is
+      # ever reached, so nothing puts one back. compile() stages and renames,
+      # so there is no ETXTBSY reason to clear the path first either.
+      pkill -x -f "$BIN_RE" 2>/dev/null
+    fi
+  elif [ -x "$BIN" ] && [ ! "$SRC" -nt "$BIN" ]; then
     # A binary that is present and current is proof the recorded reason no
     # longer applies to what the pet runs, and only a build that HAS to happen
     # can retract one. Without this, a failure recorded once outlives whatever
@@ -262,6 +324,13 @@ cmd_up() {
     # binary it calls `(built)`.
     rm -f "$BUILDLOG"
   fi
+  # A build that failed leaves whatever was there before, and an older binary
+  # still draws a pet — so it is launched rather than withheld, and only having
+  # nothing to launch gives up. The test has to happen HERE rather than inside
+  # launch_once: that function spins up to five seconds waiting for `running()`
+  # to see a process, holding its lock the whole time, and a $BIN that does not
+  # exist can never produce one.
+  [ -x "$BIN" ] || exit 0
   # Backgrounded so a SessionStart hook still returns immediately: launch_once
   # blocks until the pet is visible, and the hook must not wait on that.
   launch_once &
@@ -270,7 +339,7 @@ cmd_up() {
 
 cmd_down() {
   sid="${1:-}"
-  if [ -z "$sid" ]; then read_payload; sid="$(payload_field session_id)"; fi
+  if [ -z "$sid" ]; then read_payload; sid="$(payload_sid)"; fi
   [ -n "$sid" ] && rm -f "$SESSIONS/$sid" "$OWNERS/$sid"
   # A bridge left over from an enable/wake that happened while sessions were
   # live: on its own it is not a reason for the pet to exist.
@@ -284,7 +353,7 @@ cmd_status() {
   # works — swiftc prints the message first and its source excerpt after, so a
   # tail reports `951 |  }` — and no column anchor works either: the excerpt's
   # line numbers are right-aligned to the width of the WHOLE FILE, so in a
-  # 4244-line source every quoted line from 1000 up also starts at column 0,
+  # four-digit source every quoted line from 1000 up also starts at column 0,
   # and eight of pet.swift's own lines up there contain the text `error:`.
   # What every excerpt line does carry is the ` | ` gutter. Drop those and what
   # remains is messages; the fallbacks cover a log that is all excerpt, and a
