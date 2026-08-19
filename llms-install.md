@@ -44,8 +44,9 @@ have the user launch `claude` once first, then retry.
 claude plugin list | grep -i perchling
 ```
 
-Nothing to configure: the pet builds itself (a few seconds, one-time) and
-appears when the user's next Claude Code session starts. After that first
+Nothing to configure: the pet builds itself (a few seconds, on first launch and
+again after every plugin update) and appears when the user's next Claude Code
+session starts. After that first
 session, the build succeeded if
 `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling"` exists.
 

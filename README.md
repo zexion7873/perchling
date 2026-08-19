@@ -45,8 +45,9 @@ From inside a Claude Code session:
 /plugin install perchling@perchling
 ```
 
-The pet appears on your next session and builds itself from source on first
-launch — a few seconds, once.
+The pet appears on your next session and builds itself from source — a few
+seconds on first launch, and again after every plugin update, since an update
+ships new source for it to compile.
 
 > [!IMPORTANT]
 > **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
