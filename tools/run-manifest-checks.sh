@@ -15,7 +15,8 @@ trap 'rm -rf "$SCRATCH"' EXIT
 export PERCHLING_HOME="$SCRATCH/home"
 
 echo "compiling..."
-swiftc -O scripts/pet.swift -o "$SCRATCH/perchling" || exit 1
+# Takes PERCHLING_PET_SWIFT so it can be pointed at a mutant and shown to FAIL.
+swiftc -O "${PERCHLING_PET_SWIFT:-scripts/pet.swift}" -o "$SCRATCH/perchling" || exit 1
 BIN="$SCRATCH/perchling"
 
 # One 8x8 pet, two poses. 8 is the smallest canvas the parser accepts.
@@ -130,6 +131,78 @@ check "short row still rejected" 1 \
 # Both transparent glyphs are known to the byte table, not just ".".
 check "0 and . both transparent" 0 \
   "$(petfile clear '{ "a": "#FF0000" }' '["a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a."]')" "8x8"
+
+# --- eyes -------------------------------------------------------------------
+#
+# The `eyes` block had NO coverage and no shipped pet declares one, so nothing
+# here had ever run — in the app or in a test. Two of the eight below were
+# process kills before this file existed: an eye box is two untrusted Ints that
+# were added before being range-checked, and the lid search force-unwrapped the
+# palette for a transparent cell. Both took down `--validate` itself, which is
+# the one tool an author has for finding out what is wrong with a manifest.
+#
+# `o` is the socket and the two `#` pixels on row 3 are the eyes: blink
+# synthesis needs pixels brighter than the socket, so this is the smallest grid
+# that can produce a blink frame at all.
+EYES_ART='["........","........","..oooo..","..#oo#..","..oooo..","..oooo..","........","........"]'
+
+eyefixture() { # eyefixture <name> <eyes-json> -> path
+  local path="$SCRATCH/$1.json"
+  cat > "$path" <<JSON
+{ "name": "$1",
+  "palette": { "#": "#FFFFFF", "o": "#888888" },
+  "moods": { "idle": $EYES_ART },
+  "eyes": $2 }
+JSON
+  printf '%s' "$path"
+}
+
+check "eyes load and synthesise a blink" 0 \
+  "$(eyefixture eyes-ok '{ "box": [2,3,4,1], "socket": "o" }')" \
+  "eyes 4x1 at 2,3 range 2" "blink ok"
+
+# Declaring a box does not guarantee a blink, and silently having none is the
+# failure worth naming: this box sits on a row of pure socket colour.
+check "a box with nothing lit says so" 0 \
+  "$(eyefixture eyes-dark '{ "box": [2,2,4,1], "socket": "o" }')" \
+  "blink UNAVAILABLE"
+
+check "range reaches the box" 0 \
+  "$(eyefixture eyes-range '{ "box": [2,3,4,1], "socket": "o", "range": 4 }')" \
+  "range 4"
+
+check "a lid outside the palette is rejected" 1 \
+  "$(eyefixture eyes-lid '{ "box": [2,3,4,1], "socket": "o", "lid": "z" }')" \
+  "eyes.lid must be a palette key"
+
+check "a box off the canvas is rejected" 1 \
+  "$(eyefixture eyes-oob '{ "box": [6,3,4,1], "socket": "o" }')" \
+  "does not fit"
+
+# The origin is the one that used to trap, and it must be REJECTED rather than
+# fatal. The exit status is the assertion: a trap exits 133, which is neither
+# the 0 of a load nor the 1 of a rejection, so `check` catches it whatever the
+# message says.
+#
+# The extent case below it is a NEGATIVE CONTROL, not coverage: `0 + Int.max`
+# does not overflow, so it was already rejected correctly before the fix and
+# passes against the pre-fix parser too. It stays because it records that the
+# other field is rejected rather than trapping, which is not obvious from the
+# origin case alone.
+check "an origin that overflows Int is rejected, not fatal" 1 \
+  "$(eyefixture eyes-over-x '{ "box": [9223372036854775807,0,1,1], "socket": "o" }')" \
+  "does not fit"
+
+check "an extent that overflows Int is rejected, not fatal" 1 \
+  "$(eyefixture eyes-over-w '{ "box": [0,0,9223372036854775807,1], "socket": "o" }')" \
+  "does not fit"
+
+# Transparency inside the box beside ONE other ink: two keys are what makes the
+# lid search compare at all, so a box over nothing but transparency always
+# survived and a realistic one did not.
+check "a box over transparency is not fatal" 0 \
+  "$(eyefixture eyes-clear '{ "box": [1,3,3,1], "socket": "o" }')" \
+  "blink ok"
 
 echo "---"
 echo "$pass passed, $fail failed"

@@ -342,6 +342,22 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   `blink` is not guaranteed by declaring a box: synthesis needs pixels inside
   it brighter than `socket`, and `--validate` says `blink UNAVAILABLE` rather
   than failing when there are none.
+
+  **This block had no coverage at all until 2026-08-19, and it killed the
+  process two ways.** No shipped pet declares `eyes`, so nothing here had ever
+  run — in the app or in a test. `box` is two untrusted `Int`s that were ADDED
+  before being range-checked, so an origin near `Int.max` trapped on overflow;
+  it is compared by subtraction now. And the lid search force-unwrapped the
+  palette for a transparent cell, which has no entry — that one needed TWO
+  distinct non-socket inks inside the box, because a single key never makes
+  `max(by:)` call its comparator, so a box over nothing but transparency
+  survived and a realistic one did not. Both took down `--validate` itself,
+  which is the only tool an author has for finding out what is wrong with a
+  manifest: it died on the mistake it exists to diagnose. Pinned by eight
+  fixtures in `tools/run-manifest-checks.sh`, and the happy paths were measured
+  working before either fix — the feature was never broken, only unguarded.
+  One of the eight is labelled a negative control: `0 + Int.max` does not
+  overflow, so the extent case passes against the pre-fix parser too.
 - **Hover is a sequence or it is nothing.** `mouseEntered` arms
   `hoverSeqStart` only when the active pet declares `sequences.hover`, and the
   burst expires by elapsing rather than on `mouseExited` — there is no
@@ -988,7 +1004,7 @@ bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 bash tools/run-session-harness.sh  # 107 assertions over the session/tray + pet library
-bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
+bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, six rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
@@ -1017,7 +1033,7 @@ working install (`tools/run-build-gate.sh`, shell only for the same reason, and
 using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
 which cuts where the session harness cuts so it can reach `builtinPet`).
 
-Six of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
+Seven of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
 `PERCHLING_STATE_SH` — so each can be pointed at a mutant carrying exactly the
 defect it is named after and shown to FAIL. That is the only reason to believe any of them, and the
 launch one has now been wrong twice in a way its own green lines could not show. Its first
