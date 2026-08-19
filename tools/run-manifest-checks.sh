@@ -46,10 +46,20 @@ check() { # check <label> <expected-exit> <fixture-path> <grep-pattern...>
   fi
   local pat
   for pat in "$@"; do
-    if ! printf '%s' "$out" | grep -q -- "$pat"; then
-      echo "FAIL $label: output missing /$pat/"; echo "$out" | sed 's/^/    /'
-      fail=$((fail+1)); return
-    fi
+    # A leading ! inverts: the pattern must be ABSENT. Needed because the
+    # interesting half of some rules is a sentence the tool must stop saying.
+    case "$pat" in
+      '!'*)
+        if printf '%s' "$out" | grep -q -- "${pat#!}"; then
+          echo "FAIL $label: output must not contain /${pat#!}/"; echo "$out" | sed 's/^/    /'
+          fail=$((fail+1)); return
+        fi ;;
+      *)
+        if ! printf '%s' "$out" | grep -q -- "$pat"; then
+          echo "FAIL $label: output missing /$pat/"; echo "$out" | sed 's/^/    /'
+          fail=$((fail+1)); return
+        fi ;;
+    esac
   done
   echo "ok   $label"; pass=$((pass+1))
 }
@@ -203,6 +213,27 @@ check "an extent that overflows Int is rejected, not fatal" 1 \
 check "a box over transparency is not fatal" 0 \
   "$(eyefixture eyes-clear '{ "box": [1,3,3,1], "socket": "o" }')" \
   "blink ok"
+
+# --- inkTop -----------------------------------------------------------------
+#
+# The chrome hangs off inkTop, and it was computed twice — once for the pet and
+# once for --validate's explanation of it — so the two could disagree. A frame
+# with no ink at all scored as row 0 rather than as nothing, which collapsed the
+# measurement and then produced a sentence that could not be true.
+BLANK='["........","........","........","........","........","........","........","........"]'
+
+# FLAT's ink starts on row 2 and BLANK has none, so nothing here reaches higher
+# than the moods. Before the fix this printed "sequences reach higher, chrome
+# moves up 2 rows" — about a frame that is empty.
+check "a blank frame does not collapse inkTop" 0 \
+  "$(fixture blank-frame "{ \"idle\": { \"frames\": [$FLAT, $BLANK], \"steps\": [[0,200],[1,200]] } }")" \
+  '!sequences reach higher'
+
+# The other half: a sequence that genuinely starts higher must STILL be
+# reported, or the fix above would have silenced a true warning as well.
+check "a sequence that really reaches higher still says so" 0 \
+  "$(fixture higher-seq "{ \"idle\": { \"frames\": [$FLAT, $HIGH], \"steps\": [[0,200],[1,200]] } }")" \
+  "moods alone: 2" "chrome moves up 2 rows"
 
 echo "---"
 echo "$pass passed, $fail failed"
