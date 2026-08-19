@@ -764,6 +764,18 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   does carry is the ` | ` gutter, so the headline drops those and takes the
   first `error:` among what remains.
 
+  **The gutter filter could not be shown load-bearing, and the fixture that
+  tried is committed anyway.** `swiftc` emits NO warnings once it has an error,
+  so a failed build's log is always one diagnostic followed by its own excerpt —
+  and `grep -m1` therefore reaches the real message before any excerpt line,
+  filter or no filter. Two constructions were tried, both siting a warning on
+  the `moodTTL` row so its excerpt would precede the error; the compiler printed
+  no warning either time. The filter stays because it costs nothing and another
+  compiler mode may order things differently, but `run-build-gate.sh` labels the
+  assertion covering it a negative control rather than pretending otherwise.
+  What the fixture DOES pin is the `tail -1` mistake, which reds two
+  assertions.
+
   A hand-written fake `swiftc` is why two of these shipped green: the fixture
   put its error on the last line, which the real compiler never does. Fake the
   interface, never the output format — capture that from one real run.
@@ -1027,8 +1039,8 @@ bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 bash tools/run-session-harness.sh  # 107 assertions over the session/tray + pet library
-bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, six rejections
-bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
+bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
+bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
 bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
@@ -1056,7 +1068,7 @@ working install (`tools/run-build-gate.sh`, shell only for the same reason, and
 using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
 which cuts where the session harness cuts so it can reach `builtinPet`).
 
-Seven of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
+Eight of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
 `PERCHLING_STATE_SH` — so each can be pointed at a mutant carrying exactly the
 defect it is named after and shown to FAIL. That is the only reason to believe any of them, and the
 launch one has now been wrong twice in a way its own green lines could not show. Its first
