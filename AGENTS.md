@@ -96,8 +96,8 @@ Verify without launching:
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns a handful of flat inks into a million.
-- **Session/tray logic** — `Mood.parse`, `liveSessions`, `menuRows`,
-  `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
+- **Session/tray logic** — `Mood.parse`, `liveSessions`, `foldMoods`,
+  `menuRows`, `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
   `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above
   the runtime-home block, so a harness for them has to cut there instead of
   at `let argv`: cutting at `let argv` still runs
@@ -921,7 +921,13 @@ perchling because it has no `.app` bundle. Neither is a viable fallback.
   that file's 300s leash while the caption reports the top live row. A harness
   that recomputes the face from `liveSessions` alone shares the blind spot and
   will assert the gap away — take the fold's own inputs, or assert against a
-  literal.
+  literal. That fold is `foldMoods`, a free function: it was inside
+  `Controller.pollMoods`, where `Controller.init`'s three NSWindows put the one
+  rule deciding what the user sees out of reach of every harness. It takes the
+  state file's mood and stamp as an EXPLICIT parameter for precisely the reason
+  above, so a caller cannot accidentally derive it from the rows; `pollMoods` is
+  now the IO around it, and the assertions live in `tools/session-harness.swift`
+  beside a literal for the gap itself.
 - **A refcount is owned.** `sessions/<sid>` is paired with `owners/<sid>`, the
   pid of the outermost process the session hangs off — Claude desktop, or the
   terminal that ran `claude`. A dead owner retires the session on the next
@@ -981,7 +987,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 87 assertions over the session/tray + pet library
+bash tools/run-session-harness.sh  # 107 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, four rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
@@ -1011,9 +1017,9 @@ working install (`tools/run-build-gate.sh`, shell only for the same reason, and
 using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
 which cuts where the session harness cuts so it can reach `builtinPet`).
 
-Three of them take an override — `PERCHLING_PET_SH` and `PERCHLING_PET_SWIFT` —
-so each can be pointed at a mutant carrying exactly the defect it is named after
-and shown to FAIL. That is the only reason to believe any of them, and the
+Six of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
+`PERCHLING_STATE_SH` — so each can be pointed at a mutant carrying exactly the
+defect it is named after and shown to FAIL. That is the only reason to believe any of them, and the
 launch one has now been wrong twice in a way its own green lines could not show. Its first
 version asserted `pgrep -x -f` as its own literal text and passed against the
 broken script it was written to catch. The replacement went the same way for a

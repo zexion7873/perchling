@@ -587,5 +587,98 @@ do {
     try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: petsDir(root).path)
 }
 
+// MARK: - liveSessions: the TTL decay and the one-hour cutoff
+//
+// Both were unreachable while every fixture was read milliseconds after being
+// written: `now` and the file's mtime were the same instant, so each comparison
+// had exactly one value and could not disagree with anything. `liveSessions`
+// takes `now`, so pushing it FORWARD ages the fixture precisely — and sidesteps
+// setting mtimes by hand, where sub-second landings answer differently per run.
+func agedRows(_ dir: URL, _ age: TimeInterval) -> [SessionRow] {
+    liveSessions(dir, now: Date().addingTimeInterval(age), alive: { _ in true },
+                 names: [:], titles: [:])
+}
+
+do {
+    let dir = tempDir("ttl-running")
+    writeFile(dir, "s1", "running\n")
+    check("running inside its 900s TTL keeps its mood", agedRows(dir, 800).first?.mood, Mood.running)
+    check("running past its 900s TTL reads idle", agedRows(dir, 1000).first?.mood, Mood.idle)
+}
+
+do {
+    let dir = tempDir("ttl-done")
+    writeFile(dir, "s1", "done\n")
+    check("done inside its 60s TTL keeps its mood", agedRows(dir, 30).first?.mood, Mood.done)
+    check("done past its 60s TTL reads idle", agedRows(dir, 100).first?.mood, Mood.idle)
+}
+
+do {
+    // waiting's TTL and the cutoff are both 3600, so the row is RETIRED before
+    // its mood can decay: no age exists at which a waiting row reads idle. The
+    // decay and the cutoff are not two chances to retire the same row.
+    let dir = tempDir("ttl-waiting")
+    writeFile(dir, "s1", "waiting\n")
+    check("waiting just inside the cutoff still reads waiting", agedRows(dir, 3500).first?.mood, Mood.waiting)
+    check("past the cutoff the row is gone, not decayed", agedRows(dir, 3700).count, 0)
+}
+
+// MARK: - foldMoods
+
+let t0 = Date()
+
+do {
+    check("nothing at all is idle",
+          foldMoods(state: nil, live: [], now: t0, last: [:]).display, Mood.idle)
+    check("the highest rank wins",
+          foldMoods(state: nil, live: [row("a", .running), row("b", .error)],
+                    now: t0, last: [:]).display, Mood.error)
+    check("waiting outranks error",
+          foldMoods(state: nil, live: [row("a", .error), row("b", .waiting)],
+                    now: t0, last: [:]).display, Mood.waiting)
+}
+
+do {
+    // The state file's leash is min(that mood's TTL, 300), so it binds from
+    // BOTH sides: waiting's own 3600 is clamped down to 300, and done's 60 is
+    // left alone rather than raised to it.
+    func face(_ m: Mood, _ age: TimeInterval) -> Mood {
+        foldMoods(state: (m, t0.addingTimeInterval(-age)), live: [], now: t0, last: [:]).display
+    }
+    check("a fresh state file drives the face", face(.waiting, 10), Mood.waiting)
+    check("the state file's leash is 300s, not waiting's own 3600", face(.waiting, 400), Mood.idle)
+    check("a mood whose own TTL is shorter keeps the shorter one", face(.done, 100), Mood.idle)
+    check("and is not retired early by the 300s leash", face(.done, 30), Mood.done)
+}
+
+do {
+    // The blind spot AGENTS.md warns about, asserted against a literal rather
+    // than recomputed from the rows: the state file has no row behind it and
+    // nothing clears it at SessionEnd, so it can hold the face while the rows —
+    // and therefore the bubble's caption — report a different session entirely.
+    let live = [row("s1", .running)]
+    let f = foldMoods(state: (.waiting, t0), live: live, now: t0, last: [:])
+    check("the state file outranks a live session it has no row for", f.display, Mood.waiting)
+    check("while the top row is still that live session", menuRows(live).first?.sid, "s1")
+}
+
+do {
+    check("a first-arrival waiting is an event",
+          foldMoods(state: nil, live: [row("s1", .waiting)], now: t0, last: [:]).entered,
+          Set([Mood.waiting]))
+    check("the same mood a second time is not",
+          foldMoods(state: nil, live: [row("s1", .waiting)], now: t0,
+                    last: ["s1": .waiting]).entered, Set<Mood>())
+    check("running is never an event",
+          foldMoods(state: nil, live: [row("s1", .running)], now: t0, last: [:]).entered,
+          Set<Mood>())
+    check("nor is idle, however it was reached",
+          foldMoods(state: nil, live: [row("s1", .idle)], now: t0,
+                    last: ["s1": .waiting]).entered, Set<Mood>())
+    check("every input lands in current, the state file included",
+          Set(foldMoods(state: (.idle, t0), live: [row("s1", .done)], now: t0,
+                        last: [:]).current.keys), Set(["state", "s1"]))
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
