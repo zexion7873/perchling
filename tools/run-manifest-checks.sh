@@ -235,6 +235,43 @@ check "a sequence that really reaches higher still says so" 0 \
   "$(fixture higher-seq "{ \"idle\": { \"frames\": [$FLAT, $HIGH], \"steps\": [[0,200],[1,200]] } }")" \
   "moods alone: 2" "chrome moves up 2 rows"
 
+# --- the asymmetry every format change depends on -----------------------------
+#
+# `moods` REJECTS an unrecognised key and `sequences` IGNORES one, and that
+# difference is the whole forward-compatibility story. A grid misfiled under
+# `moods` must be fatal, because a mood that silently never shows is worse than
+# a file that refuses to load — but a sequence name a future perchling adds must
+# NOT take the file down on this one, or every manifest written for the newer
+# version greys its row out here with no error the user can see.
+#
+# Neither half had a fixture. Both are one key away from each other, so a
+# refactor that unified the two loops would look like a tidy-up and would break
+# every manifest written for a later version.
+keyfixture() { # keyfixture <name> <extra-moods-json> <extra-top-json> -> path
+  local path="$SCRATCH/$1.json"
+  cat > "$path" <<JSON
+{ "name": "$1",
+  "palette": { "#": "#FFFFFF" },
+  "moods": { "idle": $FLAT$2 }$3 }
+JSON
+  printf '%s' "$path"
+}
+
+check "an unknown mood is fatal" 1 \
+  "$(keyfixture moods-unknown ", \"sparkle\": $FLAT" "")" \
+  'unknown mood' 'sparkle' 'idle, running, waiting, done, error'
+
+check "an unknown sequence is not" 0 \
+  "$(keyfixture seq-unknown "" ", \"sequences\": { \"sparkle\": { \"frames\": [$FLAT], \"steps\": [[0,200]] } }")" \
+  'sequences.sparkle' 'not a recognised sequence' 'ignored'
+
+# And the file it appears in must still LOAD, not merely warn — the warning is
+# on stderr beside a successful parse, which is the only reason a manifest from
+# a later perchling still renders here.
+check "and the manifest still loads" 0 \
+  "$(keyfixture seq-unknown-loads "" ", \"sequences\": { \"sparkle\": { \"frames\": [$FLAT], \"steps\": [[0,200]] } }")" \
+  'OK' '!invalid pet manifest'
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

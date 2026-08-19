@@ -1,0 +1,7 @@
+TMPDIR/broken.swift:1265:19: error: cannot convert value of type 'String' to specified type 'Int'
+1263 | // not sit on top of the attention fold, which it outranks, for minutes.
+1264 | let moodTTL: [Mood: TimeInterval] = [.running: 900, .done: 60, .error: 3600, .waiting: 3600]
+1265 | let broken: Int = "this is not an Int"
+     |                   `- error: cannot convert value of type 'String' to specified type 'Int'
+1266 | 
+1267 | // Four words of UI, so the table is inline rather than a .lproj bundle a

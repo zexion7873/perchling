@@ -59,5 +59,48 @@ s2=$(stat -f '%Fm' "$LOG" 2>/dev/null || echo 0)
 [ "$s1" = "$s2" ] && ok "no-rebuild-loop" "two more starts did not re-run swiftc" \
                   || no "no-rebuild-loop" "every session start recompiles a source known to fail"
 
+# --- what `status` reports as the reason --------------------------------------
+#
+# Finding the reason in a swiftc log is SUBTRACTION, not a pattern, and the
+# argument for that was 580 words of prose with nothing exercising it. This is
+# the missing fixture: a real log, captured from a real compile, not written by
+# hand — a hand-written fake is how two earlier checks in this repo shipped
+# green against an output shape the compiler never produces.
+#
+# tools/fixtures/swiftc-error.log is that log. Its LAST line is
+# `1267 | // Four words of UI...`, so `tail -1` reports a comment. Three of its
+# seven lines contain `error:` and two of those are excerpt lines — the quoted
+# `moodTTL` row, which really does contain `.error: 3600`, and the caret line
+# under the diagnostic.
+#
+# One of the three assertions below is a NEGATIVE CONTROL, and saying so is the
+# point of writing them. Removing the ` | ` gutter filter from pet.sh changes no
+# verdict here, and no log could be built where it does: swiftc emits NO
+# warnings once it has an error, so the output is always one diagnostic followed
+# by its own excerpt, and `grep -m1` therefore reaches the real message first.
+# Every construction was tried — a warning sited on the `moodTTL` row so its
+# excerpt would precede the error, twice, with different warning kinds — and the
+# compiler printed no warning at all. So `reason-skips-the-excerpt` passes
+# against a pet.sh with no gutter filter. `reason-is-not-the-last-line` and
+# `reason-is-the-diagnostic` are the two that discriminate: both go red against
+# a `tail -1` extraction.
+R="$W/reason"; mkdir -p "$R/perchling"
+cp "$(dirname "$0")/fixtures/swiftc-error.log" "$R/perchling/build.log"
+line=$(CLAUDE_CONFIG_DIR="$R" bash "$W/scripts/pet.sh" status 2>/dev/null | grep '^build: ' || true)
+
+case "$line" in
+  *"cannot convert value of type 'String'"*)
+    ok "reason-is-the-diagnostic" "status named the compiler's own message" ;;
+  *) no "reason-is-the-diagnostic" "got: $line" ;;
+esac
+case "$line" in
+  *moodTTL*) no "reason-skips-the-excerpt" "reported the quoted source line an unanchored grep finds" ;;
+  *)         ok "reason-skips-the-excerpt" "the quoted moodTTL row did not win" ;;
+esac
+case "$line" in
+  *"Four words of UI"*) no "reason-is-not-the-last-line" "reported what tail -1 would give" ;;
+  *)                    ok "reason-is-not-the-last-line" "the log's last line did not win" ;;
+esac
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
