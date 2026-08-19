@@ -1027,7 +1027,7 @@ bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
 bash tools/run-session-harness.sh  # 107 assertions over the session/tray + pet library
-bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, six rejections
+bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, six rejections
 bash tools/run-pose-harness.sh     # sequence precedence over the real pose()
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
 bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
