@@ -32,6 +32,13 @@ func check(_ label: String, _ cond: Bool) {
     else { failed += 1; print("FAIL \(label)") }
 }
 
+// A boolean says which assertion broke and nothing about why. These are
+// numeric fields of a struct, so print the number.
+func checkEq<T: Equatable>(_ label: String, _ got: T, _ want: T) {
+    if got == want { passed += 1; print("ok   \(label)") }
+    else { failed += 1; print("FAIL \(label)\n       got:  \(got)\n       want: \(want)") }
+}
+
 func grid(_ rows: [String], _ pal: [Character: NSColor]) -> [[NSColor?]] {
     rows.map { row in row.map { pal[$0] } }
 }
@@ -115,5 +122,59 @@ check("built-in tap plays with no custom pet", poseAt(10, tap: 10).seq?.kind == 
 check("built-in mood loop plays with no custom pet", poseAt(10).seq?.kind == .idle)
 
 print("---")
+// --- what a playing sequence takes, and what it leaves alone -----------------
+//
+// The frames carry their own motion, so a bounce or a twitch added on top
+// double-counts a jump's lift. Everything above asserts WHICH sequence won;
+// these assert what winning costs, which is a different field of the same Pose
+// and was never read.
+//
+// `running` is the mood that moves both at once — off = 2 + (tick/4)%2 and
+// dx = -1 at tick 12 — so it is the only one that can tell a pinned pose from
+// an unpinned one. The pair without a sequence is the control: without it,
+// asserting 2 and 0 would pass against a pose() that never moved anything.
+view.mood = .running
+view.custom = pet([.running: seq([b, a])])
+// `off` and `dx` leave pose() in POINTS, already multiplied by the bounce unit
+// — the switch above works in units and the struct carries the product. Taken
+// from bounceUnit rather than written as 8, so the numbers here cannot drift
+// away from a change in what a bounce is worth.
+let u = bounceUnit(view.activePet.scale)
+let pinned = poseAt(12)
+checkEq("a mood loop pins the bounce to its resting value", pinned.off, 2 * u)
+checkEq("and zeroes the twitch", pinned.dx, 0)
+check("the loop really is playing", pinned.seq?.kind == .running)
+
+view.custom = pet([:])
+let free = poseAt(12)
+checkEq("control: the same mood unsequenced still bounces", free.off, 3 * u)
+checkEq("control: and still twitches", free.dx, -u)
+
+// The one exception on record: a tap hop outranks a mood loop, because a
+// resting state is not a reaction and a poke that visibly does nothing reads
+// as a dead window.
+// Tick 15, not 12: the hop alternates 2 and 0 every three ticks, and at 12 it
+// happens to sit at 2 — the same value the pinning produces. Asserted there,
+// this would pass against a pose() that had no hop arm at all.
+view.custom = pet([.running: seq([b, a])])
+view.hopUntil = 100
+checkEq("a tap hop still moves a pet whose mood is a loop", poseAt(15).off, 0)
+view.hopUntil = -1
+checkEq("control: without the hop that same tick is pinned", poseAt(15).off, 2 * u)
+
+// --- mirror is consent, not a default ----------------------------------------
+//
+// The reflection is free and the consent is not: a flip reverses any asymmetric
+// detail — a badge, lettering — and the renderer cannot tell those from a gait.
+// So a pet that never declared `mirror` must not flip however it is dragged.
+view.mood = .idle
+view.dragFacingLeft = true
+view.custom = pet([.drag: seq([b, c])])
+check("a drag sequence without mirror never flips", poseAt(0, drag: 0).seq?.flipped == false)
+view.custom = pet([.drag: seq([b, c], mirror: true)])
+check("one that declares mirror flips on leftward travel", poseAt(0, drag: 0).seq?.flipped == true)
+view.dragFacingLeft = false
+check("and faces right when travel is not leftward", poseAt(0, drag: 0).seq?.flipped == false)
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

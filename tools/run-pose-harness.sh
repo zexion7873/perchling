@@ -16,7 +16,8 @@ export PERCHLING_HOME="$SCRATCH/home"
 # the BUILT-IN a sequence. Without that there is no way to exercise the
 # `activePet` path at all: PetView is final, so overriding `activePet` is not
 # open either, and a rule that cannot be tested is a rule that silently rots.
-awk '/^let argv = CommandLine.arguments/{exit} {print}' scripts/pet.swift \
+# Takes PERCHLING_PET_SWIFT so it can be pointed at a mutant and shown to FAIL.
+awk '/^let argv = CommandLine.arguments/{exit} {print}' "${PERCHLING_PET_SWIFT:-scripts/pet.swift}" \
   | sed 's/^let builtinPet = /var builtinPet = /' > "$SCRATCH/harness.swift"
 cat tools/pose-harness.swift >> "$SCRATCH/harness.swift"
 
