@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sequence precedence assertions over the real pose() — the rule AGENTS.md used
+# Sequence precedence assertions over the real pose() — the rule docs/invariants/pose.md used
 # to claim was pinned and was not. Cuts pet.swift at `let argv` rather than
 # before `// Runtime home:` the way the session harness does, because PetView
 # lives below that block and the earlier cut cannot reach it. PERCHLING_HOME

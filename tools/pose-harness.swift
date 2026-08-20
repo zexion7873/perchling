@@ -90,7 +90,7 @@ check("drag beats tap and hover", poseAt(10, drag: 10, hover: 10, tap: 10).seq?.
 check("tap beats hover", poseAt(10, hover: 10, tap: 10).seq?.kind == .tap)
 
 // 3. A spent tap does not block the mood loop — the `else if` regression
-//    AGENTS.md warns about, now with two armed-forever clocks instead of one.
+//    docs/invariants/pose.md warns about, now with two armed-forever clocks instead of one.
 check("spent tap falls through to the mood loop", poseAt(100, tap: 10).seq?.kind == .idle)
 
 // 4. The original form of the same rule.
