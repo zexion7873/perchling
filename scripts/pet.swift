@@ -1158,6 +1158,8 @@ final class PetView: NSView {
 
     var onTuck: (() -> Void)?
     var onDisable: (() -> Void)?
+    var onMute: (() -> Void)?
+    var muteState: (() -> Bool)?
 
     // Named petList, not petChoices: the free function that computes it is
     // already called petChoices, and a property shadowing it inside the
@@ -1168,6 +1170,7 @@ final class PetView: NSView {
     var labelList: (() -> [String: String])?
 
     @objc private func tuckAction() { onTuck?() }
+    @objc private func muteAction() { onMute?() }
     @objc private func disableAction() { onDisable?() }
     @objc private func pickBuiltInAction() { onPickPet?(nil) }
     @objc private func pickPetAction(_ sender: NSMenuItem) {
@@ -1239,7 +1242,11 @@ final class PetView: NSView {
         menu.addItem(petsItem)
         menu.addItem(.separator())
 
-        let tuck = NSMenuItem(title: "Tuck away (wakes when needed)", action: #selector(tuckAction), keyEquivalent: "")
+        let mute = NSMenuItem(title: "Mute notifications", action: #selector(muteAction), keyEquivalent: "")
+        mute.target = self
+        mute.state = (muteState?() ?? false) ? .on : .off
+        menu.addItem(mute)
+        let tuck = NSMenuItem(title: "Tuck away (pet.sh wake to undo)", action: #selector(tuckAction), keyEquivalent: "")
         tuck.target = self
         menu.addItem(tuck)
         let disable = NSMenuItem(title: "Disable (pet.sh enable to undo)", action: #selector(disableAction), keyEquivalent: "")
@@ -1731,6 +1738,25 @@ func foldMoods(state: (mood: Mood, stamp: Date)?, live: [SessionRow],
     return (display, entered, current)
 }
 
+// The look-away nudge. The arrival reminder keys off `entered` — a transition —
+// and is silenced while the user is looking at Claude. A permission prompt
+// appears while they are necessarily looking, so the one moment that could
+// fire was the one moment the guard rejected, and walking away afterwards
+// produced no new transition and no sound: the chime was structurally mute for
+// exactly the user it exists for. This fires on the OTHER transition — looking
+// stopped while the face still shows a debt. `done` is deliberately not one:
+// it is news, not a debt, and chasing the user with it reads as nagging.
+// `nudged` is one banner per episode: it holds the mood already nudged and
+// resets only when the face pays the debt off, so glancing back and leaving
+// again does not ring twice for the same wait.
+func awayNudge(display: Mood, wasLooking: Bool, looking: Bool,
+               nudged: Mood?) -> (fire: Bool, nudged: Mood?) {
+    guard display == .waiting || display == .error else { return (false, nil) }
+    if looking { return (false, nudged) }
+    if wasLooking, nudged != display { return (true, display) }
+    return (false, nudged)
+}
+
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 54, BUB_BODY: CGFloat = 52
 
 // The bubble and the chip are the only surfaces that sit over the user's
@@ -2047,6 +2073,10 @@ final class Controller: NSObject, NSWindowDelegate {
     var homeApp: NSRunningApplication?
     var firstFold = true
     var tucked = false
+    var muted = UserDefaults.standard.bool(forKey: "muted")
+    // The look-away nudge's episode memory and its edge detector.
+    var nudgedAlert: Mood?
+    var wasLooking = true
     var lastOwners: Set<pid_t> = []
     var unread = 0
     var collapsed = UserDefaults.standard.bool(forKey: "bubbleCollapsed")
@@ -2130,6 +2160,12 @@ final class Controller: NSObject, NSWindowDelegate {
         view.onTap = { [weak self] in self?.focusHome() }
         chipView.onTap = { [weak self] in self?.toggleBubble() }
         view.onTuck = { [weak self] in self?.setTucked(true) }
+        view.muteState = { [weak self] in self?.muted ?? false }
+        view.onMute = { [weak self] in
+            guard let s = self else { return }
+            s.muted.toggle()
+            UserDefaults.standard.set(s.muted, forKey: "muted")
+        }
         view.onDisable = { [weak self] in self?.disableAndQuit() }
         view.petList = { [unowned self] in
             petChoices(root: self.root, examples: examplesRoot)
@@ -2294,24 +2330,35 @@ final class Controller: NSObject, NSWindowDelegate {
         }
     }
 
-    func maybeRemind(_ mood: Mood) {
-        let messages: [Mood: String] = [
-            .waiting: "Claude Code needs your input",
-            .done: "Claude Code finished",
-            .error: "Claude Code hit an error",
-        ]
-        guard let msg = messages[mood] else { return }
-        // Quiet when the user is already looking at the home app — or at
-        // Claude desktop, even one opened after we resolved home.
-        guard !userIsLooking else { return }
-        // Same event, two ways of surviving your absence: one notification you
-        // may miss, one count that waits on the pet until you come back.
-        unread += 1
+    let reminderWording: [Mood: String] = [
+        .waiting: "Claude Code needs your input",
+        .done: "Claude Code finished",
+        .error: "Claude Code hit an error",
+    ]
+
+    // Mute kills the banner and its sound and nothing else: the unread count
+    // is the quiet channel, and taking both away leaves a muted user with no
+    // record that anything happened while they were gone.
+    func postBanner(_ mood: Mood) {
+        guard let msg = reminderWording[mood], !muted else { return }
+        nudgedAlert = mood
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", "display notification \"\(msg)\" with title \"Perchling\" sound name \"Glass\""]
         p.terminationHandler = { _ in }   // keeps p alive until exit so the child is reaped
         try? p.run()
+    }
+
+    func maybeRemind(_ mood: Mood) {
+        guard reminderWording[mood] != nil else { return }
+        // Quiet when the user is already looking at the home app — or at
+        // Claude desktop, even one opened after we resolved home. The
+        // look-away nudge in the tick loop covers the debt this leaves.
+        guard !userIsLooking else { return }
+        // Same event, two ways of surviving your absence: one notification you
+        // may miss, one count that waits on the pet until you come back.
+        unread += 1
+        postBanner(mood)
     }
 
     func windowDidMove(_ notification: Notification) {
@@ -2435,16 +2482,24 @@ final class Controller: NSObject, NSWindowDelegate {
                     && view.activePet.sequence(for: .done) == nil {
                     view.hopUntil = view.tick + 12
                 }
-                // Reminders and tuck-wake follow per-input events, not the
-                // (possibly masked) display transition.
+                // Reminders follow per-input events, not the (possibly
+                // masked) display transition. Tuck no longer wakes on them:
+                // the user hid the pet, and un-hiding it on the next wait
+                // made "Tuck away" mean "hide until something happens" — the
+                // notification is the channel that survives being tucked.
                 if !firstFold, let alert = entered.max(by: { moodRank[$0]! < moodRank[$1]! }) {
                     maybeRemind(alert)
-                    if tucked && (alert == .waiting || alert == .error) { setTucked(false) }
                 }
                 firstFold = false
                 // Coming back to Claude is reading the news, whether or not
                 // the bubble was ever opened.
-                if unread > 0 && userIsLooking { unread = 0 }
+                let looking = userIsLooking
+                if unread > 0 && looking { unread = 0 }
+                let nudge = awayNudge(display: view.mood, wasLooking: wasLooking,
+                                      looking: looking, nudged: nudgedAlert)
+                nudgedAlert = nudge.nudged
+                if nudge.fire { postBanner(view.mood) }
+                wasLooking = looking
                 applyChrome()
                 pollPet()
                 pollSay()
