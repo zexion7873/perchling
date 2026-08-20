@@ -71,8 +71,8 @@ the desktop app if that's running, otherwise whatever was frontmost when the pet
 launched.
 
 Drag it anywhere; the position sticks. Right-click for **Tuck away** (hides
-until something needs you), **Disable**, or **Quit** — Controls below has which
-is which.
+until `pet.sh wake`), **Mute notifications**, **Disable**, or **Quit** —
+Controls below has which is which.
 
 ### 💬 The speech bubble
 
@@ -95,6 +95,11 @@ the bubble, clears it.
 
 **waiting**, **done** and **error** each post a macOS notification with a
 chirp — but only while you're in another app. Look at Claude and it shuts up.
+And it works the other way round: switch away while a session is still waiting
+on you (or sitting on an error) and one nudge follows you out — once per wait,
+so glancing back and leaving again doesn't ring twice. **Mute notifications**
+in the right-click menu turns the banners and the chirp off; the unread count
+on the chip stays, so a muted pet still keeps score.
 
 > [!NOTE]
 > macOS attributes these notifications to "Script Editor". Allow them when the
@@ -289,14 +294,14 @@ what is allowed to bring it back:
 
 | | The process | What brings it back |
 |---|---|---|
-| **Tuck away** | keeps running, just hidden | **itself**, the moment a session starts waiting on you or hits an error — or `pet.sh wake` |
+| **Tuck away** | keeps running, just hidden | `pet.sh wake` — and nothing else: notifications still fire, but the pet stays hidden until you ask |
 | **Quit perchling** | ends | the next session you start |
 | **Disable** | ends, and leaves a marker behind | **only you**, with `pet.sh enable` |
 
 Tuck and Quit look the same on screen and are not: a tucked pet is still
-running and still watching your sessions, which is the only reason it can decide
-to come back on its own. Quit leaves nothing watching, so it waits for the next
-session to start it.
+running and still watching your sessions, so its notifications keep working
+while it hides. Quit leaves nothing watching, so it waits for the next session
+to start it.
 
 Disable is the one with a memory. Every session start checks for that marker
 first and leaves the pet alone, so it stays gone across restarts, reboots and
