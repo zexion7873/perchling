@@ -41,15 +41,17 @@ jobs:
           swiftc -O scripts/pet.swift -o "$W/perchling"
           export PERCHLING_HOME="$W/home" PERCHLING_EXAMPLES="$PWD/examples"
           for f in examples/*.json; do "$W/perchling" --validate "$f" > /dev/null; done
-      - name: export round-trips byte-identical, binary under 1MB
+      - name: export round-trips byte-identical
+        # No size gate: the description's size claim was deleted rather than
+        # guarded. The size is still printed so a surprise jump is visible in
+        # the log, but nothing fails on it — a claim and its check go together,
+        # and there is no claim.
         run: |
           set -euo pipefail
           W="$RUNNER_TEMP/verify"
           export PERCHLING_HOME="$W/home" PERCHLING_EXAMPLES="$PWD/examples"
           "$W/perchling" --export | cmp - "examples/${PERCHLING_BUILTIN:-husky}.json"
-          size=$(stat -f%z "$W/perchling")
-          echo "binary: $size bytes"
-          [ "$size" -lt 1048576 ]
+          echo "binary: $(stat -f%z "$W/perchling") bytes"
       - name: the README hero regenerates and round-trips
         # The tool decodes its own output back pixel-for-pixel and gates the
         # colour drift before it will exit 0. docs/moods.gif is deliberately
