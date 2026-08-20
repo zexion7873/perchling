@@ -2135,6 +2135,7 @@ final class Controller: NSObject, NSWindowDelegate {
     var nudgedAlert: Mood?
     var wasLooking = true
     var lastOwners: Set<pid_t> = []
+    var lastRemind: [Mood: Date] = [:]
     var unread = 0
     var collapsed = UserDefaults.standard.bool(forKey: "bubbleCollapsed")
     var lastChip: (Bool, Int, Bool)?
@@ -2431,6 +2432,13 @@ final class Controller: NSObject, NSWindowDelegate {
         // Claude desktop, even one opened after we resolved home. The
         // look-away nudge in the tick loop covers the debt this leaves.
         guard !userIsLooking else { return }
+        // state.sh publishes one event twice, tens of ms apart — the global
+        // state file first, the session's own file next — so a poll landing in
+        // the gap registers the same transition on two consecutive folds: two
+        // banners, unread counted twice. One second sits orders of magnitude
+        // above that gap and below any two genuine arrivals worth ringing for.
+        if let t = lastRemind[mood], Date().timeIntervalSince(t) < 1 { return }
+        lastRemind[mood] = Date()
         // Same event, two ways of surviving your absence: one notification you
         // may miss, one count that waits on the pet until you come back.
         unread += 1

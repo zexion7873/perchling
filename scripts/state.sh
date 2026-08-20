@@ -124,8 +124,8 @@ if [ ! -t 0 ]; then
     # three lines, empty ones included — `Mood.parse` reads line one and the
     # reader maps an empty line to nil, so the shorter forms `pet.sh` writes
     # stay valid.
-    printf '%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" > "$d/.sess.$$" 2>/dev/null
-    mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
+    printf '%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" > "$d/.sess.$$" 2>/dev/null &&
+      mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
 fi
 exit 0

@@ -176,7 +176,15 @@ launch_once() {
     rmdir "$reclaim" 2>/dev/null
     mkdir "$lock" 2>/dev/null || return 0
   fi
-  trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+  # INT/TERM exit rather than clean up: bash RESUMES the interrupted command
+  # list after a signal trap returns, so a handler that removed the lock would
+  # free it while this critical section keeps running — a concurrent
+  # SessionStart takes it, and the resumed trailing rmdir below then deletes
+  # THAT caller's fresh lock (reproduced on /bin/bash 3.2). Exiting from the
+  # handler fires the EXIT trap, which cleans up exactly once.
+  trap 'rmdir "$lock" 2>/dev/null' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if ! running; then
     PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
     waited=0
@@ -266,8 +274,7 @@ cmd_up() {
     printf 'idle\n%s' "$cwd" > "$ROOT/.up.$$" 2>/dev/null
   else
     printf idle > "$ROOT/.up.$$" 2>/dev/null
-  fi
-  mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
+  fi && mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
   # "manual" is a bridge for launches with no session behind them (enable,
   # wake, an unparseable payload). A real session supersedes it, and nothing
   # else ever deletes it — left alone it holds an idle pet up for the whole

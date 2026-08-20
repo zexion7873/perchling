@@ -42,6 +42,14 @@ non-empty directory, and leaves the debris where a human can look at it.
 `rm -rf` on a path built from an environment variable is not something this
 script should own.
 
+Releasing the lock from a signal trap is its own trap. bash RESUMES the
+interrupted command list after an INT/TERM handler returns, so a handler that
+removes the lock frees it while the critical section keeps running — a
+concurrent SessionStart takes it, and the resumed trailing `rmdir` then
+deletes THAT caller's fresh lock (reproduced on /bin/bash 3.2, the shell every
+hook runs under). The INT/TERM handlers therefore `exit`, and the EXIT trap
+alone cleans up, exactly once.
+
 ## The invariants
 
 - **Not every wait announces itself, and not every announcement reaches the
