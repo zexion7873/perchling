@@ -161,12 +161,10 @@ let outURL = URL(fileURLWithPath: CommandLine.arguments.count > 1
 _ = NSApplication.shared
 NSApplication.shared.setActivationPolicy(.prohibited)
 
-if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-    FileHandle.standardError.write(
-        "Reduce Motion is on: the tick freezes, so every cell renders one resting frame. Turn it off and re-run.\n"
-        .data(using: .utf8)!)
-    exit(1)
-}
+// The assembly step pins motionOK to true in the scratch copy, so the
+// machine's Reduce Motion setting cannot freeze the render — this tool drives
+// `tick` itself. A guard here exited 1 on Reduce Motion instead, which keyed
+// the hero's reproducibility to an accessibility setting.
 
 // The expected colour set is harvested from the pet's own frames rather than
 // kept as a list in step by hand. That list was a mirror of an enum, and a
