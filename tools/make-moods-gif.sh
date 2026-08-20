@@ -5,7 +5,7 @@
 # away from the pet it advertises. pet.swift is a single file that ends in CLI
 # dispatch and launches an overlay, so the only way to reuse its renderer is to
 # cut the dispatch off and append a different main — which is exactly what
-# AGENTS.md prescribes for looking at a rendered frame.
+# docs/invariants/harnesses.md prescribes for looking at a rendered frame.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"

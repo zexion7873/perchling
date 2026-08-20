@@ -652,7 +652,7 @@ do {
 }
 
 do {
-    // The blind spot AGENTS.md warns about, asserted against a literal rather
+    // The blind spot docs/invariants/sessions.md warns about, asserted against a literal rather
     // than recomputed from the rows: the state file has no row behind it and
     // nothing clears it at SessionEnd, so it can hold the face while the rows —
     // and therefore the bubble's caption — report a different session entirely.
