@@ -69,6 +69,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # The gate must not be allowed to mistake a machine that cannot compile
+      # for a machine that caught ten mutants: with no toolchain, every Swift
+      # harness dies in preflight, and dying is indistinguishable from red
+      # without this step failing first.
+      - name: toolchain
+        run: swiftc --version
       - name: every harness goes red against the defect it is named after
         run: bash tools/run-mutation-gate.sh
 

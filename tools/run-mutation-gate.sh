@@ -56,8 +56,17 @@ gate() { # gate <name> <src> <envvar> <harness> <old> <new>
     sed 's/^/    /' "$SCRATCH/$name.log" | tail -3
     fail=$((fail + 1)); return
   fi
+  # A nonzero exit alone is not a catch: every harness's infra guard also
+  # exits 1, before any assertion runs. A broken toolchain once turned all
+  # nine harnesses into preflight deaths and this gate reported "10 caught,
+  # 0 escaped". Count what came back, not what the exit code implies.
   local red; red=$(grep -c '^FAIL\|^  FAIL' "$SCRATCH/$name.log" 2>/dev/null)
-  echo "ok   $name (harness went red: ${red:-?} assertions)"
+  if [ "${red:-0}" -eq 0 ]; then
+    echo "FAIL $name: $harness exited $rc with no red assertion — infra died before testing"
+    sed 's/^/    /' "$SCRATCH/$name.log" | tail -5
+    fail=$((fail + 1)); return
+  fi
+  echo "ok   $name (harness went red: $red assertions)"
   pass=$((pass + 1))
 }
 
@@ -114,6 +123,18 @@ gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose
 gate binre-unescaped scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
   "BIN_RE=\$(printf '%s' \"\$BIN\" | sed 's/[][(){}.*+?^\$|\\\\]/\\\\&/g')" \
   'BIN_RE="$BIN"'
+
+# The self-match probe evals running() out of pet.sh by sed. A legitimate
+# refactor that makes the body delegate to a helper leaves the extraction
+# callable but blind — every probe exits 127 into a clean "miss", and the
+# assertion scores 0 hits among 8 verdicts having run no pgrep. Only the
+# positive control (a stub genuinely live at $BIN must produce a HIT) can go
+# red here: the delegated running() works fine inside pet.sh itself, so every
+# launch scenario stays green against this mutant.
+gate running-delegated scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+  'running() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }' \
+  'running() { __rn; }
+__rn() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }'
 
 echo "---"
 echo "$pass mutants caught, $fail escaped"

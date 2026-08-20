@@ -146,7 +146,12 @@ insufficient the same afternoon, that all eight probes came back with a VERDICT.
 it, the probe did not set it, every subshell died on `set -u`, and the
 assertion counted zero hits among zero verdicts and reported ok. Both failures
 were "the extracted function did not run", so the guard now counts what came
-back rather than naming a cause. A third escape is measured rather than
+back rather than naming a cause. Counting verdicts still cannot see an
+extracted `running()` that runs and never matches — a body refactored to
+delegate to a helper the `sed` misses turns every probe into a clean 127
+"miss", 8 verdicts, 0 hits, ok — so a POSITIVE control now runs first: the
+extracted function must report a HIT against a stub genuinely live at `$BIN`
+before its silence about anything else is believed. A third escape is measured rather than
 suspected: removing `-x` from `running()`'s pgrep leaves all thirteen lines
 GREEN whenever the eight concurrent probes fail to overlap — probe-self-match
 detects that mutant by timing luck, not by construction. The mutation gate
