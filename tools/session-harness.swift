@@ -680,5 +680,33 @@ do {
                         last: [:]).current.keys), Set(["state", "s1"]))
 }
 
+// MARK: - awayNudge
+//
+// The arrival reminder is silenced while the user is looking, and a permission
+// prompt appears while they are necessarily looking — so the chime was
+// structurally mute for its main case. This is the other transition: looking
+// stopped while the face still shows a debt.
+
+func nudge(_ d: Mood, _ was: Bool, _ now: Bool, _ n: Mood?) -> (fire: Bool, nudged: Mood?) {
+    awayNudge(display: d, wasLooking: was, looking: now, nudged: n)
+}
+
+do {
+    check("walking away from waiting fires", nudge(.waiting, true, false, nil).fire, true)
+    check("and marks the episode", nudge(.waiting, true, false, nil).nudged, Mood.waiting)
+    check("walking away from error fires", nudge(.error, true, false, nil).fire, true)
+    check("done is news, not a debt", nudge(.done, true, false, nil).fire, false)
+    check("running is not a debt either", nudge(.running, true, false, nil).fire, false)
+    check("still looking never fires", nudge(.waiting, true, true, nil).fire, false)
+    check("already away is not a transition", nudge(.waiting, false, false, nil).fire, false)
+    check("one banner per episode", nudge(.waiting, true, false, .waiting).fire, false)
+    check("a paid-off debt resets the episode", nudge(.idle, false, false, .waiting).nudged, nil)
+    check("a new debt after reset fires again", nudge(.waiting, true, false, nil).fire, true)
+    check("the debt changing mid-episode is a new episode",
+          nudge(.error, true, false, .waiting).fire, true)
+    check("looking keeps the episode armed, not cleared",
+          nudge(.waiting, true, true, .waiting).nudged, Mood.waiting)
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
