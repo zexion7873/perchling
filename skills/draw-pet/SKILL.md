@@ -43,7 +43,8 @@ them says to read them for format and never for art.
 Rules the loader enforces:
 
 - **palette** keys are one character each — any character except `0` and `.`
-  (both mean transparent). Values are `#RRGGBB` or `#RGB`.
+  (both mean transparent) and the CR/LF line breaks, which the loader rejects.
+  Values are `#RRGGBB` or `#RGB`.
 - **moods**: `idle` is required; `running`, `waiting`, `done`, `error` are
   optional and fall back to idle — but ship all five; mood switches are the
   whole point of the pet.

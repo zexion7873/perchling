@@ -99,7 +99,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 119 assertions over the session/tray + pet library
+bash tools/run-session-harness.sh  # 132 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
@@ -159,7 +159,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of ten defects a harness is named after —
+generates a mutant from HEAD for each of sixteen defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.

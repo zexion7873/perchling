@@ -272,6 +272,19 @@ check "and the manifest still loads" 0 \
   "$(keyfixture seq-unknown-loads "" ", \"sequences\": { \"sparkle\": { \"frames\": [$FLAT], \"steps\": [[0,200]] } }")" \
   'OK' '!invalid pet manifest'
 
+# --- CR/LF palette keys -------------------------------------------------------
+#
+# The one spot where the byte fast path and the grapheme walks disagree about a
+# row's width: CR LF is two bytes and ONE Character. Eye-box coordinates
+# validated against one measure then index rows built by the other — this very
+# fixture, admitted, was an uncatchable index trap (exit 133) in
+# synthBlinkFrame, reachable from a file merely SITTING in the pet library on
+# every right-click. Rejection must land at the PALETTE, before any row is
+# measured, and must be an ordinary PetError that --validate can print.
+CRLF="$SCRATCH/crlf-key.json"
+printf '%s' '{ "name": "crlf", "palette": { "#": "#FFFFFF", "\r": "#222222", "\n": "#333333", "o": "#101010" }, "moods": { "idle": ["########","########","o##\r\n###","o##\r\n###","########","########","########","########"] }, "eyes": { "box": [0,2,8,2], "socket": "o" } }' > "$CRLF"
+check "CR/LF palette keys are rejected" 1 "$CRLF" "must not be CR/LF"
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -708,5 +708,57 @@ do {
           nudge(.waiting, true, true, .waiting).nudged, Mood.waiting)
 }
 
+// MARK: - sessionLiveness
+//
+// Whether the overlay may quit. The rule that shipped wrong: liveness came
+// from file mtime alone, so an idle-but-open session — a long meeting — went
+// "stale" beside a provably running owner and the pet quit 30 seconds later,
+// with only the next SessionStart able to bring it back.
+
+do {
+    let stale = t0.addingTimeInterval(-7200)
+    let never: (pid_t) -> Bool = { _ in false }
+    let always: (pid_t) -> Bool = { _ in true }
+
+    let meeting = sessionLiveness([(owner: 42, stamp: stale)], lastOwners: [], now: t0, alive: always)
+    check("a stale file with a live owner is live", meeting.live, true)
+    check("and nothing about it is retired", meeting.retired, false)
+    check("a dead owner retires in one poll",
+          sessionLiveness([(owner: 42, stamp: stale)], lastOwners: [], now: t0, alive: never).retired, true)
+    let unknown = sessionLiveness([(owner: nil, stamp: stale)], lastOwners: [], now: t0, alive: always)
+    check("an ownerless stale session is not live", unknown.live, false)
+    check("but not declared dead on missing evidence", unknown.retired, false)
+    check("an ownerless fresh session is live",
+          sessionLiveness([(owner: nil, stamp: t0)], lastOwners: [], now: t0, alive: never).live, true)
+    check("an emptied directory with dead remembered owners retires",
+          sessionLiveness([], lastOwners: [42], now: t0, alive: never).retired, true)
+    let gap = sessionLiveness([], lastOwners: [42], now: t0, alive: always)
+    check("with a live remembered owner it waits out the grace", gap.retired, false)
+    check("remembered owners survive an owner-less poll",
+          sessionLiveness([(owner: nil, stamp: t0)], lastOwners: [42], now: t0, alive: always).owners,
+          Set<pid_t>([42]))
+}
+
+// MARK: - strandedOrigin
+//
+// A restored origin can name a display that no longer exists. Only a frame
+// touching NO screen comes home: partial overlap is the user's own parking.
+
+do {
+    let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
+    let visible = NSRect(x: 100, y: 100, width: 84, height: 99)
+    let parked = NSRect(x: 1400, y: 100, width: 84, height: 99)
+    let stranded = NSRect(x: 2000, y: 100, width: 84, height: 99)
+    check("a visible frame is left alone",
+          strandedOrigin(frame: visible, screens: [screen], home: screen), nil)
+    check("partial overlap is a choice, not a stranding",
+          strandedOrigin(frame: parked, screens: [screen], home: screen), nil)
+    check("a stranded frame comes home",
+          strandedOrigin(frame: stranded, screens: [screen], home: screen),
+          NSPoint(x: 1356, y: 100))
+    check("no home screen leaves it untouched",
+          strandedOrigin(frame: stranded, screens: [], home: nil), nil)
+}
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

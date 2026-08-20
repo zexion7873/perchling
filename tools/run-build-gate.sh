@@ -52,12 +52,33 @@ kill -0 "$stub" 2>/dev/null && ok "pet-survives-failed-build" "stub still alive"
   && ok "no-staging-debris" "staged output cleaned up" \
   || no "no-staging-debris" "a half-built binary was left in bin/"
 
+[ -z "$(ls "$W/cfg/perchling"/.buildlog.* 2>/dev/null)" ] \
+  && ok "no-buildlog-debris" "staged log cleaned up" \
+  || no "no-buildlog-debris" "a staged build log was left behind"
+
 s1=$(stat -f '%Fm' "$LOG" 2>/dev/null || echo 0)
 bash "$W/scripts/pet.sh" up manual >/dev/null 2>&1
 bash "$W/scripts/pet.sh" up manual >/dev/null 2>&1
 s2=$(stat -f '%Fm' "$LOG" 2>/dev/null || echo 0)
 [ "$s1" = "$s2" ] && ok "no-rebuild-loop" "two more starts did not re-run swiftc" \
                   || no "no-rebuild-loop" "every session start recompiles a source known to fail"
+
+# --- an interrupted build must not wedge the install --------------------------
+# The failure marker used to be created the moment compilation STARTED (the
+# caller redirected compile's stderr straight at build.log), so a compile
+# killed midway — Ctrl-C, or the 30s SessionStart hook timeout on a cold
+# machine — left an EMPTY log newer than the source. Every later start read
+# that as "already tried, don't retry": no binary, no message, no rebuild
+# until a release moved the source's mtime. The artifact state is reproduced
+# directly rather than by killing a live swiftc mid-flight — the kill's
+# timing is the machine's, the state it leaves is not.
+I="$W/icfg"; mkdir -p "$I/perchling"
+: > "$I/perchling/build.log"
+touch -t 202608190300 "$I/perchling/build.log"
+CLAUDE_CONFIG_DIR="$I" bash "$W/scripts/pet.sh" up manual >/dev/null 2>&1
+[ -s "$I/perchling/build.log" ] \
+  && ok "empty-marker-does-not-wedge" "a later start rebuilt and recorded the real reason" \
+  || no "empty-marker-does-not-wedge" "an empty build.log blocked every future rebuild"
 
 # --- what `status` reports as the reason --------------------------------------
 #

@@ -174,12 +174,21 @@ script should own.
   banner onto the first diagnostic and into the status headline.
 
   **`$ROOT/build.log` belongs to the build, not to whoever called it.** A
-  caller-side redirect cannot own it: it holds the file open, so a `rm` inside
-  `cmd_build` would unlink the very inode the reason is still being written to
-  and the log would vanish on failure. `cmd_build` therefore opens it, prints
-  it either way — a successful build's WARNINGS are most of the value of
-  running `pet.sh build` by hand, and capturing them to a file about to be
-  removed eats them silently — and removes it only on success.
+  caller-side redirect cannot own it twice over. It holds the file open, so a
+  `rm` inside `cmd_build` would unlink the very inode the reason is still
+  being written to and the log would vanish on failure. And it CREATES the
+  marker the moment compilation starts: a compile killed midway — Ctrl-C, or
+  the 30s SessionStart hook timeout on a cold machine — left an empty log
+  newer than `$SRC`, which the rebuild gate read as "already tried", so a
+  fresh install wedged with no binary, no message, and no rebuild until a
+  release moved `$SRC`'s mtime. `cmd_build` therefore stages stderr to a `$$`
+  temp, prints it either way — a successful build's WARNINGS are most of the
+  value of running `pet.sh build` by hand, and capturing them to a file about
+  to be removed eats them silently — publishes it as `$BUILDLOG` only on a
+  known nonzero exit (backfilling a one-line reason when the compiler died
+  saying nothing, so a published log is never empty), and removes both on
+  success. The rebuild gate honours only a NON-EMPTY log, so an empty file
+  from any other origin cannot block rebuilds.
 
   That is not enough on its own, because `cmd_up` builds only when the binary
   is missing or stale, so on a healthy install no session start runs a build at
@@ -242,11 +251,16 @@ script should own.
   log-retracting branch is now an explicit `elif` on "present AND current"
   rather than a bare `else`: the `else` of the widened condition also catches
   "needs a build, already failed", and deleting the reason there is deleting
-  the only thing that stops the loop.
+  the only thing that stops the loop. The test reads "non-empty AND newer",
+  never "newer" alone — the empty half is the interrupted-build wedge above.
 
   `tools/run-build-gate.sh` pins the first, second and fourth of those, and
   takes `PERCHLING_PET_SH` so it can be shown to FAIL: against the pre-fix
   script it goes red on `pet-survives-failed-build` and `no-rebuild-loop`.
+  `empty-marker-does-not-wedge` pins the staged log from the other side — an
+  empty marker newer than the source must not stop a rebuild — by reproducing
+  the artifact state directly rather than killing a live `swiftc`: the kill's
+  timing belongs to the machine, the state it leaves does not.
   Only those two discriminate — `binary-untouched`, `reason-recorded` and
   `no-staging-debris` pass against that mutant too, because `swiftc` writes no
   output at all on a parse error, and they are negative controls rather than
