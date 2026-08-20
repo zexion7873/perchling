@@ -17,8 +17,18 @@ export PERCHLING_HOME="$SCRATCH/home"
 # `activePet` path at all: PetView is final, so overriding `activePet` is not
 # open either, and a rule that cannot be tested is a rule that silently rots.
 # Takes PERCHLING_PET_SWIFT so it can be pointed at a mutant and shown to FAIL.
+# `motionOK` is pinned true in the scratch copy for the same reason a locale
+# gets forced: it reads a SYSTEM setting (Reduce Motion), so the harness's
+# coverage would otherwise depend on the machine's accessibility state — and
+# GitHub's runners ship with Reduce Motion ON, where every sequence assertion
+# would fail for a reason that has nothing to do with the rule under test.
 awk '/^let argv = CommandLine.arguments/{exit} {print}' "${PERCHLING_PET_SWIFT:-scripts/pet.swift}" \
-  | sed 's/^let builtinPet = /var builtinPet = /' > "$SCRATCH/harness.swift"
+  | sed -e 's/^let builtinPet = /var builtinPet = /' \
+        -e 's/var motionOK: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }/var motionOK: Bool { true }/' \
+  > "$SCRATCH/harness.swift"
+# A sed that matched nothing tests the clean tree; both patches must have landed.
+grep -q '^var builtinPet = ' "$SCRATCH/harness.swift" || { echo "FAIL: builtinPet patch did not apply"; exit 1; }
+grep -q 'var motionOK: Bool { true }' "$SCRATCH/harness.swift" || { echo "FAIL: motionOK patch did not apply"; exit 1; }
 cat tools/pose-harness.swift >> "$SCRATCH/harness.swift"
 
 swiftc -O "$SCRATCH/harness.swift" -o "$SCRATCH/pose-harness" || exit 1

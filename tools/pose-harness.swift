@@ -18,13 +18,13 @@
 // implementation of the tap arm, which was an `else if` and let a spent tap
 // swallow every hover after it.
 
-// pose() gates every sequence on motionOK, so under Reduce Motion each of these
-// would fail for a reason that has nothing to do with the rule under test. Say
-// so and exit unrun rather than reporting a colour.
-guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-    print("SKIP: Reduce Motion is on — pose() freezes every sequence, so nothing here is testable.")
-    exit(2)
-}
+// pose() gates every sequence on motionOK. The runner script pins motionOK to
+// true in the scratch copy — the same treatment as a forced locale — so these
+// assertions run identically whatever the machine's Reduce Motion setting is.
+// A SKIP guard lived here instead and was worse than useless: it keyed the
+// harness's coverage to an accessibility setting, and on a machine with Reduce
+// Motion on, its exit 2 read as "harness went red" to the mutation gate,
+// which passed a mutant on the strength of a harness that had refused to run.
 
 var passed = 0, failed = 0
 func check(_ label: String, _ cond: Bool) {

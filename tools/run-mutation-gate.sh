@@ -40,9 +40,20 @@ gate() { # gate <name> <src> <envvar> <harness> <old> <new>
     echo "FAIL $name: mutation left $src unchanged"
     fail=$((fail + 1)); return
   fi
-  if env "$envvar=$out" bash "$harness" > "$SCRATCH/$name.log" 2>&1; then
+  env "$envvar=$out" bash "$harness" > "$SCRATCH/$name.log" 2>&1
+  local rc=$?
+  if [ "$rc" -eq 0 ]; then
     echo "FAIL $name: $harness stayed GREEN against this mutant"
     sed 's/^/    /' "$SCRATCH/$name.log" | tail -5
+    fail=$((fail + 1)); return
+  fi
+  # Exit 2 is this repo's "skipped, not run" convention. A harness that refused
+  # to run proves nothing about the mutant — counting it as a catch is how the
+  # first CI run passed mirror-without-consent on a runner where the pose
+  # harness had skipped under Reduce Motion.
+  if [ "$rc" -eq 2 ]; then
+    echo "FAIL $name: $harness SKIPPED (exit 2) — nothing was tested"
+    sed 's/^/    /' "$SCRATCH/$name.log" | tail -3
     fail=$((fail + 1)); return
   fi
   local red; red=$(grep -c '^FAIL\|^  FAIL' "$SCRATCH/$name.log" 2>/dev/null)
