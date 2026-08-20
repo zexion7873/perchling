@@ -182,3 +182,17 @@ and what the alternative lost to.
   the one named — the OLD binary alone reported four different moods across
   eight runs of one file. Put the defect in exactly one mood and the comparison
   is deterministic.
+- **CR and LF cannot be palette keys, and the guard sits at the palette.**
+  They are the one pair where the parser's two width measures disagree: the
+  byte fast path counts CR LF as two cells, while every grapheme walk — the
+  row-length fallback, `synthBlinkFrame` — counts the pair as ONE `Character`.
+  A manifest declaring both as keys, with a CR LF pair inside a declared eye
+  box, passed the byte width check and then trapped in `synthBlinkFrame`: an
+  uncatchable index abort (exit 133), not a `PetError`, so `petChoices.scan`
+  could not contain it and the file merely SITTING in the pet library aborted
+  the app on every right-click. No other ASCII bytes coalesce into one
+  grapheme and non-ASCII keys already fall off the byte path whole, so
+  rejecting these two keys closes the divergence exactly.
+  `run-manifest-checks.sh` carries the trap fixture itself, and the mutation
+  gate points that harness at a parser without the guard — where the fixture
+  aborts instead of erroring.

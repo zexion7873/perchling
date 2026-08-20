@@ -99,7 +99,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 119 assertions over the session/tray + pet library
+bash tools/run-session-harness.sh  # 132 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
@@ -146,7 +146,12 @@ insufficient the same afternoon, that all eight probes came back with a VERDICT.
 it, the probe did not set it, every subshell died on `set -u`, and the
 assertion counted zero hits among zero verdicts and reported ok. Both failures
 were "the extracted function did not run", so the guard now counts what came
-back rather than naming a cause. A third escape is measured rather than
+back rather than naming a cause. Counting verdicts still cannot see an
+extracted `running()` that runs and never matches — a body refactored to
+delegate to a helper the `sed` misses turns every probe into a clean 127
+"miss", 8 verdicts, 0 hits, ok — so a POSITIVE control now runs first: the
+extracted function must report a HIT against a stub genuinely live at `$BIN`
+before its silence about anything else is believed. A third escape is measured rather than
 suspected: removing `-x` from `running()`'s pgrep leaves all thirteen lines
 GREEN whenever the eight concurrent probes fail to overlap — probe-self-match
 detects that mutant by timing luck, not by construction. The mutation gate
@@ -154,7 +159,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of ten defects a harness is named after —
+generates a mutant from HEAD for each of sixteen defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.

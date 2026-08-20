@@ -55,16 +55,22 @@ payload_field() {
 }
 
 # The one payload field that becomes a FILENAME, so the only one whose shape
-# has to be checked. payload_field is greedy and takes the LAST match, so a
-# nested object carrying its own "session_id" beats the real one — and this
-# value reaches `mv -f "$ROOT/.up.$$" "$SESSIONS/$sid"` and `rm -f
-# "$SESSIONS/$sid" "$OWNERS/$sid"`, where `../../../evil` resolves three levels
-# above the sessions directory. Real ids are UUIDs. An id that fails the shape
+# has to be checked — this value reaches `mv -f "$ROOT/.up.$$"
+# "$SESSIONS/$sid"` and `rm -f "$SESSIONS/$sid" "$OWNERS/$sid"`, where
+# `../../../evil` resolves three levels above the sessions directory. Unlike
+# the cosmetic fields it also takes the FIRST match, not payload_field's LAST:
+# the CLI writes its own session_id as the leading key and everything an
+# embedded object carries serialises after it, so the last match let a nested
+# UUID become the refcount filename (state.sh had the same bug; the two
+# extractions stay mirrored). Real ids are UUIDs. An id that fails the shape
 # test yields nothing, and cmd_up's own `|| sid="manual"` then covers it: a
 # launch with no usable session behind it is exactly what the manual bridge is
 # for, where a sanitised id would still name a file the payload picked.
 payload_sid() {
-  sid_raw=$(payload_field session_id)
+  case "$payload" in
+    *'"session_id"'*) sid_raw=${payload#*'"session_id"'}; sid_raw=${sid_raw#*'"'}; sid_raw=${sid_raw%%'"'*} ;;
+    *) return 0 ;;
+  esac
   case "$sid_raw" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
   printf '%s' "$sid_raw"
 }
@@ -170,7 +176,15 @@ launch_once() {
     rmdir "$reclaim" 2>/dev/null
     mkdir "$lock" 2>/dev/null || return 0
   fi
-  trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+  # INT/TERM exit rather than clean up: bash RESUMES the interrupted command
+  # list after a signal trap returns, so a handler that removed the lock would
+  # free it while this critical section keeps running — a concurrent
+  # SessionStart takes it, and the resumed trailing rmdir below then deletes
+  # THAT caller's fresh lock (reproduced on /bin/bash 3.2). Exiting from the
+  # handler fires the EXIT trap, which cleans up exactly once.
+  trap 'rmdir "$lock" 2>/dev/null' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if ! running; then
     PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
     waited=0
@@ -210,16 +224,31 @@ compile() {
 # the reason is still being written to.
 cmd_build() {
   mkdir -p "$ROOT"
-  compile 2>"$BUILDLOG"
+  # Staged like everything else this script publishes, and for a sharper
+  # reason than tidiness: redirecting straight at $BUILDLOG creates the
+  # failure marker the moment compilation STARTS, so a compile killed midway
+  # (Ctrl-C, the 30s SessionStart hook timeout on a cold machine) left an
+  # empty log newer than $SRC — which the rebuild gate read as "already tried,
+  # don't retry", silently, with nothing for status to show. A kill lands
+  # before the mv and leaves $BUILDLOG exactly as it was.
+  compile 2>"$ROOT/.buildlog.$$"
   rc=$?
   # Whatever the compiler said reaches a human either way — warnings on a build
   # that SUCCEEDED are most of the value of running this by hand, and capturing
   # them to a file that is about to be removed would silently eat them. Only a
   # failure stays on disk, because that file is what status reports.
-  cat "$BUILDLOG" >&2
-  [ "$rc" -eq 0 ] || return "$rc"
-  rm -f "$BUILDLOG"
-  echo "built: $BIN"
+  cat "$ROOT/.buildlog.$$" >&2
+  if [ "$rc" -eq 0 ]; then
+    rm -f "$ROOT/.buildlog.$$" "$BUILDLOG"
+    echo "built: $BIN"
+  else
+    # A failure that said nothing (an OOM-killed swiftc) must still leave a
+    # non-empty reason: the rebuild gate honours only a non-empty log, so an
+    # empty one would re-burn a full compile on every session start.
+    [ -s "$ROOT/.buildlog.$$" ] || echo "build failed with no compiler output (exit $rc)" > "$ROOT/.buildlog.$$"
+    mv -f "$ROOT/.buildlog.$$" "$BUILDLOG" 2>/dev/null
+    return "$rc"
+  fi
 }
 
 cmd_up() {
@@ -245,8 +274,7 @@ cmd_up() {
     printf 'idle\n%s' "$cwd" > "$ROOT/.up.$$" 2>/dev/null
   else
     printf idle > "$ROOT/.up.$$" 2>/dev/null
-  fi
-  mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
+  fi && mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
   # "manual" is a bridge for launches with no session behind them (enable,
   # wake, an unparseable payload). A real session supersedes it, and nothing
   # else ever deletes it — left alone it holds an idle pet up for the whole
@@ -305,7 +333,10 @@ cmd_up() {
   # session start, forever, and still ends with no pet. Nothing else on disk
   # can stop that loop: the gate below reads only the exec bit and an mtime,
   # and neither of them moves when a build fails.
-  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && [ ! "$BUILDLOG" -nt "$SRC" ]; then
+  # Only a NON-EMPTY log is a recorded failure: cmd_build stages the log and
+  # publishes it whole, so an empty $BUILDLOG can only be debris from a world
+  # where something else created it — and debris must not block rebuilds.
+  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && { [ ! -s "$BUILDLOG" ] || [ ! "$BUILDLOG" -nt "$SRC" ]; }; then
     # Silent here is fine — cmd_build has already put the reason in $BUILDLOG,
     # where `pet.sh status` reads it. Discarding it was what made a failed
     # build indistinguishable from a clean install.

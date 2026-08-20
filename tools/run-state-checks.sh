@@ -41,11 +41,11 @@ h=$(fire benign running '{"session_id":"abc-123","cwd":"/Users/x/proj","prompt":
   || no "line 3 is the caption"
 
 # --- the injection the shape check exists for ---
-# The extraction is greedy and takes the LAST match, so a nested object with
-# its own session_id wins. That value is a FILENAME, and ../../../ from
-# <cfg>/perchling/sessions lands one level ABOVE <cfg> — an arbitrary-file
-# clobber whose third line the same payload chose. A tool whose parameter is
-# literally named session_id is not hypothetical.
+# The id is a FILENAME, and ../../../ from <cfg>/perchling/sessions lands one
+# level ABOVE <cfg> — an arbitrary-file clobber whose third line the same
+# payload chose. The traversal sits in the TOP-LEVEL id here because that is
+# the only position the first-match extraction reads from; the nested case
+# below asserts the position rule itself.
 #
 # The victim is a real file at the resolved target, and the assertion is on its
 # CONTENT. Asserting "sessions/ is empty" instead is what the first version of
@@ -56,7 +56,7 @@ h=$(fire benign running '{"session_id":"abc-123","cwd":"/Users/x/proj","prompt":
 # over it and the clobber never happens.
 mkdir -p "$W/blast/cfg"
 printf 'PRECIOUS\n' > "$W/blast/victim"
-printf '%s' '{"session_id":"abc-123","cwd":"/ok","tool_input":{"session_id":"../../../victim","cwd":"/pwned","prompt":"HIJACKED"}}' \
+printf '%s' '{"session_id":"../../../victim","cwd":"/pwned","prompt":"HIJACKED"}' \
   | CLAUDE_CONFIG_DIR="$W/blast/cfg" bash "$STATE_SH" running >/dev/null 2>&1
 [ "$(cat "$W/blast/victim" 2>/dev/null)" = PRECIOUS ] \
   && ok "a traversing session id clobbers nothing" \
@@ -78,11 +78,27 @@ h="$W/blast/cfg"
 # discriminating. The other three do discriminate.
 for bad in 'a/b' '..' 'a b' 'a;rm' '$(id)'; do
   h=$(fire "shape-$(printf '%s' "$bad" | tr -c 'a-z0-9' _)" running \
-        "{\"session_id\":\"abc\",\"tool_input\":{\"session_id\":\"$bad\"}}")
+        "{\"session_id\":\"$bad\",\"cwd\":\"/x\"}")
   [ -z "$(ls -A "$h/perchling/sessions" 2>/dev/null)" ] \
     && ok "rejected: $bad" \
     || no "rejected: $bad" "wrote $(ls "$h/perchling/sessions")"
 done
+
+# --- a nested id must not out-rank the real one ---
+# The CLI's own session_id leads the payload, and everything an embedded
+# object carries — tool_input, tool_response, a pasted transcript — serialises
+# after it. The old LAST-match extraction let a well-formed UUID inside a
+# nested object take the refcount: the ghost held the pet up for the whole
+# staleness hour while the real session's row went stale mid-wait, hiding a
+# blocked session's "waiting" — the pet's core job. Delivery is measured, not
+# hypothetical: this repo's own hook captures carry nested ids.
+h=$(fire nested waiting '{"session_id":"real-abc","cwd":"/x","tool_input":{"session_id":"aaaabbbb-1111-2222-3333-ccccddddeeee"},"prompt":"hi"}')
+[ "$(sed -n 1p "$h/perchling/sessions/real-abc" 2>/dev/null)" = waiting ] \
+  && ok "the real id gets the refcount" \
+  || no "the real id gets the refcount" "sessions/: $(ls "$h/perchling/sessions" 2>/dev/null | tr '\n' ' ')"
+[ ! -e "$h/perchling/sessions/aaaabbbb-1111-2222-3333-ccccddddeeee" ] \
+  && ok "the nested ghost gets nothing" \
+  || no "the nested ghost gets nothing"
 
 # --- disable has to reach the hot path ---
 h="$W/disabled"; mkdir -p "$h/perchling"; touch "$h/perchling/disabled"

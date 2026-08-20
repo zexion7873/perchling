@@ -26,16 +26,22 @@ if [ ! -t 0 ]; then
   # all live sessions by attention priority (waiting > error > done > running)
   # so one session's "running" can't stomp another's "waiting". The write also
   # re-stamps mtime, which the 1h staleness guard reads as liveness.
-  sid=$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-  # The extraction is greedy and takes the LAST match, so a payload carrying a
-  # nested object with its own "session_id" wins over the top-level one. For
-  # every other field that is a cosmetic wrong answer; for this one it is a
-  # FILENAME, written with mv below and removed with rm in pet.sh. A nested
-  # `"session_id":"../../../evil"` resolves three levels above the sessions
-  # directory and clobbers an arbitrary file whose third line the same payload
-  # chose. Real ids are UUIDs, so the shape is checkable without a parser.
-  # Rejected rather than repaired: an empty sid degrades to no refcount for
-  # this hook, where a sanitised one still names a file somebody else picked.
+  # The FIRST "session_id" is the CLI's own: it leads every observed payload,
+  # and everything an embedded object can carry — tool_input, tool_response, a
+  # pasted transcript — serialises after it. Taking the LAST match let a
+  # well-formed UUID inside a nested object become the refcount filename: a
+  # ghost row held the pet up for the whole staleness hour while the real
+  # session's row went stale mid-wait. Prefix-strip rather than sed — "first
+  # match" is not expressible in one BRE, and the builtins are cheaper than
+  # the fork anyway.
+  case "$payload" in
+    *'"session_id"'*) sid=${payload#*'"session_id"'}; sid=${sid#*'"'}; sid=${sid%%'"'*} ;;
+    *) sid= ;;
+  esac
+  # Still a FILENAME, written with mv below and removed with rm in pet.sh, so
+  # the shape stays checked: `"session_id":"../../../evil"` in first position
+  # must degrade to no refcount, never to a sanitised name the payload picked.
+  # Real ids are UUIDs, so the shape is checkable without a parser.
   case "$sid" in ''|*[!A-Za-z0-9_-]*) sid= ;; esac
   # Verified against a real payload, not assumed: every hook event carries cwd.
   # Same greedy shape as the extractions around it — a tool payload with its
@@ -118,8 +124,8 @@ if [ ! -t 0 ]; then
     # three lines, empty ones included — `Mood.parse` reads line one and the
     # reader maps an empty line to nil, so the shorter forms `pet.sh` writes
     # stay valid.
-    printf '%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" > "$d/.sess.$$" 2>/dev/null
-    mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
+    printf '%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" > "$d/.sess.$$" 2>/dev/null &&
+      mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
 fi
 exit 0

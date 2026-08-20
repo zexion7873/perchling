@@ -363,6 +363,17 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
         guard k.count == 1, let ch = k.first, ch != "0", ch != "." else {
             throw PetError("palette key \"\(k)\" must be one character other than \"0\"/\".\" (those mean transparent)")
         }
+        // CR and LF are the one pair where the parser's two width measures
+        // disagree: the byte fast path counts CR LF as two cells while every
+        // grapheme walk — the row-length check, synthBlinkFrame — counts the
+        // pair as ONE Character. Eye-box coordinates validated against one
+        // measure then index a row built by the other: an uncatchable trap,
+        // reachable from a malformed file merely SITTING in the pet library,
+        // on every right-click. No other ASCII bytes coalesce, and non-ASCII
+        // keys already fall off the byte path whole.
+        guard ch != "\r", ch != "\n" else {
+            throw PetError("palette keys must not be CR/LF line-break characters")
+        }
         guard let c = parseHex(v) else { throw PetError("palette \"\(k)\": \"\(v)\" is not #RGB/#RRGGBB") }
         pal[ch] = c
     }
@@ -2020,6 +2031,52 @@ struct ChromeLayout {
 
 let CHROME_GAP: CGFloat = 4
 
+// Whether the overlay may quit, decided from the sessions directory and the
+// owner pids. Free for the same reason foldMoods is: Controller.init's
+// windows put a method out of every harness's reach, and this is the one rule
+// deciding whether the pet exists at all.
+//
+// A session whose owner is provably RUNNING is live however stale its file:
+// hooks stop arriving the moment the user walks into a meeting, and only
+// SessionStart brings a quit pet back — so deciding liveness from mtime alone
+// self-terminated the overlay beside a live session. Staleness decides only
+// for sessions whose owner is unknown; hiding and pruning keep their own
+// cutoffs elsewhere.
+func sessionLiveness(_ sessions: [(owner: pid_t?, stamp: Date?)],
+                     lastOwners: Set<pid_t>, now: Date,
+                     alive: (pid_t) -> Bool) -> (live: Bool, retired: Bool, owners: Set<pid_t>) {
+    let cutoff = now.addingTimeInterval(-3600)
+    var live = false, retired = false
+    var owners: Set<pid_t> = []
+    for s in sessions {
+        if let pid = s.owner {
+            guard alive(pid) else { retired = true; continue }
+            owners.insert(pid)
+            live = true
+            continue
+        }
+        if (s.stamp ?? .distantPast) > cutoff { live = true }
+    }
+    // A clean quit takes its refcounts with it, so the directory empties
+    // exactly the way a session restart empties it. What tells them apart
+    // is whether anyone who could start the next session is still running.
+    let remembered = owners.isEmpty ? lastOwners : owners
+    if !live, !remembered.isEmpty, !remembered.contains(where: alive) { retired = true }
+    return (live, retired, remembered)
+}
+
+// Where a restored window must land: nil while the frame still touches any
+// live screen, else the origin clamped into `home`. A saved origin can name a
+// display that is no longer there — undocking used to strand the window
+// outside every screen, where the menu, tap and drag are all unreachable.
+// Partial overlap is left alone on purpose: a pet the user parked half off
+// the edge is a choice, not a stranding.
+func strandedOrigin(frame: NSRect, screens: [NSRect], home: NSRect?) -> NSPoint? {
+    guard !screens.contains(where: { $0.intersects(frame) }), let vf = home else { return nil }
+    return NSPoint(x: min(max(frame.minX, vf.minX), vf.maxX - frame.width),
+                   y: min(max(frame.minY, vf.minY), vf.maxY - frame.height))
+}
+
 func chromeLayout(pet: NSRect, artTop: CGFloat, screen: NSRect?) -> ChromeLayout {
     // Everything hangs off where the ink starts, not off the canvas edge.
     let head = pet.maxY - artTop
@@ -2078,6 +2135,7 @@ final class Controller: NSObject, NSWindowDelegate {
     var nudgedAlert: Mood?
     var wasLooking = true
     var lastOwners: Set<pid_t> = []
+    var lastRemind: [Mood: Date] = [:]
     var unread = 0
     var collapsed = UserDefaults.standard.bool(forKey: "bubbleCollapsed")
     var lastChip: (Bool, Int, Bool)?
@@ -2199,9 +2257,28 @@ final class Controller: NSObject, NSWindowDelegate {
             let f = screen.visibleFrame
             window.setFrameOrigin(NSPoint(x: f.maxX - window.frame.width - 24, y: f.minY + 24))
             repositionBubble()
+        } else {
+            // After pollPet, so the clamp judges the window the custom pet
+            // needed rather than the size the window was constructed with.
+            clampOnscreen()
+        }
+        // Displays come and go while the pet runs — undocking mid-session
+        // strands it exactly the way a stale restore does.
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.clampOnscreen()
         }
         window.orderFrontRegardless()
         applyChrome()
+    }
+
+    func clampOnscreen() {
+        if let p = strandedOrigin(frame: window.frame,
+                                  screens: NSScreen.screens.map(\.visibleFrame),
+                                  home: (window.screen ?? NSScreen.main)?.visibleFrame) {
+            window.setFrameOrigin(p)
+            repositionBubble()
+        }
     }
 
     // pet.json IS the active pet: present and valid → custom sprite; broken
@@ -2355,6 +2432,13 @@ final class Controller: NSObject, NSWindowDelegate {
         // Claude desktop, even one opened after we resolved home. The
         // look-away nudge in the tick loop covers the debt this leaves.
         guard !userIsLooking else { return }
+        // state.sh publishes one event twice, tens of ms apart — the global
+        // state file first, the session's own file next — so a poll landing in
+        // the gap registers the same transition on two consecutive folds: two
+        // banners, unread counted twice. One second sits orders of magnitude
+        // above that gap and below any two genuine arrivals worth ringing for.
+        if let t = lastRemind[mood], Date().timeIntervalSince(t) < 1 { return }
+        lastRemind[mood] = Date()
         // Same event, two ways of surviving your absence: one notification you
         // may miss, one count that waits on the pet until you come back.
         unread += 1
@@ -2427,26 +2511,16 @@ final class Controller: NSObject, NSWindowDelegate {
     // an empty directory that the last owners emptied on their way out.
     func pollSessions() -> (live: Bool, retired: Bool) {
         let fm = FileManager.default
-        let cutoff = Date().addingTimeInterval(-3600)
         let items = (try? fm.contentsOfDirectory(at: sessionsURL,
                                                  includingPropertiesForKeys: [.contentModificationDateKey],
                                                  options: [.skipsHiddenFiles])) ?? []
-        var live = false, retired = false
-        var owners: Set<pid_t> = []
-        for url in items {
-            if let pid = ownerPid(url.lastPathComponent) {
-                guard alive(pid) else { retired = true; continue }
-                owners.insert(pid)
-            }
-            let d = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            if (d ?? .distantPast) > cutoff { live = true }
+        let sessions = items.map { url in
+            (owner: ownerPid(url.lastPathComponent),
+             stamp: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
         }
-        if !owners.isEmpty { lastOwners = owners }
-        // A clean quit takes its refcounts with it, so the directory empties
-        // exactly the way a session restart empties it. What tells them apart
-        // is whether anyone who could start the next session is still running.
-        if !live, !lastOwners.isEmpty, !lastOwners.contains(where: alive) { retired = true }
-        return (live, retired)
+        let verdict = sessionLiveness(sessions, lastOwners: lastOwners, now: Date(), alive: alive)
+        lastOwners = verdict.owners
+        return (verdict.live, verdict.retired)
     }
 
     func run() {

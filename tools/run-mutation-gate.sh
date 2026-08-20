@@ -56,8 +56,17 @@ gate() { # gate <name> <src> <envvar> <harness> <old> <new>
     sed 's/^/    /' "$SCRATCH/$name.log" | tail -3
     fail=$((fail + 1)); return
   fi
+  # A nonzero exit alone is not a catch: every harness's infra guard also
+  # exits 1, before any assertion runs. A broken toolchain once turned all
+  # nine harnesses into preflight deaths and this gate reported "10 caught,
+  # 0 escaped". Count what came back, not what the exit code implies.
   local red; red=$(grep -c '^FAIL\|^  FAIL' "$SCRATCH/$name.log" 2>/dev/null)
-  echo "ok   $name (harness went red: ${red:-?} assertions)"
+  if [ "${red:-0}" -eq 0 ]; then
+    echo "FAIL $name: $harness exited $rc with no red assertion — infra died before testing"
+    sed 's/^/    /' "$SCRATCH/$name.log" | tail -5
+    fail=$((fail + 1)); return
+  fi
+  echo "ok   $name (harness went red: $red assertions)"
   pass=$((pass + 1))
 }
 
@@ -72,14 +81,54 @@ gate prune-never-retires scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.
   '  :'
 
 gate rebuild-loop scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
-  '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && [ ! "$BUILDLOG" -nt "$SRC" ]; then' \
+  '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && { [ ! -s "$BUILDLOG" ] || [ ! "$BUILDLOG" -nt "$SRC" ]; }; then' \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; }; then'
+
+# The other direction on the same line: a gate that honours an EMPTY log as a
+# recorded failure lets a compile killed midway (empty log newer than source)
+# block every future rebuild, silently.
+gate empty-log-blocks-rebuild scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
+  '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && { [ ! -s "$BUILDLOG" ] || [ ! "$BUILDLOG" -nt "$SRC" ]; }; then' \
+  '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && [ ! "$BUILDLOG" -nt "$SRC" ]; then'
+
+# LAST-match sid extraction: a well-formed UUID inside a nested payload object
+# takes the refcount filename from the real session. The shape check cannot
+# see this — the ghost id is a perfectly shaped UUID — so only the routing
+# assertion catches it.
+gate sid-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "    *'\"session_id\"'*) sid=\${payload#*'\"session_id\"'}; sid=\${sid#*'\"'}; sid=\${sid%%'\"'*} ;;" \
+  "    *'\"session_id\"'*) sid=\$(printf '%s' \"\$payload\" | sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -1) ;;"
 
 # --- swift layer -------------------------------------------------------------
 
 gate eyes-box-overflows scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   'b[0] <= dims.w - b[2], b[1] <= dims.h - b[3] else {' \
   'b[0] + b[2] <= dims.w, b[1] + b[3] <= dims.h else {'
+
+# Without the palette guard, the CR/LF fixture is not "accepted": it traps in
+# synthBlinkFrame (exit 133) — the byte fast path counted its row as 8 cells,
+# the grapheme walk builds 7, and the eye box indexes the 8th.
+gate crlf-palette-key scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  '        guard ch != "\r", ch != "\n" else {
+            throw PetError("palette keys must not be CR/LF line-break characters")
+        }' \
+  '        _ = ch'
+
+# Liveness decided from file mtime alone: an idle-but-open session (a long
+# meeting) crosses the staleness cutoff beside a provably live owner, and the
+# pet self-terminates 30 seconds later with only SessionStart able to bring
+# it back.
+gate live-owner-ignored scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '            owners.insert(pid)
+            live = true
+            continue' \
+  '            owners.insert(pid)'
+
+# A clamp that never fires restores a saved origin onto a display that is no
+# longer there — menu, tap and drag all unreachable.
+gate stranded-restore-unclamped scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    guard !screens.contains(where: { $0.intersects(frame) }), let vf = home else { return nil }' \
+  '    guard screens.isEmpty, let vf = home else { return nil }'
 
 gate blank-frame-collapses scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   'frames.compactMap { $0.firstIndex { $0.contains { $0 != nil } } }.min()' \
@@ -114,6 +163,18 @@ gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose
 gate binre-unescaped scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
   "BIN_RE=\$(printf '%s' \"\$BIN\" | sed 's/[][(){}.*+?^\$|\\\\]/\\\\&/g')" \
   'BIN_RE="$BIN"'
+
+# The self-match probe evals running() out of pet.sh by sed. A legitimate
+# refactor that makes the body delegate to a helper leaves the extraction
+# callable but blind — every probe exits 127 into a clean "miss", and the
+# assertion scores 0 hits among 8 verdicts having run no pgrep. Only the
+# positive control (a stub genuinely live at $BIN must produce a HIT) can go
+# red here: the delegated running() works fine inside pet.sh itself, so every
+# launch scenario stays green against this mutant.
+gate running-delegated scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+  'running() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }' \
+  'running() { __rn; }
+__rn() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }'
 
 echo "---"
 echo "$pass mutants caught, $fail escaped"

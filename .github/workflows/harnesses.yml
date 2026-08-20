@@ -7,8 +7,17 @@ on:
   schedule:
     - cron: "0 3 * * *"
 
+# This repo IS the marketplace users install from, so the token's scope is a
+# property of this file rather than a repo-settings toggle.
+permissions:
+  contents: read
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # event_name is part of the key: schedule and push used to share
+  # harnesses-refs/heads/main, and the daily cron — which runs only the hooks
+  # job — would cancel an in-flight push run and leave the pushed commit grey,
+  # never re-tested, on the branch subscribers pull.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -18,6 +27,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: toolchain
         run: swiftc --version
       - name: every harness
@@ -69,6 +80,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # The gate must not be allowed to mistake a machine that cannot compile
+      # for a machine that caught ten mutants: with no toolchain, every Swift
+      # harness dies in preflight, and dying is indistinguishable from red
+      # without this step failing first.
+      - name: toolchain
+        run: swiftc --version
       - name: every harness goes red against the defect it is named after
         run: bash tools/run-mutation-gate.sh
 
@@ -80,6 +99,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
       - name: hooks.json declares no event this CLI rejects

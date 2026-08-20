@@ -61,21 +61,29 @@ and what the alternative lost to.
   read off the docs. In every one of those seven, `"cwd"` occurred exactly
   once, including on tool events carrying `tool_input`.
 - **That survey covers `cwd`, and `session_id` is not the same question.** The
-  extraction is greedy and takes the LAST match, so a payload whose
+  cosmetic extractions are greedy and take the LAST match, so a payload whose
   `tool_input` carries a key of the same name wins over the top-level one. For
   `cwd` the cost is a wrong directory on one tray row until the next hook,
-  which is why the extraction accepts it. For `session_id` the value becomes a
-  FILENAME: `mv -f` in `state.sh` and `cmd_up`, `rm -f` in `cmd_down`. Measured
-  end to end — a nested `"session_id":"../../../evil"` resolves three levels
-  above the sessions directory and clobbers an arbitrary file whose third line
-  the same payload chose, and `PostToolBatch` carries no matcher, so every tool
-  batch is a delivery route. `state.sh` and `pet.sh` therefore both check the
-  SHAPE (`case "$sid" in ''|*[!A-Za-z0-9_-]*)`), which costs no fork, and
-  reject rather than sanitise: an empty sid degrades to no refcount for that
-  hook, where a repaired one still names a file somebody else picked. The
-  general form of the trap is worth more than the fix — a measurement of the
-  harmless field read as a verdict on the dangerous one, in prose that looks
-  exactly like the measured bullets around it.
+  which is why that extraction accepts it. For `session_id` the value becomes
+  a FILENAME: `mv -f` in `state.sh` and `cmd_up`, `rm -f` in `cmd_down`.
+  Measured end to end — a nested `"session_id":"../../../evil"` resolves three
+  levels above the sessions directory and clobbers an arbitrary file whose
+  third line the same payload chose, and `PostToolBatch` carries no matcher,
+  so every tool batch is a delivery route. So the sid extraction differs from
+  its cosmetic siblings twice over, in one direction each. It takes the FIRST
+  match (a builtin prefix-strip, no fork): the CLI writes its own `session_id`
+  as the payload's leading key and everything an embedded object carries
+  serialises after it, where the last match handed a well-formed nested UUID
+  the refcount — a ghost row holding the pet up for the staleness hour while
+  the real session's "waiting" went stale mid-wait. And it checks the SHAPE
+  (`case "$sid" in ''|*[!A-Za-z0-9_-]*)`), rejecting rather than sanitising:
+  an empty sid degrades to no refcount for that hook, where a repaired one
+  still names a file somebody else picked. Both rules live in `state.sh` and
+  `pet.sh` as a mirrored pair; `run-state-checks.sh` pins routing and shape
+  separately, and the mutation gate carries a mutant for each. The general
+  form of the original trap is worth more than either fix — a measurement of
+  the harmless field read as a verdict on the dangerous one, in prose that
+  looks exactly like the measured bullets around it.
 - **`sessions/` is read for moods in exactly one place.** `liveSessions()`
   owns the owner-alive guard, the one-hour staleness cutoff, and the per-mood
   TTL decay, and both the attention fold and the tray rows consume its
@@ -244,3 +252,15 @@ and what the alternative lost to.
   — `SessionEnd` really does fire on ⌘Q and removes the refcounts properly, so
   a pet that only handles orphans still sits there for the full 30 seconds
   after the app is gone.
+- **Termination liveness is owner-first, mtime second.** `sessionLiveness`
+  counts a session live while its owner provably runs, however stale its
+  file: hooks stop arriving the moment the user walks into a meeting, only
+  SessionStart brings a quit pet back, and deciding from mtime alone
+  self-terminated the overlay beside a live session an hour in. The staleness
+  window decides only for sessions with no owner file — absence still means
+  "unknown, not dead" — and hiding (`liveSessions`) and pruning (`cmd_up`)
+  keep their own hour for their own jobs; widening those was considered and
+  rejected, because a session nobody can see should still stop being drawn
+  and stop being stored. It is a free function for the reason `foldMoods`
+  is: `Controller.init` opens windows, so a method is out of every harness's
+  reach.

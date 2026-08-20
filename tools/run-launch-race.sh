@@ -178,6 +178,36 @@ stale_lock_race
 # its own text instead of the script's.
 probe_selfmatch() {
   local out hits
+  # Positive control before the negative test. Both historical disarms left a
+  # running() that could not RUN, and the guards below close those — but a
+  # running() that runs and never matches satisfies them both: a body
+  # refactored to delegate to a helper the sed cannot see makes every probe
+  # exit 127 into a clean "miss", 8 verdicts, 0 hits, ok. Only a HIT against
+  # a process genuinely live at $BIN proves the extraction can see anything.
+  local live
+  live=$(
+    home="$SCRATCH/selfmatch-live"
+    mkdir -p "$home/bin"
+    cp "$SCRATCH/stub" "$home/bin/perchling"
+    BIN="$home/bin/perchling"
+    # The stub must not inherit this substitution's stdout, or $(…) waits out
+    # its full 25-second sleep.
+    "$BIN" </dev/null >/dev/null 2>&1 & lp=$!
+    sleep 0.5
+    eval "$(sed -n '/^BIN_RE=/p;/^running()/p' "$PET")"
+    declare -F running >/dev/null 2>&1 || { kill "$lp" 2>/dev/null; echo NOTAFUNCTION; exit 0; }
+    running && echo LIVEHIT || echo LIVEMISS
+    kill "$lp" 2>/dev/null
+  )
+  case "$live" in
+    *NOTAFUNCTION*)
+      printf '  FAIL %-26s no callable running() extracted from %s\n' "probe-self-match" "$PET"
+      fail=$((fail + 1)); return ;;
+    *LIVEHIT*) ;;
+    *)
+      printf '  FAIL %-26s positive control: extracted running() cannot see a live stub (got "%s")\n' "probe-self-match" "$live"
+      fail=$((fail + 1)); return ;;
+  esac
   out=$(
     BIN="$SCRATCH/no-such-binary"
     # running() is not self-contained — it matches on a pattern the script
