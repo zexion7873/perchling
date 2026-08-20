@@ -1047,6 +1047,7 @@ bash tools/run-build-gate.sh        # what a FAILED build may do to a working in
 bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
 bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
+bash tools/run-mutation-gate.sh     # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
@@ -1084,7 +1085,23 @@ insufficient the same afternoon, that all eight probes came back with a VERDICT.
 it, the probe did not set it, every subshell died on `set -u`, and the
 assertion counted zero hits among zero verdicts and reported ok. Both failures
 were "the extracted function did not run", so the guard now counts what came
-back rather than naming a cause. And thirteen green lines are not thirteen
+back rather than naming a cause. A third escape is measured rather than
+suspected: removing `-x` from `running()`'s pgrep leaves all thirteen lines
+GREEN whenever the eight concurrent probes fail to overlap — probe-self-match
+detects that mutant by timing luck, not by construction. The mutation gate
+therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
+`cfg+test (1)` scenario reds deterministically.
+
+`tools/run-mutation-gate.sh` runs the whole argument above as one command: it
+generates a mutant from HEAD for each of ten defects a harness is named after —
+never a committed copy, which drifts silently — asserts the anchor was actually
+found and the file actually changed (a replacement matching nothing tests the
+clean tree and passes forever), and requires the harness to go red.
+`.github/workflows/harnesses.yml` runs the harnesses, the gate, and
+`run-hooks-check.sh` on every PR and push to main; the hooks check also runs on
+a daily schedule, because the CLI it validates against moves without this repo
+moving. The workflow is a thin caller — everything of substance is one of these
+scripts and runs identically by hand. And thirteen green lines are not thirteen
 guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
 the race window, so they pass against a broken script too and the file labels
 them negative controls rather than coverage.

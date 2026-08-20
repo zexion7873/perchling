@@ -2,6 +2,8 @@
 
 # 🐣 Perchling
 
+[![harnesses](https://github.com/zexion7873/perchling/actions/workflows/harnesses.yml/badge.svg)](https://github.com/zexion7873/perchling/actions/workflows/harnesses.yml)
+
 <img src="docs/moods.gif" width="540" alt="The perchling pet — a small husky in blue goggles — in its five moods: idle sitting calmly, running hunched over a laptop, waiting sat up and watching, done with its mouth open in a grin, and error with a red cross through each eye.">
 
 **A tiny pixel creature that perches on the corner of your screen and reacts to

@@ -22,7 +22,13 @@ cut=$(grep -n '^let argv = CommandLine.arguments' "$src" | cut -d: -f1)
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-head -n $((cut - 1)) "$src" > "$work/gen.swift"
+# motionOK is pinned true in the scratch copy — the tool drives `tick` itself,
+# so the machine's Reduce Motion setting has no business deciding whether the
+# hero animates, and CI runners ship with it ON.
+head -n $((cut - 1)) "$src" \
+  | sed 's/var motionOK: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }/var motionOK: Bool { true }/' \
+  > "$work/gen.swift"
+grep -q 'var motionOK: Bool { true }' "$work/gen.swift" || { echo "motionOK patch did not apply" >&2; exit 1; }
 cat "$here/moods-gif.swift" >> "$work/gen.swift"
 
 swiftc -O -o "$work/gen" "$work/gen.swift"

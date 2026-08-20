@@ -137,8 +137,15 @@ func buildGIF(frames: [[UInt8]], width: Int, height: Int, table: [NSColor]) -> D
     for f in frames {
         // Disposal 2 (restore to background) — without it a transparent pixel
         // keeps whatever the previous frame left there and the pet smears.
-        out += [0x21, 0xF9, 0x04, 0x09] + u16(DELAY) + [0x00, 0x00]
-        out += [0x2C] + u16(0) + u16(0) + u16(width) + u16(height) + [0x00]
+        // Two appends per header, not one chained expression: five `+`s of
+        // array literals is a type-checker bomb that one Swift version absorbs
+        // and the next rejects as "unable to type-check in reasonable time" —
+        // measured across this machine and a CI runner on the same day.
+        out += [0x21, 0xF9, 0x04, 0x09]
+        out += u16(DELAY); out += [0x00, 0x00]
+        out += [0x2C]
+        out += u16(0); out += u16(0); out += u16(width); out += u16(height)
+        out += [0x00]
         out += [UInt8(bits)]
         out += subBlocks(lzwEncode(f, minCodeSize: bits))
     }
@@ -154,12 +161,10 @@ let outURL = URL(fileURLWithPath: CommandLine.arguments.count > 1
 _ = NSApplication.shared
 NSApplication.shared.setActivationPolicy(.prohibited)
 
-if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-    FileHandle.standardError.write(
-        "Reduce Motion is on: the tick freezes, so every cell renders one resting frame. Turn it off and re-run.\n"
-        .data(using: .utf8)!)
-    exit(1)
-}
+// The assembly step pins motionOK to true in the scratch copy, so the
+// machine's Reduce Motion setting cannot freeze the render — this tool drives
+// `tick` itself. A guard here exited 1 on Reduce Motion instead, which keyed
+// the hero's reproducibility to an accessibility setting.
 
 // The expected colour set is harvested from the pet's own frames rather than
 // kept as a list in step by hand. That list was a mirror of an enum, and a
