@@ -7,12 +7,58 @@ import AppKit
 // The chrome's own colours. These were borrowed from the pet's ink palette
 // while the built-in was drawn from that enum; the pet is a manifest now and
 // declares a palette of its own, so the two have no reason to move together —
-// and a user's pet swapping in must not repaint the bubble. Hexes unchanged
-// from what shipped, so the panels look identical to 1.6.
-let CHROME_PANEL = NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1)
-let CHROME_EDGE = NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1)
-let CHROME_TEXT = NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1)
-let CHROME_INK = NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1)
+// and a user's pet swapping in must not repaint the bubble. The palette is the
+// USER's to pick instead: a fixed table of themes, chosen from the menu, never
+// from a manifest. Themes are curated rather than free hexes because the panel
+// colour lands at CHROME_TINT alpha over frost — an arbitrary value neither
+// looks like itself nor guarantees the text stays readable, so every row here
+// was judged on a real desktop before shipping (the offscreen harness cannot
+// render the blur at all; see CHROME_TINT).
+struct ChromeTheme {
+    let name: String
+    let panel: NSColor  // fill, tinted over the frost
+    let edge: NSColor   // outline, opaque — translucent muddies into the blur
+    let text: NSColor   // the chip's unread numeral, the one glyph that must carry
+    let ink: NSColor    // bubble text and the chevron
+}
+
+// Amber is the default; its hexes are unchanged from 1.6, so an untouched
+// install looks identical to every version before themes existed.
+let CHROME_THEMES: [ChromeTheme] = [
+    ChromeTheme(name: "Amber",
+                panel: NSColor(srgbRed: 0.227, green: 0.157, blue: 0.125, alpha: 1),
+                edge: NSColor(srgbRed: 0.455, green: 0.216, blue: 0.145, alpha: 1),
+                text: NSColor(srgbRed: 1.000, green: 0.757, blue: 0.412, alpha: 1),
+                ink: NSColor(srgbRed: 1.000, green: 0.957, blue: 0.914, alpha: 1)),
+    ChromeTheme(name: "Graphite",
+                panel: NSColor(srgbRed: 0.102, green: 0.102, blue: 0.110, alpha: 1),
+                // The one edge with no hue channel, so luminance is all that
+                // holds the silhouette: at 0.32 it measured 1.17:1 against its
+                // own effective panel, and on a wallpaper near the frost value
+                // both boundaries died at once.
+                edge: NSColor(srgbRed: 0.420, green: 0.420, blue: 0.450, alpha: 1),
+                text: NSColor(srgbRed: 1.000, green: 1.000, blue: 1.000, alpha: 1),
+                ink: NSColor(srgbRed: 0.930, green: 0.930, blue: 0.950, alpha: 1)),
+    ChromeTheme(name: "Abyss",
+                // The blue is overdeclared on purpose: the 0.38 tint passes
+                // only ~0.38 of a panel's declared chroma, so a lean that
+                // should RENDER cool must be declared ~2.6x cooler. The first
+                // values (0.09, 0.11, 0.16) rendered within 5/255 of
+                // Graphite's panel — a named theme that read as trim.
+                panel: NSColor(srgbRed: 0.050, green: 0.100, blue: 0.240, alpha: 1),
+                edge: NSColor(srgbRed: 0.200, green: 0.360, blue: 0.580, alpha: 1),
+                text: NSColor(srgbRed: 0.550, green: 0.750, blue: 1.000, alpha: 1),
+                ink: NSColor(srgbRed: 0.880, green: 0.920, blue: 0.970, alpha: 1)),
+]
+
+// Mutated in exactly two places — Controller.init restoring the saved choice
+// before any chrome draws, and the menu handler applying a new one, which
+// repaints both faces itself. Panel.draw's repaint gate leans on that: nothing
+// else may change this between draws. The default is bound by NAME, not by
+// row: the table is meant to grow, and a row inserted above Amber must not
+// silently change what a fresh install gets. The `!` is an assert — a table
+// without Amber is a broken build, not a condition to survive.
+var CHROME_THEME = CHROME_THEMES.first { $0.name == "Amber" }!
 
 // The tick loop's period. Sequence timings quantise to this, so the parser and
 // the timer cannot be allowed to drift apart.
@@ -1177,6 +1223,7 @@ final class PetView: NSView {
     // Controller closure that assigns this is a needless fight.
     var petList: (() -> [PetChoice])?
     var onPickPet: ((PetChoice?) -> Void)?   // nil picks the built-in
+    var onPickTheme: ((ChromeTheme) -> Void)?
     var sessionList: (() -> [SessionRow])?
     var labelList: (() -> [String: String])?
 
@@ -1187,6 +1234,10 @@ final class PetView: NSView {
     @objc private func pickPetAction(_ sender: NSMenuItem) {
         guard let choice = sender.representedObject as? PetChoice else { return }
         onPickPet?(choice)
+    }
+    @objc private func pickThemeAction(_ sender: NSMenuItem) {
+        guard let theme = sender.representedObject as? ChromeTheme else { return }
+        onPickTheme?(theme)
     }
     // A row cannot jump to its session — individual terminal tabs are not
     // addressable from an accessory app — so it does what tapping the pet
@@ -1251,6 +1302,20 @@ final class PetView: NSView {
         let petsItem = NSMenuItem(title: "Pets", action: nil, keyEquivalent: "")
         petsItem.submenu = pets
         menu.addItem(petsItem)
+
+        // Deliberately beside Pets and not inside it: the theme is the USER's
+        // choice, per machine, and swapping pets never touches it.
+        let themes = NSMenu()
+        for t in CHROME_THEMES {
+            let item = NSMenuItem(title: t.name, action: #selector(pickThemeAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = t
+            item.state = t.name == CHROME_THEME.name ? .on : .off
+            themes.addItem(item)
+        }
+        let themeItem = NSMenuItem(title: "Bubble theme", action: nil, keyEquivalent: "")
+        themeItem.submenu = themes
+        menu.addItem(themeItem)
         menu.addItem(.separator())
 
         let mute = NSMenuItem(title: "Mute notifications", action: #selector(muteAction), keyEquivalent: "")
@@ -1771,17 +1836,28 @@ func awayNudge(display: Mood, wasLooking: Bool, looking: Bool,
 let BUB_W: CGFloat = 260, BUB_H: CGFloat = 54, BUB_BODY: CGFloat = 52
 
 // The bubble and the chip are the only surfaces that sit over the user's
-// desktop rather than over the pet, so they are the only place the flat palette
-// is used with alpha. A translucent dark panel stops the chrome competing with
-// the creature for attention on a busy wallpaper, where a cream slab read as a
-// second, larger pet. Both windows are already non-opaque with a clear
-// background, so this needs nothing from the window layer.
+// desktop rather than over the pet, so they are the only place the theme's
+// colours are used with alpha. A translucent dark panel stops the chrome
+// competing with the creature for attention on a busy wallpaper, where a
+// solid slab read as a second, larger pet. Both windows are already
+// non-opaque with a clear background, so this needs nothing from the window
+// layer.
 //
 // This is a TINT over the blur, not the panel itself, which is why it is so
-// much lighter than the 0.78 a blur-less version needed: the frost supplies the
-// darkening and the legibility, and this only pulls the neutral grey toward the
-// pet's warm brown. Raise it and the blur stops being visible at all.
+// much lighter than the 0.78 a blur-less version needed: the frost supplies
+// the darkening and the legibility, and this only pulls the neutral grey
+// toward the active theme's panel colour. Raise it and the blur stops being
+// visible at all. Shared across every theme — a row that needs its own tint
+// is a row that has not been judged on a desktop yet.
 let CHROME_TINT: CGFloat = 0.38
+
+// The edge is a SINGLE tone, and its softness on a bright wallpaper is
+// accepted. Two understrokes were built and rejected on a real desktop: a
+// dark contour always read as a black frame (at a point of visible width the
+// eye keeps only luminance — no dark hue survives, measured at flat black,
+// edge x 0.35 and x 0.5 alike), and a pale halo fixed white by isolation but
+// turned every dark-wallpaper band into a sticker glow. See chrome.md before
+// reopening this.
 let CHIP: CGFloat = 26
 
 // One control with two jobs: the count of what happened while you were not
@@ -1815,12 +1891,12 @@ final class ChipView: NSVisualEffectView {
             let gc = NSGraphicsContext.current!.cgContext
             gc.setAlpha(CHROME_TINT)
             gc.beginTransparencyLayer(auxiliaryInfo: nil)
-            CHROME_PANEL.setFill()
+            CHROME_THEME.panel.setFill()
             disc.fill()
             gc.endTransparencyLayer()
             gc.setAlpha(1)
-            CHROME_EDGE.setStroke()
-            disc.lineWidth = 2.5
+            CHROME_THEME.edge.setStroke()
+            disc.lineWidth = 3.5
             disc.stroke()
             if count > 0 {
                 // Two glyphs is the whole budget at this size; past nine the
@@ -1828,9 +1904,9 @@ final class ChipView: NSVisualEffectView {
                 let s = count > 9 ? "9+" : "\(count)"
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.monospacedSystemFont(ofSize: count > 9 ? 10 : 12, weight: .bold),
-                    // Amber on the dark disc — the pet's own attention ink, and
-                    // the only thing on this 26-point surface that has to carry.
-                    .foregroundColor: CHROME_TEXT,
+                    // The theme's attention ink on the dark disc — the only
+                    // thing on this 26-point surface that has to carry.
+                    .foregroundColor: CHROME_THEME.text,
                 ]
                 let sz = (s as NSString).size(withAttributes: attrs)
                 (s as NSString).draw(at: NSPoint(x: (CHIP - sz.width) / 2, y: (CHIP - sz.height) / 2), withAttributes: attrs)
@@ -1842,7 +1918,7 @@ final class ChipView: NSVisualEffectView {
                 p.move(to: NSPoint(x: mid - w, y: base))
                 p.line(to: NSPoint(x: mid, y: apex))
                 p.line(to: NSPoint(x: mid + w, y: base))
-                CHROME_INK.setStroke()
+                CHROME_THEME.ink.setStroke()
                 p.lineWidth = 2.5
                 p.lineCapStyle = .round
                 p.lineJoinStyle = .round
@@ -1856,6 +1932,10 @@ final class ChipView: NSVisualEffectView {
     var collapsed = false { didSet { if collapsed != oldValue { face.collapsed = collapsed; face.needsDisplay = true } } }
     var onTap: (() -> Void)?
 
+    // The theme handler's half of Face's repaint contract: Face redraws on its
+    // own state changes only, so a theme change must knock from outside.
+    func repaintChrome() { face.needsDisplay = true }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         material = .hudWindow
@@ -1864,7 +1944,7 @@ final class ChipView: NSVisualEffectView {
         // Pinned dark rather than following the system: this sits on the user's
         // wallpaper, not inside an app window, so "light mode" says nothing
         // about what is behind it. Following it turns the disc white and the
-        // cream chevron disappears.
+        // light chevron disappears — every theme's ink assumes a dark panel.
         appearance = NSAppearance(named: .darkAqua)
         // A disc, matching the drawn stroke — a square of frost behind a round
         // button is the same bug the bubble's tail mask exists to avoid.
@@ -1889,11 +1969,13 @@ final class BubbleView: NSVisualEffectView {
     // container, the drawing is a subview. A view draws before its subviews, so
     // vibrancy added under the painter covers the text.
     private final class Panel: NSView {
-        // draw() is a pure function of these three and nothing else — no tick,
-        // no clock, no cursor, and a palette that never varies — so repainting
-        // on a real change is both necessary and sufficient. The poll loop used
-        // to mark the bubble dirty twenty times a second for content that
-        // changes a few times a turn, and text is the expensive thing here.
+        // draw() is a pure function of these three plus CHROME_THEME and
+        // nothing else — no tick, no clock, no cursor — so repainting on a
+        // real change is both necessary and sufficient. The theme is not
+        // watched here: the one handler that can change it repaints both
+        // faces itself. The poll loop used to mark the bubble dirty twenty
+        // times a second for content that changes a few times a turn, and
+        // text is the expensive thing here.
         // The status arrives already chosen. Deriving it here from a mood and the
         // global wording table would mean the rule under test and the rule on
         // screen are two pieces of code that merely agree today.
@@ -1929,14 +2011,15 @@ final class BubbleView: NSVisualEffectView {
         override func draw(_ dirtyRect: NSRect) {
             NSColor.clear.setFill()
             dirtyRect.fill()
-            let bg = CHROME_PANEL, line = CHROME_EDGE, textColor = CHROME_INK
+            let bg = CHROME_THEME.panel, line = CHROME_THEME.edge, textColor = CHROME_THEME.ink
 
             let body = BubbleView.bodyPath()
             // The blur underneath already darkens; this is a tint on top of it,
             // which is why it is far lighter than the alpha a blur-less panel
             // needed. It exists at all because `.hudWindow` is a neutral grey
-            // and the pet is warm — untinted, the chrome reads as borrowed
-            // system UI parked beside the creature rather than as part of it.
+            // and the theme gets to disagree with it — untinted, the chrome
+            // reads as borrowed system UI parked beside the creature rather
+            // than as part of it.
             //
             // One transparency layer, composited once. Filling each piece at
             // alpha instead stacks the tail's overlap with the body into a
@@ -1950,9 +2033,9 @@ final class BubbleView: NSVisualEffectView {
             gc.endTransparencyLayer()
             gc.setAlpha(1)
             // The outline is opaque and outside the layer: it is the edge that
-            // makes this a pixel bubble rather than a system panel, and at 3pt
+            // makes this a pixel bubble rather than a system panel, and at this weight
             // a translucent one just muddies into the blur.
-            line.setStroke(); body.lineWidth = 3; body.stroke()
+            line.setStroke(); body.lineWidth = 4; body.stroke()
 
             let promptAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
@@ -1980,6 +2063,10 @@ final class BubbleView: NSVisualEffectView {
     var status: String = "" { didSet { panel.status = status } }
     var name: String? = nil { didSet { panel.name = name } }
     var prompt: String = "" { didSet { panel.prompt = prompt } }
+
+    // Same contract as ChipView's: the panel repaints on its own three inputs,
+    // and a theme change must knock from outside.
+    func repaintChrome() { panel.needsDisplay = true }
     static func bodyPath() -> NSBezierPath {
         NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: BUB_W - 4, height: BUB_BODY - 2),
                      xRadius: 7, yRadius: 7)
@@ -2004,7 +2091,8 @@ final class BubbleView: NSVisualEffectView {
         // Pinned dark rather than following the system: the chrome sits on the
         // user's wallpaper, not inside an app window, so "light mode" is not a
         // statement about what is behind it. Letting it follow turns the panel
-        // white on a light desktop and the cream text vanishes.
+        // white on a light desktop and the light text vanishes — every theme's
+        // ink assumes a dark panel.
         appearance = NSAppearance(named: .darkAqua)
         maskImage = BubbleView.mask
         panel.frame = bounds
@@ -2149,6 +2237,14 @@ final class Controller: NSObject, NSWindowDelegate {
     var sessionLabelsBySid: [String: String] = [:]
 
     init(root: URL, registry: URL, titles: URL) {
+        // Before the chrome views exist, so their first draw is already in the
+        // saved theme. An unknown saved name (a theme renamed or removed) falls
+        // back to the default rather than failing: the choice is cosmetic and
+        // the menu is right there to pick again.
+        if let saved = UserDefaults.standard.string(forKey: "chromeTheme"),
+           let t = CHROME_THEMES.first(where: { $0.name == saved }) {
+            CHROME_THEME = t
+        }
         self.root = root
         registryURL = registry
         titlesURL = titles
@@ -2225,6 +2321,13 @@ final class Controller: NSObject, NSWindowDelegate {
             UserDefaults.standard.set(s.muted, forKey: "muted")
         }
         view.onDisable = { [weak self] in self?.disableAndQuit() }
+        view.onPickTheme = { [weak self] t in
+            guard let s = self else { return }
+            CHROME_THEME = t
+            UserDefaults.standard.set(t.name, forKey: "chromeTheme")
+            s.bubbleView.repaintChrome()
+            s.chipView.repaintChrome()
+        }
         view.petList = { [unowned self] in
             petChoices(root: self.root, examples: examplesRoot)
         }
