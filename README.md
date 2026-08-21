@@ -93,6 +93,11 @@ choice sticks across restarts. When something happened while you were looking el
 turns into a count of how much you missed; coming back to Claude, or opening
 the bubble, clears it.
 
+The bubble and the disc share a theme: right-click the pet and pick one under
+**Bubble theme** — the warm amber default, a neutral graphite that goes with
+any wallpaper, or a deep-sea abyss blue. The choice sticks across restarts and
+belongs to you, not the pet: swapping pets never repaints it.
+
 ### 🔔 When you've looked away
 
 **waiting**, **done** and **error** each post a macOS notification with a
