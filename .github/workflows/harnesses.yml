@@ -21,6 +21,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-gate:
+    # Deliberately NOT in the macOS harness loop. It needs no Swift toolchain,
+    # and a manifest check that dies alongside the toolchain is a manifest
+    # check that never runs — this repo has been burned once already by infra
+    # death wearing a green tick. fetch-depth 2 because the version comparison
+    # reads every one of HEAD's parents — not HEAD~1, which is only the first
+    # parent and stays green through a fast-forwarded merge that regresses the
+    # version.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: the release manifests parse, and the version never goes backwards
+        run: bash tools/run-release-checks.sh
+
   harnesses:
     if: github.event_name != 'schedule'
     runs-on: macos-15
@@ -38,6 +57,7 @@ jobs:
           for f in tools/run-*.sh; do
             [ "$f" = tools/run-hooks-check.sh ] && continue
             [ "$f" = tools/run-mutation-gate.sh ] && continue
+            [ "$f" = tools/run-release-checks.sh ] && continue
             echo "::group::$f"
             if ! bash "$f"; then echo "::error::$f failed"; fail=1; fi
             echo "::endgroup::"
@@ -82,6 +102,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          # The release-manifest cases drive run-release-checks.sh, which reads
+          # HEAD's parents. At depth 1 it dies in preflight and the gate reports
+          # "infra died before testing" — correct, and useless.
+          fetch-depth: 2
       # The gate must not be allowed to mistake a machine that cannot compile
       # for a machine that caught ten mutants: with no toolchain, every Swift
       # harness dies in preflight, and dying is indistinguishable from red

@@ -108,6 +108,7 @@ bash tools/run-build-gate.sh        # what a FAILED build may do to a working in
 bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
 bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
+bash tools/run-release-checks.sh    # the release manifests parse, and the version never goes backwards
 bash tools/run-mutation-gate.sh     # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -131,8 +132,13 @@ using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
 which cuts where the session harness cuts so it can reach `builtinPet`).
 
 Eight of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
-`PERCHLING_STATE_SH` — so each can be pointed at a mutant carrying exactly the
-defect it is named after and shown to FAIL. That is the only reason to believe any of them, and the
+`PERCHLING_STATE_SH` — and so does the release gate below
+(`PERCHLING_PLUGIN_JSON`, `PERCHLING_MARKETPLACE_JSON`), so each can be pointed
+at a mutant carrying exactly the defect it is named after and shown to FAIL.
+Four of the release gate's six lines are pinned that way and each of the four
+was shown to ESCAPE against a copy with that one assertion removed, which is
+the difference between proof and a cascade; its two `parses as JSON` lines are
+deliberately unpinned, for the reason given beside them. That is the only reason to believe any of them, and the
 launch one has now been wrong twice in a way its own green lines could not show. Its first
 version asserted `pgrep -x -f` as its own literal text and passed against the
 broken script it was written to catch. The replacement went the same way for a
@@ -159,12 +165,12 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of sixteen defects a harness is named after —
+generates a mutant from HEAD for each of twenty-one defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.
-`.github/workflows/harnesses.yml` runs the harnesses, the gate, and
-`run-hooks-check.sh` on every PR and push to main; the hooks check also runs on
+`.github/workflows/harnesses.yml` runs the harnesses, the gate,
+`run-release-checks.sh` and `run-hooks-check.sh` on every PR and push to main; the hooks check also runs on
 a daily schedule, because the CLI it validates against moves without this repo
 moving. The workflow is a thin caller — everything of substance is one of these
 scripts and runs identically by hand. And thirteen green lines are not thirteen
@@ -172,11 +178,38 @@ guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
 the race window, so they pass against a broken script too and the file labels
 them negative controls rather than coverage.
 
-Nothing else here has a test suite. `tools/run-hooks-check.sh` is not a sixth
-harness — it tests no Swift at all, it asks the installed CLI whether
-`hooks/hooks.json` is loadable — but it belongs to the same release gate,
-because the failure it catches takes the whole plugin down without printing
-anything.
+Nothing else here has a test suite. Two scripts in `tools/` are not layer
+harnesses and are not counted above: `run-hooks-check.sh` tests no Swift at all
+— it asks the installed CLI whether `hooks/hooks.json` is loadable — and
+`run-release-checks.sh` parses `.claude-plugin/plugin.json` and
+`marketplace.json`, which nothing in CI had ever read. Thirty-four releases
+shipped that one version line unchecked, and this repo IS the marketplace, so
+the version landing on main IS the publish: there is no staging where a stray
+comma could be caught later. Both belong to the same release gate, because both
+catch failures that take the whole plugin down without printing anything.
+
+The release one runs in its own ubuntu job rather than the macOS harness loop,
+and is skipped by that loop the way `run-hooks-check.sh` and
+`run-mutation-gate.sh` are. It needs no toolchain, and a manifest check that
+dies alongside `swiftc` is a manifest check that never runs. Its checkout, and
+the mutation gate's, both set `fetch-depth: 2`, because the version comparison
+reads HEAD's parents.
+
+It reads ALL of them, not `HEAD~1`. `HEAD~1` is only the FIRST parent, and the
+hole that leaves was measured rather than argued: a feature branch that merged
+main, resolved the version line keep-ours and was fast-forwarded onto main
+takes main from 1.16.0 back to 1.15.1, and a `HEAD~1` baseline reports
+`1.15.1 -> 1.15.1` and prints six green lines over the exact regression it
+exists to catch. Walking every parent reds it, covers `pull_request` (the merge
+commit's parents include the base tip) and still works at depth 2. It does NOT
+see a regression buried mid-push — a two-commit push whose first commit
+regresses and whose second leaves the line alone compares HEAD against its own
+parent and passes; closing that needs the published baseline, which CI does not
+have. The comparison is NON-DECREASING rather than strictly increasing: most
+commits do not touch that line. A baseline it cannot resolve is an ERROR that
+exits 1 WITHOUT printing a FAIL line, because `run-mutation-gate.sh` scores a
+catch by counting red assertions, and infra death that spells itself FAIL is
+exactly how a broken toolchain once reported "10 mutants caught".
 "Verified" still means: it compiles, the examples still validate, `--export`
 still round-trips, malformed manifests are still rejected, and you have looked
 at a rendered frame. The harness is one more kind of evidence for the code it

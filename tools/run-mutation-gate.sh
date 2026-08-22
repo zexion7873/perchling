@@ -70,6 +70,44 @@ gate() { # gate <name> <src> <envvar> <harness> <old> <new>
   pass=$((pass + 1))
 }
 
+# --- release manifests (cheapest of all, first) -------------------------------
+# These run in milliseconds and guard the one line that actually reaches an
+# install, so they report before anything compiles.
+
+gate manifest-unparseable .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+  '  "license": "MIT",' \
+  '  "license": "MIT"'
+
+# The anchor is the version line's SHAPE, so it survives every 1.x release and
+# needs one edit at 2.0.0 — at which point mutate() reports "anchor not found"
+# and this case fails loudly rather than passing against a clean tree.
+gate version-goes-backwards .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+  '"version": "1.' \
+  '"version": "0.'
+
+# plugin.json and marketplace.json carry two copies of one description, and
+# they have drifted before: one promised half a megabyte while the other
+# promised a megabyte. Nothing held them together until the check this reds.
+gate description-drift .claude-plugin/marketplace.json PERCHLING_MARKETPLACE_JSON tools/run-release-checks.sh \
+  'no Electron.' \
+  'no Electron!'
+
+# The six-space indent is LOAD-BEARING. `"name": "perchling"` occurs twice in
+# marketplace.json and mutate() replaces only the first; the top-level one is
+# never read by the harness, so the naive anchor leaves it 6 passed, 0 failed
+# and this case reports a false "stayed GREEN".
+gate name-drift .claude-plugin/marketplace.json PERCHLING_MARKETPLACE_JSON tools/run-release-checks.sh \
+  '      "name": "perchling",' \
+  '      "name": "perchling-pet",'
+
+# version-goes-backwards cannot reach the semver regex: 0.16.0 satisfies it and
+# reds the comparison instead. A leading zero is the shape that fails the regex
+# while still comparing forward (01.16.0 parses as [1,16,0] >= [1,15,1]), so
+# this is the only one of the five that discriminates that branch.
+gate version-not-semver .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+  '"version": "1.' \
+  '"version": "01.'
+
 # --- shell layer (cheap, first) ----------------------------------------------
 
 gate sid-shape-unchecked scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
