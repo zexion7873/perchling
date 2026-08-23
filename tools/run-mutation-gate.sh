@@ -118,6 +118,35 @@ gate prune-never-retires scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.
   '  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null' \
   '  :'
 
+# cmd_up refuses on the same flag cmd_enable is there to clear, so an enable
+# that stops clearing it prints its line, exits 0, and starts nothing — the
+# exact "enable does nothing" report, with no error anywhere.
+gate enable-honours-disabled scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+  '  rm -f "$ROOT/disabled"' \
+  '  :'
+
+# The guard, not the block: `  if [ -e "$ROOT/disabled" ]; then` occurs once
+# (cmd_up spells its own test `[ -e "$ROOT/disabled" ] && exit 0`). Without it,
+# wake writes the marker and reports success on an install the user turned off.
+gate wake-ignores-disabled scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+  '  if [ -e "$ROOT/disabled" ]; then' \
+  '  if false; then'
+
+# The lie ac98cee removed, restored. cmd_up backgrounds the launch and exits, so
+# a leaked fresh lock stops the pet with nobody able to see it; the only thing
+# that can be right here is the wording, and nothing pinned it.
+gate wake-claims-success scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+  "  echo \"perchling waking — 'pet.sh status' says whether it came up\"" \
+  '  echo "perchling awake"'
+
+# cmd_up is the only other thing that creates $ROOT and it starts with
+# `macos || exit 0`, so on a fresh install `disable` announced success while its
+# touch failed to stderr and the next session start launched the pet anyway.
+gate disable-needs-no-home scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+  '  mkdir -p "$ROOT"
+  touch "$ROOT/disabled"' \
+  '  touch "$ROOT/disabled"'
+
 gate rebuild-loop scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && { [ ! -s "$BUILDLOG" ] || [ ! "$BUILDLOG" -nt "$SRC" ]; }; then' \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; }; then'
@@ -188,6 +217,29 @@ gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose
   'flipped: s.mirror && dragFacingLeft)' \
   'flipped: dragFacingLeft)'
 
+# The unsorted walk: five defective moods, and an unsorted Dictionary picks a
+# different one per process. The case asserts BOTH that eight runs agree and
+# that they name `done`, the alphabetically first — agreement alone would let a
+# lucky unsorted run pass.
+gate moods-walk-unordered scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  'for (key, rows) in moodsRaw.sorted(by: { $0.key < $1.key }) {' \
+  'for (key, rows) in moodsRaw {'
+
+# No pet.json IS the built-in — removing the link is what `useBuiltIn` does — so
+# the old behaviour described a healthy install as broken and put the format's
+# only reference behind writing 460KB to disk first.
+gate no-petjson-reports-broken scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  '        let useBuiltinText = argv.count < 3
+            && (try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil' \
+  '        let useBuiltinText = false'
+
+# The other direction on the same line. `fileExists` FOLLOWS the link, so a
+# dangling pet.json reads as absent and gets answered with a cheerful OK about
+# the built-in — a broken install reported as healthy.
+gate dangling-petjson-masked scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  '(try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil' \
+  '!FileManager.default.fileExists(atPath: installed.path)'
+
 # --- the expensive one, last -------------------------------------------------
 # launch-race is ~34s; every cheap case above has already reported by the time
 # this starts. The mutant is the UNESCAPED pattern, not the missing -x: a raw
@@ -213,6 +265,18 @@ gate running-delegated scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh 
   'running() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }' \
   'running() { __rn; }
 __rn() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }'
+
+# `rmdir` refuses a non-empty directory, and the rename is the only thing that
+# clears one it refused. Without it a stale lock with anything inside it wedges
+# startup permanently — the reclaim runs, the `rmdir` fails silently, the
+# re-`mkdir` fails, and every future session start returns having launched
+# nothing. Only wedged-lock-cleared reaches the fallback: every other scenario's
+# lock is absent, fresh, or empty, and an empty one `rmdir`s fine. The
+# replacement keeps the `2>/dev/null` because the line above ends in `&&` — the
+# mutant has to stay a valid right-hand side, not merely a different string.
+gate wedged-lock-never-cleared scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+  '      { rmdir "$lock" 2>/dev/null || mv "$lock" "$ROOT/.launch.wedged.$$" 2>/dev/null; }' \
+  '      rmdir "$lock" 2>/dev/null'
 
 echo "---"
 echo "$pass mutants caught, $fail escaped"
