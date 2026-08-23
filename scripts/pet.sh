@@ -412,6 +412,13 @@ cmd_stop() {
 }
 
 cmd_disable() {
+  # cmd_up is the only other thing that creates $ROOT and its first line is
+  # `macos || exit 0`, so on a fresh install the home does not exist yet and
+  # this `touch` failed to stderr while the line below still announced success
+  # — the next session start then launched a pet the user had just disabled.
+  # Same class as the wording ac98cee fixed, and worse: `disable` is the
+  # command someone reaches for when they want the pet GONE.
+  mkdir -p "$ROOT"
   touch "$ROOT/disabled"
   pkill -x -f "$BIN_RE" 2>/dev/null
   echo "perchling disabled ('pet.sh enable' to undo)"
@@ -433,6 +440,9 @@ cmd_wake() {
     echo "perchling is disabled — run 'pet.sh enable' first" >&2
     exit 1
   fi
+  # Same hole as cmd_disable's, cosmetic here — nothing can be tucked away on
+  # an install that has never run — but the flag is still dropped on the floor.
+  mkdir -p "$ROOT"
   touch "$ROOT/wake"
   # Same as enable: this is what we asked for, not what happened.
   echo "perchling waking — 'pet.sh status' says whether it came up"

@@ -71,6 +71,24 @@ and what the alternative lost to.
   structural rather than lucky: `artTopInset` reads `activePet.inkTop`, which
   is one stored value on `CustomPet`.
 
+  **The biggest lift any shipped pet takes is 15 rows, and it is the pet
+  celebrating.** `--validate examples/sea-lion.json` prints `inkTop: 6 (moods
+  alone: 21 — sequences reach higher, chrome moves up 15 rows)`. Three sequence
+  frames tie at row 6: `done.2` is a spray plume — near-black outline over `a`
+  #cde8ef and `e` #93edf4 — unbroken from row 6 into the head as one
+  4-connected component of 2959 cells; `done.3` is the raised flipper, outline
+  at row 6 and fur (`c` #ead4bb, `d` #d9c2ab, `g` #cdb59f) from row 7, inside
+  the 3481-cell body; only `hover.0`'s is detached, 79 cells at rows 6–23, cols
+  92–98, a falling droplet clear of the 2390-cell body. The backlog guessed all
+  three were decorative water and filed removing them as the fix. Deleting the
+  droplet buys ZERO rows because the two `done` frames still reach row 6 — and
+  so does deleting all 137 detached blobs in the manifest. Reaching 21 means
+  flattening the spray and dropping the flipper, which is deleting the
+  celebration, so the 15 rows are an accepted cost and the art stays. Nor is
+  sea-lion an outlier: on all six shipped pets a `done` frame sits at the top
+  row, and at 1x the lifts are shark 18, whale 17, sea-lion 15, chinchilla 11,
+  husky 1, otter 1.
+
   **A frame with no ink at all has no top, and scoring it as row 0 broke both
   halves of this.** `inkTopOf` is now the single implementation — it was
   computed twice, once for the pet and once for `--validate`'s explanation of

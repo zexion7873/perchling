@@ -285,6 +285,77 @@ CRLF="$SCRATCH/crlf-key.json"
 printf '%s' '{ "name": "crlf", "palette": { "#": "#FFFFFF", "\r": "#222222", "\n": "#333333", "o": "#101010" }, "moods": { "idle": ["########","########","o##\r\n###","o##\r\n###","########","########","########","########"] }, "eyes": { "box": [0,2,8,2], "socket": "o" } }' > "$CRLF"
 check "CR/LF palette keys are rejected" 1 "$CRLF" "must not be CR/LF"
 
+# --- the diagnosis must be the SAME diagnosis every run -----------------------
+#
+# `moods` is walked as a Swift Dictionary, whose iteration order is randomised
+# per process. Unsorted, a manifest with a defect in more than one mood names a
+# DIFFERENT mood on every run — four across eight runs of one file, measured.
+# Harmless to a user, and a trap for anyone diffing two binaries' output, which
+# is what half the harnesses here do.
+#
+# ALL FIVE moods carry a defect, not two, and the assertion pins the name as
+# well as the agreement. Two defects leave an unsorted walk a 1-in-128 chance of
+# agreeing with itself eight times and passing; five make it 1-in-400000. A gate
+# case that reds only most of the time teaches people to re-run the gate, which
+# is worse than not having the case — the same reason the launch-race gate uses
+# BIN_RE rather than the pgrep -x mutant.
+BAD='["!!!!!!!!","........","..####..","..####..","..####..","..####..","........","........"]'
+TWO="$SCRATCH/all-defective.json"
+cat > "$TWO" <<JSON
+{ "name": "all-defective",
+  "palette": { "#": "#FFFFFF", "o": "#888888" },
+  "moods": { "idle": $BAD, "running": $BAD, "waiting": $BAD, "done": $BAD, "error": $BAD } }
+JSON
+runs="$("$BIN" --validate "$TWO" 2>&1 | head -1; "$BIN" --validate "$TWO" 2>&1 | head -1
+        "$BIN" --validate "$TWO" 2>&1 | head -1; "$BIN" --validate "$TWO" 2>&1 | head -1
+        "$BIN" --validate "$TWO" 2>&1 | head -1; "$BIN" --validate "$TWO" 2>&1 | head -1
+        "$BIN" --validate "$TWO" 2>&1 | head -1; "$BIN" --validate "$TWO" 2>&1 | head -1)"
+distinct="$(printf '%s\n' "$runs" | sort -u | wc -l | tr -d ' ')"
+# `done` is not arbitrary: it is alphabetically first of the five, so it is the
+# mood a SORTED walk must reach first. Agreement alone would also be satisfied
+# by an unsorted walk that got lucky; naming which one closes that.
+if [ "$distinct" = 1 ] && printf '%s\n' "$runs" | head -1 | grep -q '^invalid pet manifest: done '; then
+  echo "  ok   eight runs name the first mood    $(printf '%s\n' "$runs" | head -1)"
+  pass=$((pass+1))
+else
+  echo "FAIL eight runs named $distinct distinct moods, wanted 1 and it must be done"
+  printf '%s\n' "$runs" | sort -u | sed 's/^/    /'
+  fail=$((fail+1))
+fi
+
+# --- no pet.json is the BUILT-IN, not a failure -------------------------------
+#
+# Removing the link is literally what `useBuiltIn` does, so reporting "cannot
+# read pet.json" there described a healthy install as broken — and it put the
+# format's own reference behind writing 460KB of `--export` to disk first. The
+# home here is empty, so what answers is the EMBEDDED placeholder, a path
+# nothing else in this repo reaches.
+EMPTY="$SCRATCH/empty-home"; mkdir -p "$EMPTY"
+out="$(PERCHLING_HOME="$EMPTY" "$BIN" --validate 2>&1)"; rc=$?
+if [ "$rc" = 0 ] && printf '%s' "$out" | grep -q '(built-in)'; then
+  echo "  ok   no pet.json reports the built-in  $(printf '%s' "$out" | head -1)"
+  pass=$((pass+1))
+else
+  echo "FAIL no pet.json must report the built-in, got exit $rc"
+  printf '%s' "$out" | sed 's/^/    /'
+  fail=$((fail+1))
+fi
+
+# The other direction, and the reason the check is `attributesOfItem` rather
+# than `fileExists`: a DANGLING pet.json is a broken install, not a request for
+# the built-in, and answering it with a cheerful OK would hide the breakage.
+DANGLE="$SCRATCH/dangling-home"; mkdir -p "$DANGLE"
+ln -s "$DANGLE/gone.json" "$DANGLE/pet.json"
+out="$(PERCHLING_HOME="$DANGLE" "$BIN" --validate 2>&1)"; rc=$?
+if [ "$rc" != 0 ] && ! printf '%s' "$out" | grep -q '(built-in)'; then
+  echo "  ok   a dangling pet.json still errors"
+  pass=$((pass+1))
+else
+  echo "FAIL a dangling pet.json was masked as the built-in, exit $rc"
+  printf '%s' "$out" | sed 's/^/    /'
+  fail=$((fail+1))
+fi
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -135,12 +135,17 @@ Rules the loader enforces:
   sequences, five frames apiece, including the `drag` row and its `mirror`
   flag. `perchling --export` prints it.
 
-  **No shipped pet declares `eyes`, so this document is your only reference for
-  that block.** Every pet that ships animates all five moods, and a mood loop
-  suppresses the gaze and the blink, so the block would buy them nothing. If a
-  user wants eyes that follow, you are writing the first one — read the `eyes`
-  rules above carefully and lean on `--validate`, which prints the box it read
-  and says `blink UNAVAILABLE` when nothing in the box is bright enough.
+  **No shipped pet declares `eyes`**, so there is no worked example to copy —
+  read the `eyes` rules above, and `README.md`'s "Eyes that follow", which
+  covers the same block from the user's side. Every pet that ships animates all
+  five moods, and a mood loop suppresses the gaze and the blink, so the block
+  would buy them nothing. If a user wants eyes that follow, you are writing the
+  first one: lean on `--validate`, which prints the box it read and says `blink
+  UNAVAILABLE` when nothing in the box is bright enough.
+
+  `plays` does have one. `examples/chinchilla.json` declares `"plays": 2` on its
+  `tap`, and `--validate` reports it as `5 steps x2 ... 1.90s total` — the arc
+  runs twice off one copy of the frames.
 
 ## Workflow
 
@@ -156,11 +161,16 @@ Rules the loader enforces:
    export carries everything it has — all eight sequences at five frames each —
    and loses nothing.
 
-   Two things about it shape what a remix can be. It is 449KB and about 4700
+   Two things about it shape what a remix can be. It is 460KB and about 4,700
    lines, so do not read it whole; slice out the part you are changing. And it
    declares no `eyes`, because animating every mood gives up the gaze and the
    blink anyway — adding eyes to a remix means dropping at least one mood's
    sequence first, not just appending a block.
+
+   If all you want is the SHAPE — canvas, moods, ink count, every sequence's
+   frames and timeline — do not take the snapshot at all. `perchling --validate`
+   with no arguments reports the active pet, and with no `pet.json` installed
+   that is the built-in, read straight from disk with nothing written.
 1. Settle the creature with the user: species, colors, vibe.
 2. Draw the five grids. Design `idle` first, then copy it per mood and
    re-stamp the face:
@@ -212,18 +222,27 @@ Rules the loader enforces:
 
 ## Worked examples
 
-**Do not read a file under `examples/` whole.** The six that ship are 449–589 KB
-and 4,500–6,000 lines each — one of them will not fit in your context, and the
+**Do not read a file under `examples/` whole.** The six that ship are 460–603 KB
+and 3,900–4,700 lines each — one of them will not fit in your context, and the
 one thing you would learn from the whole file is what a wall of row strings looks
 like. Two sources, and which one you want depends on the question:
 
-- **`perchling --export`** — the built-in pet, 92×96 at scale 1, declaring all
-  eight sequences at five frames apiece. About 449KB, so pull the part you need
-  rather than printing it all:
+- **`perchling --validate`** — with no path it reports the ACTIVE pet, and with
+  no `pet.json` installed that is the built-in. One command, nothing written to
+  disk, and it answers most of what the whole file would: name, canvas, scale,
+  which moods exist, how many inks, the eye box or its absence, every sequence's
+  frame count and resolved timeline, and `inkTop`.
 
   ```bash
-  "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --export | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["name"], d["scale"], len(d["palette"]), "inks"); print({k:v["steps"] for k,v in d["sequences"].items()})'
+  "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --validate
   ```
+
+  Point it at a path for any other manifest: `--validate examples/otter.json`.
+
+- **`perchling --export`** — the built-in pet as a manifest, 460KB. This is the
+  snapshot for a REMIX, not a way to read the format: it is the only thing that
+  hands back every row, and the only reason to print it is that you are about to
+  edit those rows.
 
 - **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — `otter`, `chinchilla`, `whale`,
   `shark`, `sea-lion`. Five animals at scale 1, each declaring all eight

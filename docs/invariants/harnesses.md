@@ -65,6 +65,17 @@ Verify without launching:
   `tools/run-launch-race.sh` compiles a five-line C stub for exactly this and is
   the worked example: the stub must be something you BUILT, whose entire
   behaviour you can read.
+
+  **`pet.sh up` is not the only live subcommand.** `wake` and `enable` both end
+  in `cmd_up manual`, so they reach the same launch path — and reach it through
+  the REBUILD gate, which will run `swiftc -O` on the checkout's `pet.swift`
+  before it launches. An agent writing this layer pointed `CLAUDE_CONFIG_DIR` at
+  a scratch directory and ran `pet.sh wake` with no stub planted yet, on the
+  reasoning that a scratch home is a sandbox: it compiled the checkout into that
+  home and opened a real pet window from it. A scratch home is not a sandbox
+  until the stub is already in it with a newer mtime than `pet.swift`.
+  `tools/run-toggle-checks.sh` plants the stub, and copies `pet.sh` beside a
+  dummy `pet.swift` it owns, before it runs a single case.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`
