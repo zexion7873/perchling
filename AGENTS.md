@@ -108,13 +108,14 @@ bash tools/run-build-gate.sh        # what a FAILED build may do to a working in
 bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
 bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
+bash tools/run-toggle-checks.sh     # disable / enable / wake, and what each may claim
 bash tools/run-release-checks.sh    # the release manifests parse, and the version never goes backwards
 bash tools/run-mutation-gate.sh     # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Eight layers have harnesses — the session/tray layer and the pet library
+Nine layers have harnesses — the session/tray layer and the pet library
 (`tools/run-session-harness.sh`), `state.sh` itself
 (`tools/run-state-checks.sh`, shell only, since that script compiles nothing
 and launches nothing), `cmd_up`'s housekeeping
@@ -129,9 +130,14 @@ launch path (`tools/run-launch-race.sh`, which is shell only and compiles a C
 stub rather than touching `pet.swift`) and what a failed build may do to a
 working install (`tools/run-build-gate.sh`, shell only for the same reason, and
 using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
-which cuts where the session harness cuts so it can reach `builtinPet`).
+which cuts where the session harness cuts so it can reach `builtinPet`) and the
+three commands that take the pet off the screen and put it back
+(`tools/run-toggle-checks.sh` — a FOURTH file rather than a fifth section of an
+existing one, for the reason the other three are separate: it covers
+`cmd_disable`/`cmd_enable`/`cmd_wake`, not `cmd_up`, so a failure has to name
+the toggle).
 
-Eight of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
+Nine of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
 `PERCHLING_STATE_SH` — and so does the release gate below
 (`PERCHLING_PLUGIN_JSON`, `PERCHLING_MARKETPLACE_JSON`), so each can be pointed
 at a mutant carrying exactly the defect it is named after and shown to FAIL.
@@ -165,7 +171,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of twenty-one defects a harness is named after —
+generates a mutant from HEAD for each of twenty-nine defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.
