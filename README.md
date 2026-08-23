@@ -12,7 +12,6 @@ needs you.**
 
 [![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
-[![Binary](https://img.shields.io/badge/binary-under_500KB-brightgreen?style=flat)](#-how-it-works)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 [![GitHub stars](https://img.shields.io/github/stars/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/commits)
@@ -291,6 +290,10 @@ after it stops being re-stamped for the sessions that end without saying so.
 That's the whole protocol: no IPC, no daemon framework, and no network traffic
 at runtime.
 
+The built-in creature is a manifest shipped beside the binary, parsed by the
+same loader a pet you draw goes through. `--export` hands that text back
+verbatim, so the pet you see is exactly the file you can start editing.
+
 ---
 
 ## 🎛️ Controls
@@ -368,11 +371,3 @@ Once you have checked, `rm -rf ~/.claude/perchling` removes the rest.
 
 Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
-
-The built-in creature is a manifest shipped beside the binary, parsed by the
-same loader a pet you draw goes through. `--export` hands that text back
-verbatim, so the pet you see is exactly the file you can start editing.
-
-## 📄 License
-
-[MIT](LICENSE)
