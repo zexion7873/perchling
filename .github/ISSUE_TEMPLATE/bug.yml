@@ -67,14 +67,14 @@ body:
   - type: textarea
     id: status
     attributes:
-      label: Output of `bash scripts/pet.sh status`
-      description: Run it from the marketplace clone, `~/.claude/plugins/marketplaces/perchling`. Pasted as-is — it is one of the few things here that cannot be misremembered.
+      label: Output of pet.sh status
+      description: "`bash scripts/pet.sh status`, run from the marketplace clone at `~/.claude/plugins/marketplaces/perchling`. Pasted as-is — it is one of the few things in a report that cannot be misremembered."
       render: text
 
   - type: textarea
     id: manifest
     attributes:
-      label: If a custom pet is involved, what `--validate` says about it
+      label: If a custom pet is involved, what validate says about it
       description: "`~/.claude/perchling/bin/perchling --validate <path>`. With no path it reports the active pet."
       render: text
 
@@ -83,7 +83,7 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: I have read the version I am running, not the version on `main`.
+        - label: I have read the version I am running, not the version on main.
           required: true
         - label: This is about the pet's behaviour, not about Claude Code itself.
           required: true
