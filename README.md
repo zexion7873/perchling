@@ -290,6 +290,10 @@ after it stops being re-stamped for the sessions that end without saying so.
 That's the whole protocol: no IPC, no daemon framework, and no network traffic
 at runtime.
 
+The built-in creature is a manifest shipped beside the binary, parsed by the
+same loader a pet you draw goes through. `--export` hands that text back
+verbatim, so the pet you see is exactly the file you can start editing.
+
 ---
 
 ## 🎛️ Controls
@@ -367,7 +371,3 @@ Once you have checked, `rm -rf ~/.claude/perchling` removes the rest.
 
 Unofficial community project. Not affiliated with, endorsed by, or sponsored by
 Anthropic or OpenAI.
-
-The built-in creature is a manifest shipped beside the binary, parsed by the
-same loader a pet you draw goes through. `--export` hands that text back
-verbatim, so the pet you see is exactly the file you can start editing.
