@@ -428,7 +428,12 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     }
     var frames: [Mood: [[NSColor?]]] = [:]
     var dims = (w: 0, h: 0)
-    for (key, rows) in moodsRaw {
+    // Sorted for the same reason `sequences` is sorted 85 lines below: a Swift
+    // Dictionary randomises its iteration order per process, so an unsorted walk
+    // makes a manifest with more than one defect name a DIFFERENT mood on every
+    // run — measured at four across eight runs of one file. Harmless to a user
+    // and a trap for anyone diffing two binaries' `--validate` output.
+    for (key, rows) in moodsRaw.sorted(by: { $0.key < $1.key }) {
         guard let mood = Mood(rawValue: key) else {
             throw PetError("unknown mood \"\(key)\" (idle, running, waiting, done, error)")
         }
@@ -2888,9 +2893,25 @@ if argv.count >= 2 {
         print(exportBuiltin())
         exit(0)
     case "--validate":
-        let target = argv.count >= 3 ? URL(fileURLWithPath: argv[2]) : root.appendingPathComponent("pet.json")
+        // No path and no pet.json is not a failure: the built-in IS the active
+        // pet in that state — removing the link is literally what `useBuiltIn`
+        // does. Reporting "cannot read pet.json" over a healthy install was
+        // wrong, and it also put the format's own reference out of reach: an
+        // author who wanted to see the shape had to write 460KB of `--export`
+        // to disk and validate that.
+        //
+        // attributesOfItem does NOT follow the link, so a DANGLING pet.json
+        // still counts as present and its read error still surfaces. Falling
+        // back to the built-in there would report a healthy install over a
+        // broken one.
+        let installed = root.appendingPathComponent("pet.json")
+        let target = argv.count >= 3 ? URL(fileURLWithPath: argv[2]) : installed
+        let useBuiltinText = argv.count < 3
+            && (try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil
         do {
-            let pet = try loadCustomPet(target)
+            let pet = useBuiltinText
+                ? try loadCustomPet(Data(builtinText.utf8))
+                : try loadCustomPet(target)
             let moods = pet.frames.keys.map { $0.rawValue }.sorted().joined(separator: ", ")
             // The eye box is reported because a manifest can declare one and
             // still get no blink — synthesis needs lit pixels inside the box,
@@ -2928,7 +2949,15 @@ if argv.count >= 2 {
                     // the next.
                     + (s.mirror && k == .drag ? ", mirrors when dragged left" : "")
             }
-            print("OK: \(pet.name) \(pet.width)x\(pet.height) @\(Int(pet.scale))x [\(moods)] — \(eyes)")
+            // Inks USED, not palette keys: an unused key says nothing, and the
+            // count is the one number that tells an author what kind of file
+            // they are looking at. Every shipped pet reads 44 here, which is
+            // what "quantised from a raster render, do not hand-write this"
+            // looks like from the outside.
+            let inks = Set(pet.frames.values.flatMap { $0.flatMap { $0 } }.compactMap { $0 }).count
+            let source = useBuiltinText ? " (built-in)" : ""
+            print("OK: \(pet.name)\(source) \(pet.width)x\(pet.height) @\(Int(pet.scale))x "
+                + "[\(moods)] \(inks) inks — \(eyes)")
             // One line per sequence: a timeline is six numbers where a single
             // duration was one, and the locomotion row on a real pet is eight.
             if seqLines.isEmpty { print("  no sequences") } else { print(seqLines.joined(separator: "\n")) }
