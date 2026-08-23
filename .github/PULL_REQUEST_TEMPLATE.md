@@ -22,8 +22,7 @@
 
 ## Docs this makes stale
 
-<!-- A change to behaviour, interfaces, or project state is not done until the
-     docs it invalidates are updated: README, AGENTS.md, the file under
-     docs/invariants/ for the layer you touched, and skills/draw-pet/SKILL.md if
-     you changed the manifest format. "None" is a fine answer — say it out loud
-     rather than leaving this blank. -->
+<!-- Which docs does this change invalidate? "None" is a fine answer — say it
+     out loud rather than leaving this blank. CONTRIBUTING.md lists the four
+     that usually go stale, and keeps that list so this template does not have
+     to hold a second copy of it. -->
