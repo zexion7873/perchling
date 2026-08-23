@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/zexion7873/perchling/security/advisories/new
+    about: Do not open a public issue. This repository is the marketplace people install from, so a public exploit is a working exploit against every install.
+  - name: How the format works
+    url: https://github.com/zexion7873/perchling/blob/main/skills/draw-pet/SKILL.md
+    about: Drawing a pet, the manifest format, the eyes block, and sequences — most questions about custom pets are answered here.

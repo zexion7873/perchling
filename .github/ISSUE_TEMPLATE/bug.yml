@@ -1,0 +1,89 @@
+name: Bug report
+description: The pet did something wrong, or did nothing when it should have
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things decide whether a report is actionable here, and both are easy
+        to check before you write anything:
+
+        - **`bash scripts/pet.sh status`** — says whether the binary, the process
+          and the session refcounts are what you think they are.
+        - **`claude plugin list`** — the version that actually reached you. An update
+          only lands on sessions started *after* it, so a fix you read about may
+          not be the one running.
+
+  - type: input
+    id: version
+    attributes:
+      label: perchling version
+      description: "`claude plugin list` — the line for `perchling@perchling`. Not the version on `main`: a plugin update only reaches sessions started after it."
+      placeholder: "1.17.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where were you running Claude Code?
+      description: This is the single most useful field. The desktop app and the terminal CLI dispatch different hook events, and at least one confirmed bug exists only in one of them.
+      options:
+        - Terminal CLI
+        - Desktop app (Mac)
+        - VS Code / JetBrains extension
+        - Claude Code on the web
+        - More than one, and it differs between them
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: "`sw_vers -productVersion`. The overlay is AppKit and some of it is version-sensitive."
+      placeholder: "26.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      description: The mood it showed versus the mood it should have shown, and what you were doing at the time.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to make it happen again
+      description: If you cannot reproduce it, say so — an intermittent report with real timestamps beats a confident guess.
+      placeholder: |
+        1. Start a session in …
+        2. Run a tool that …
+        3. The pet stays on `running` for the whole prompt
+
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `bash scripts/pet.sh status`
+      description: Run it from the marketplace clone, `~/.claude/plugins/marketplaces/perchling`. Pasted as-is — it is one of the few things here that cannot be misremembered.
+      render: text
+
+  - type: textarea
+    id: manifest
+    attributes:
+      label: If a custom pet is involved, what `--validate` says about it
+      description: "`~/.claude/perchling/bin/perchling --validate <path>`. With no path it reports the active pet."
+      render: text
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have read the version I am running, not the version on `main`.
+          required: true
+        - label: This is about the pet's behaviour, not about Claude Code itself.
+          required: true

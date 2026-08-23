@@ -1,0 +1,36 @@
+name: Idea
+description: Something the pet should do, or a pet worth shipping
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You do not need an issue to draw a pet — `draw me a cat pet` in any session
+        does it, and nothing about your pet has to be in this repository. Open one
+        of these when you want something in the *plugin* to change.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is annoying you
+      description: The situation, not the solution. Half of what has shipped here started as somebody describing a moment where the pet was unhelpful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you had in mind
+      description: Optional. A rough shape is fine, and so is "no idea, but this bothers me."
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which part, if you know
+      options:
+        - The pet's art or animation
+        - What it does on a mood (waiting, done, error…)
+        - The bubble, the chip, or the tray menu
+        - The manifest format for custom pets
+        - Install, update, or the shell commands
+        - Not sure
