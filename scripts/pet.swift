@@ -449,13 +449,19 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     }
     guard frames[.idle] != nil else { throw PetError("moods.idle is required") }
     // Finer-grained pets: a big grid at scale 2 beats a small grid at 4 —
-    // same footprint on screen, four times the detail.
-    var scale = 4
+    // same footprint on screen, four times the detail. Fractional values are
+    // the size dial BETWEEN those grid stops: grids cap at 128 columns and the
+    // sea pets already touch that ceiling, so a pet that needs a 1.15...2x
+    // footprint has nowhere to go in pixels. draw() runs with antialiasing
+    // off, so fractional cells snap to device pixels rather than blur —
+    // rendered at 1.4 and 2.09 on a 2x backing and eyeballed before this
+    // range was widened.
+    var scale: CGFloat = 4
     if let s = top["scale"] {
-        guard let n = s as? Int, (1...4).contains(n) else {
-            throw PetError("\"scale\" must be an integer 1...4 (screen points per pixel)")
+        guard let n = s as? Double, (1.0...4.0).contains(n) else {
+            throw PetError("\"scale\" must be a number 1.0...4.0 (screen points per pixel)")
         }
-        scale = n
+        scale = CGFloat(n)
     }
     var eyes: EyeBox?
     var blinkFrame: [[NSColor?]]?
@@ -598,7 +604,7 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     // looking, since hover is the cursor being on the pet.
     let inkTop = inkTopOf(Array(frames.values) + sequences.values.flatMap { $0.frames }) ?? 0
     return CustomPet(name: (top["name"] as? String) ?? "custom",
-                     width: dims.w, height: dims.h, scale: CGFloat(scale), frames: frames,
+                     width: dims.w, height: dims.h, scale: scale, frames: frames,
                      eyes: eyes, inkTop: inkTop, blinkFrame: blinkFrame,
                      sequences: sequences, unknownSequenceKeys: unknownSequenceKeys,
                      legacyMsKeys: legacyMsKeys)
@@ -2971,7 +2977,11 @@ if argv.count >= 2 {
             // looks like from the outside.
             let inks = Set(pet.frames.values.flatMap { $0.flatMap { $0 } }.compactMap { $0 }).count
             let source = useBuiltinText ? " (built-in)" : ""
-            print("OK: \(pet.name)\(source) \(pet.width)x\(pet.height) @\(Int(pet.scale))x "
+            // A plain Int() cast would truncate 1.4 to "@1x" — the one report
+            // an author has about their own scale, wrong by up to a third.
+            let scaleText = pet.scale == pet.scale.rounded()
+                ? "\(Int(pet.scale))" : "\(pet.scale)"
+            print("OK: \(pet.name)\(source) \(pet.width)x\(pet.height) @\(scaleText)x "
                 + "[\(moods)] \(inks) inks — \(eyes)")
             // One line per sequence: a timeline is six numbers where a single
             // duration was one, and the locomotion row on a real pet is eight.

@@ -538,7 +538,7 @@
     "y" : "#666b76",
     "z" : "#60646f"
   },
-  "scale" : 1,
+  "scale" : 1.15,
   "sequences" : {
     "done" : {
       "frames" : [

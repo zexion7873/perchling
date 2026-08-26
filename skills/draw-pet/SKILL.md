@@ -50,14 +50,20 @@ Rules the loader enforces:
   whole point of the pet.
 - Every row in a mood must be the same length, and every mood the same size:
   8–128 in both dimensions.
-- **scale** (optional, integer 1–4, default 4) is screen points per pixel.
+- **scale** (optional, number 1.0–4.0, default 4) is screen points per pixel.
   The art occupies width×scale by height×scale points — keep that roughly
   80–130 points wide so the pet stays a corner creature, not a billboard.
   (The window is a little larger: the app adds its own margin for the
   animation. Size the art, not the window.) Within that budget, scale is the
   sharpness dial: 24×24 at scale 4 is chunky retro, 96×96 at scale 1 is the
-  same footprint with sixteen times the detail. The built-in pet sits at
-  scale 1 for exactly this reason.
+  same footprint with sixteen times the detail. Fractional values are the
+  size dial between those stops — grids cap at 128 columns, so a big pet
+  that comes out small has nowhere to grow in pixels; `1.15` makes it 15%
+  larger instead. Edges stay crisp (the renderer snaps rather than blurs),
+  so prefer the finest grid that fits and use scale for the last stretch.
+  Older perchling versions reject a fractional scale loudly, naming their
+  integer rule — a shared pet file either loads right or says why, never
+  silently shrinks.
 - **eyes** (optional) makes the eyes follow the cursor while the pet waits and
   blink on their own: `"eyes": { "box": [x, y, width, height], "socket": "k" }`.
   `box` frames the eyes, `socket` is the palette key of the flat color behind
@@ -245,8 +251,9 @@ like. Two sources, and which one you want depends on the question:
   edit those rows.
 
 - **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — `otter`, `chinchilla`, `whale`,
-  `shark`, `sea-lion`. Five animals at scale 1, each declaring all eight
-  sequences off five frames apiece. The husky is one of them and is also the
+  `shark`, `sea-lion`. Five animals on scale-1 grids with a fractional
+  `scale` bringing each to a ~90-point creature height, each declaring all
+  eight sequences off five frames apiece. The husky is one of them and is also the
   built-in, which is why it has no row of its own — the built-in row already is
   it.
 

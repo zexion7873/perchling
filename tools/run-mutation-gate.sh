@@ -223,6 +223,20 @@ gate blank-frame-collapses scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manif
   'frames.compactMap { $0.firstIndex { $0.contains { $0 != nil } } }.min()' \
   'frames.map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }.min()'
 
+# The scale bounds, dropped: 0.9 and 4.1 then load fine, and the failure the
+# range exists for — a pet scaled to nothing or to four screens — arrives with
+# no error anywhere, on a value the author probably fat-fingered.
+gate scale-range-unguarded scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  'guard let n = s as? Double, (1.0...4.0).contains(n) else {' \
+  'guard let n = s as? Double else {'
+
+# The report regressed to the Int() cast: --validate calls 1.4 "@1x", which is
+# the one report an author has about their own scale, wrong by up to a third.
+gate scale-report-truncated scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  '            let scaleText = pet.scale == pet.scale.rounded()
+                ? "\(Int(pet.scale))" : "\(pet.scale)"' \
+  '            let scaleText = "\(Int(pet.scale))"'
+
 gate rescue-swallowed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    try migrateLoosePet(root: root)' \
   '    try? migrateLoosePet(root: root)'

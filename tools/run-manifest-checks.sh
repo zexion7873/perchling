@@ -272,6 +272,26 @@ check "and the manifest still loads" 0 \
   "$(keyfixture seq-unknown-loads "" ", \"sequences\": { \"sparkle\": { \"frames\": [$FLAT], \"steps\": [[0,200]] } }")" \
   'OK' '!invalid pet manifest'
 
+# --- fractional scale ---------------------------------------------------------
+#
+# The animals' grids sit at the 128-column ceiling, so fractional scale is the
+# only size dial they have (#101). Integers stay valid and mean what they
+# always meant; the bounds stay LOUD, and the @x report must print the real
+# value — an Int() cast would call 1.4 "@1x", which is the one report an
+# author has about their own scale.
+check "fractional scale accepted and reported" 0 \
+  "$(keyfixture scale-frac "" ", \"scale\": 1.4")" \
+  "@1.4x"
+check "integer scale still accepted" 0 \
+  "$(keyfixture scale-int "" ", \"scale\": 2")" \
+  "@2x"
+check "scale below the range is rejected" 1 \
+  "$(keyfixture scale-low "" ", \"scale\": 0.9")" \
+  "1.0...4.0"
+check "scale above the range is rejected" 1 \
+  "$(keyfixture scale-high "" ", \"scale\": 4.1")" \
+  "1.0...4.0"
+
 # --- CR/LF palette keys -------------------------------------------------------
 #
 # The one spot where the byte fast path and the grapheme walks disagree about a
