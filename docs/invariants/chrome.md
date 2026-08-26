@@ -79,7 +79,7 @@ and what the alternative lost to.
   4-connected component of 2959 cells; `done.3` is the raised flipper, outline
   at row 6 and fur (`c` #ead4bb, `d` #d9c2ab, `g` #cdb59f) from row 7, inside
   the 3481-cell body; only `hover.0`'s is detached, 79 cells at rows 6–23, cols
-  92–98, a falling droplet clear of the 2390-cell body. The backlog guessed all
+  29–35, a falling droplet clear of the 2390-cell body. The backlog guessed all
   three were decorative water and filed removing them as the fix. Deleting the
   droplet buys ZERO rows because the two `done` frames still reach row 6 — and
   so does deleting all 137 detached blobs in the manifest. Reaching 21 means
