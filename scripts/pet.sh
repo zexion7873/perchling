@@ -325,6 +325,38 @@ cmd_up() {
   if [ -f "$BUILTIN_SRC" ] && ! cmp -s "$BUILTIN_SRC" "$BUILTIN"; then
     cp "$BUILTIN_SRC" "$ROOT/.builtin.$$" 2>/dev/null && mv -f "$ROOT/.builtin.$$" "$BUILTIN" 2>/dev/null
   fi
+  # A picked shipped pet is a copy in pets/, and the menu hides the shipped row
+  # while that copy exists — so without this loop no art update can ever reach
+  # a pet the user has picked. pets/.shipped/<name>.json is the pick-time
+  # snapshot the menu records at adopt time, and it is the PROOF: a copy still
+  # matching its snapshot is untouched and may take the current shipped bytes.
+  # A copy that differs carries the user's own edits and is never touched —
+  # clobbering a hand-tuned pet is the same class of loss clearPetLink's
+  # ordering guards against. A copy with no snapshot predates the record and
+  # stays frozen: no proof, no refresh.
+  # The copy is refreshed FIRST, its snapshot second. Killed between the two,
+  # the next run lands in the lib-matches-src arm below and re-syncs the
+  # snapshot; the reverse order would leave copy != snapshot, which reads as a
+  # user edit, and that pet would silently freeze forever — the very bug this
+  # loop exists to fix, reintroduced by a kill window.
+  PETS="$ROOT/pets"
+  for snap in "$PETS/.shipped"/*.json; do
+    [ -e "$snap" ] || continue
+    name="${snap##*/}"
+    lib="$PETS/$name"
+    src="$EXAMPLES/$name"
+    # A record whose pet is gone is debris; a pet whose shipped source was
+    # retired may be someone's only copy, so that one keeps both files.
+    if [ ! -f "$lib" ]; then rm -f "$snap"; continue; fi
+    [ -f "$src" ] || continue
+    if cmp -s "$src" "$lib"; then
+      cmp -s "$src" "$snap" || { cp "$src" "$ROOT/.snap.$$" 2>/dev/null && mv -f "$ROOT/.snap.$$" "$snap" 2>/dev/null; }
+      continue
+    fi
+    cmp -s "$lib" "$snap" || continue
+    cp "$src" "$ROOT/.pet.$$" 2>/dev/null && mv -f "$ROOT/.pet.$$" "$lib" 2>/dev/null &&
+      cp "$src" "$ROOT/.snap.$$" 2>/dev/null && mv -f "$ROOT/.snap.$$" "$snap" 2>/dev/null
+  done
   # (Re)build when missing or when a plugin update shipped newer source —
   # unless this exact source has already been tried and failed, which a
   # $BUILDLOG newer than $SRC records. Without that arm, source that compiles

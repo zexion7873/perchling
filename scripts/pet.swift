@@ -737,7 +737,22 @@ func adoptShippedPet(_ src: URL, root: URL) throws -> URL {
     let dir = petsDir(root)
     try fm.createDirectory(at: dir, withIntermediateDirectories: true)
     let dest = dir.appendingPathComponent(src.lastPathComponent)
-    if !fm.fileExists(atPath: dest.path) { try fm.copyItem(at: src, to: dest) }
+    if !fm.fileExists(atPath: dest.path) {
+        try fm.copyItem(at: src, to: dest)
+        // The pick-time bytes, recorded whole in pets/.shipped/ so cmd_up can
+        // prove the copy above is still untouched before replacing it with
+        // newer shipped art — without this record every picked pet is frozen
+        // at pick time forever. A whole copy rather than a hash keeps the
+        // proof a `cmp` on both sides instead of a Swift/shell hash contract.
+        // Best-effort on purpose: a pick must not fail because its provenance
+        // could not be written — the copy then simply never auto-refreshes,
+        // which is the pre-record behaviour.
+        let snaps = dir.appendingPathComponent(".shipped")
+        try? fm.createDirectory(at: snaps, withIntermediateDirectories: true)
+        let snap = snaps.appendingPathComponent(src.lastPathComponent)
+        try? fm.removeItem(at: snap)
+        try? fm.copyItem(at: src, to: snap)
+    }
     return dest
 }
 

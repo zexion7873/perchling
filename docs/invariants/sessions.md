@@ -32,6 +32,35 @@ and what the alternative lost to.
   `pet.json` intact, and both mutations were shown to fail that pair. The
   collision suffix is asserted beside it, because a second rescue overwriting
   the first is the same loss one step along.
+- **A picked shipped pet refreshes only over proof, and the proof is a file.**
+  `adoptShippedPet` copies the shipped manifest into `pets/` and records the
+  same bytes again at `pets/.shipped/<name>.json`; `cmd_up` then refreshes a
+  library copy to the currently shipped bytes only while the copy still
+  matches its record, updating the record in the same pass. Without the loop,
+  no art update can ever reach a picked pet — the menu hides the shipped row
+  while the copy exists, so the pick-time snapshot is all the user can ever
+  see (measured on a live install: four copies still carrying mid-development
+  bytes after the 1.17.2 repairs shipped). A copy that differs from its
+  record carries the user's edits — the library is theirs — and is never
+  touched; a copy with NO record predates the mechanism and stays frozen,
+  because without proof "stale shipped snapshot" and "hand-tuned pet" are
+  indistinguishable on disk, and guessing wrong is the `clearPetLink` class
+  of loss. The record is a whole copy rather than a hash so both writers stay
+  a `cmp`: a hash is a Swift/shell contract on hasher and encoding, and those
+  two drifting apart is invisible until it eats an edit. Order matters twice.
+  `cmd_up` writes the COPY first and the record second — killed between the
+  two, the next run finds copy == shipped and re-syncs the record; the
+  reverse order leaves copy != record, which reads as a user edit and freezes
+  that pet forever, the original bug reborn inside its own fix. And a copy
+  that is already current is never rewritten in place: `pollPet` reloads on
+  mtime, so a needless staged rename repaints the pet on every session start.
+  An orphaned record (pet deleted by hand) is pruned; a retired shipped pet
+  (source gone from `examples/`) keeps both files, because the copy may be
+  the only one anywhere. `petChoices` scans `pets/` for `.json` files only,
+  so `.shipped` never grows a menu row. Pinned in
+  `tools/run-library-refresh.sh`, the adopt half in
+  `tools/session-harness.swift`, and all four mutations — no refresh, no
+  pristine guard, no heal arm, no record at adopt — were shown to fail.
 - **A checkmark means "on screen", which is not "what the link points at".**
   A manifest that fails to load leaves `pet.json` pointing at it while the
   built-in is what renders, and a dotfiles `pet.json` can point outside `pets/`

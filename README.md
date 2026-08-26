@@ -248,7 +248,9 @@ A pet is one JSON file, so sharing one is sending one file. Your pets live in
 `~/.claude/perchling/pets/`, and `pet.json` is a symlink to whichever one is
 active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
-copied into your library the first time you pick one. Six ship in
+copied into your library the first time you pick one. A copy you have not
+edited keeps up with plugin updates on its own; the moment you edit it, it is
+yours and updates never touch it again. Six ship in
 [`examples/`](examples/), all of them animals that animate every mood and every
 reaction, `drag` included — `husky`, `otter` and `chinchilla` on land, `whale`,
 `shark` and `sea-lion` in the water. Only five have a row: whichever one is

@@ -587,6 +587,44 @@ do {
     try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: petsDir(root).path)
 }
 
+do {
+    // Adopting a shipped pet records its pick-time bytes in pets/.shipped/ —
+    // the proof cmd_up's refresh needs before it may replace the copy with
+    // newer shipped art. No record means no refresh ever: a pick that skips
+    // the record re-ships the frozen-at-pick-time bug for that pet.
+    let root = tempDir("library-adopt")
+    let ship = tempDir("library-adopt-examples")
+    writeFile(ship, "whale.json", petJSON("Whale"))
+    let dest = try! adoptShippedPet(ship.appendingPathComponent("whale.json"), root: root)
+    check("adopting copies the pet into pets/",
+          (try? String(contentsOf: dest, encoding: .utf8))?.contains("Whale"), true)
+    let snap = petsDir(root).appendingPathComponent(".shipped/whale.json")
+    check("and records the pick-time bytes beside it",
+          (try? String(contentsOf: snap, encoding: .utf8)) ==
+              (try? String(contentsOf: dest, encoding: .utf8)), true)
+    check("the record directory never becomes a menu row",
+          petChoices(root: root, examples: ship).allSatisfy { !$0.name.hasPrefix(".") }, true)
+}
+
+do {
+    // A pets/ file already wearing the name is the user's, and adopt leaves it
+    // alone — so it must not manufacture provenance for bytes it did not
+    // write: a record here would let the refresh later replace a file the
+    // user made.
+    let root = tempDir("library-adopt-taken")
+    let ship = tempDir("library-adopt-taken-examples")
+    writeFile(ship, "otter.json", petJSON("Shipped Otter"))
+    try! FileManager.default.createDirectory(at: petsDir(root), withIntermediateDirectories: true)
+    writeFile(petsDir(root), "otter.json", petJSON("My Otter"))
+    _ = try! adoptShippedPet(ship.appendingPathComponent("otter.json"), root: root)
+    check("an existing library file is not clobbered by adopt",
+          (try? String(contentsOf: petsDir(root).appendingPathComponent("otter.json"),
+                       encoding: .utf8))?.contains("My Otter"), true)
+    check("and no provenance is invented for it",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent(".shipped/otter.json").path), false)
+}
+
 // MARK: - liveSessions: the TTL decay and the one-hour cutoff
 //
 // Both were unreachable while every fixture was read milliseconds after being

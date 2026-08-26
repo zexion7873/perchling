@@ -99,7 +99,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/run-session-harness.sh  # 132 assertions over the session/tray + pet library
+bash tools/run-session-harness.sh  # 137 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
@@ -107,6 +107,7 @@ bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assert
 bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
 bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
 bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
+bash tools/run-library-refresh.sh   # a picked pet takes shipped updates only while provably untouched
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 bash tools/run-toggle-checks.sh     # disable / enable / wake, and what each may claim
 bash tools/run-release-checks.sh    # the release manifests parse, and the version never goes backwards
@@ -115,13 +116,15 @@ bash tools/run-mutation-gate.sh     # every harness goes red against the defect 
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Nine layers have harnesses — the session/tray layer and the pet library
+Ten layers have harnesses — the session/tray layer and the pet library
 (`tools/run-session-harness.sh`), `state.sh` itself
 (`tools/run-state-checks.sh`, shell only, since that script compiles nothing
 and launches nothing), `cmd_up`'s housekeeping
-(`tools/run-prune-checks.sh` — kept apart from the launch and build harnesses
-because they are three unrelated properties of one function and one file would
-make a failure ambiguous), the manifest parser
+(`tools/run-prune-checks.sh` — kept apart from the launch, build and
+library-refresh harnesses because they are four unrelated properties of one
+function and one file would make a failure ambiguous), the library refresh
+inside the same `cmd_up` (`tools/run-library-refresh.sh`, shell only with
+byte fixtures — the refresh compares files and never parses them), the manifest parser
 (`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
 rebuilding the installed one) and sequence precedence inside `pose()`
 (`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
@@ -132,12 +135,12 @@ working install (`tools/run-build-gate.sh`, shell only for the same reason, and
 using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
 which cuts where the session harness cuts so it can reach `builtinPet`) and the
 three commands that take the pet off the screen and put it back
-(`tools/run-toggle-checks.sh` — a FOURTH file rather than a fifth section of an
-existing one, for the reason the other three are separate: it covers
+(`tools/run-toggle-checks.sh` — its own file rather than another section of an
+existing one, for the reason the others are separate: it covers
 `cmd_disable`/`cmd_enable`/`cmd_wake`, not `cmd_up`, so a failure has to name
 the toggle).
 
-Nine of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
+Ten of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
 `PERCHLING_STATE_SH` — and so does the release gate below
 (`PERCHLING_PLUGIN_JSON`, `PERCHLING_MARKETPLACE_JSON`), so each can be pointed
 at a mutant carrying exactly the defect it is named after and shown to FAIL.
@@ -171,7 +174,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of twenty-nine defects a harness is named after —
+generates a mutant from HEAD for each of thirty-three defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.

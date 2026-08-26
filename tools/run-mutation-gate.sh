@@ -166,6 +166,28 @@ gate sid-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh
   "    *'\"session_id\"'*) sid=\${payload#*'\"session_id\"'}; sid=\${sid#*'\"'}; sid=\${sid%%'\"'*} ;;" \
   "    *'\"session_id\"'*) sid=\$(printf '%s' \"\$payload\" | sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -1) ;;"
 
+# A refresh that never runs is the pre-record behaviour restored for every
+# pet: picked copies frozen at pick time while the shipped art moves on —
+# the exact user report (#103) this loop exists to close.
+gate library-never-refreshed scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
+  '    cp "$src" "$ROOT/.pet.$$" 2>/dev/null && mv -f "$ROOT/.pet.$$" "$lib" 2>/dev/null &&
+      cp "$src" "$ROOT/.snap.$$" 2>/dev/null && mv -f "$ROOT/.snap.$$" "$snap" 2>/dev/null' \
+  '    :'
+
+# The pristine guard is the one line between "refresh" and "clobber a
+# hand-tuned pet" — the loss the whole snapshot mechanism exists to prevent,
+# and removing it reads in review like simplifying a redundant cmp.
+gate library-clobbers-edits scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
+  '    cmp -s "$lib" "$snap" || continue' \
+  '    :'
+
+# The heal arm is the kill-window insurance: without it a refresh killed
+# between its two writes leaves copy != snapshot, which reads as a user edit,
+# and that pet silently freezes forever.
+gate library-heal-removed scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
+  '      cmp -s "$src" "$snap" || { cp "$src" "$ROOT/.snap.$$" 2>/dev/null && mv -f "$ROOT/.snap.$$" "$snap" 2>/dev/null; }' \
+  '      :'
+
 # --- swift layer -------------------------------------------------------------
 
 gate eyes-box-overflows scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
@@ -204,6 +226,13 @@ gate blank-frame-collapses scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manif
 gate rescue-swallowed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    try migrateLoosePet(root: root)' \
   '    try? migrateLoosePet(root: root)'
+
+# An adopt that stops recording the pick-time bytes leaves cmd_up's refresh
+# with no proof for any future pick — the machinery stays green while every
+# new pick quietly re-ships the frozen-at-pick-time bug.
+gate adopt-records-nothing scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        try? fm.copyItem(at: src, to: snap)' \
+  '        _ = snap'
 
 gate nudge-never-fires scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    if wasLooking, nudged != display { return (true, display) }' \
