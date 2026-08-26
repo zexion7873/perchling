@@ -174,7 +174,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of thirty-five defects a harness is named after —
+generates a mutant from HEAD for each of thirty-seven defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.

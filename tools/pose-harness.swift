@@ -176,5 +176,23 @@ check("one that declares mirror flips on leftward travel", poseAt(0, drag: 0).se
 view.dragFacingLeft = false
 check("and faces right when travel is not leftward", poseAt(0, drag: 0).seq?.flipped == false)
 
+// --- the shear stands down for a mirrored drag --------------------------------
+//
+// A mirrored drag already expresses direction — the flip is the facing — so
+// pose() zeroes the lean while one plays: stacked, the shear's per-row
+// rounding slides a dark face plate out of the head outline, a block that
+// swaps sides with the drag direction. A direction-blind drag keeps it, and
+// so does a pet with no drag sequence: there the shear is the only signal.
+// Both directions of the mutation were shown to fail — the carve-out removed
+// reds the first check, the carve-out widened to every drag reds the second.
+view.lean = 3
+view.custom = pet([.drag: seq([b, c], mirror: true)])
+checkEq("a mirrored drag stands the shear down", poseAt(0, drag: 0).lean, 0)
+view.custom = pet([.drag: seq([b, c])])
+checkEq("an unmirrored drag keeps the shear", poseAt(0, drag: 0).lean, 3)
+view.custom = pet([:])
+checkEq("no drag sequence keeps it too", poseAt(0, drag: 0).lean, 3)
+view.lean = 0
+
 print("\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

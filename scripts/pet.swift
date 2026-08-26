@@ -1084,9 +1084,8 @@ final class PetView: NSView {
         // jump's lift, the twitch shares the one-bounce-unit side budget with
         // the shear, and the eye box is declared against the mood frames — on a
         // real pet `done` already lands 37.5% of it on the shell, and a lifted
-        // frame is worse. The shear is NOT reset: it is applied inside fill(),
-        // which the custom blit already goes through, and it is what tells the
-        // viewer which way the pet is being dragged.
+        // frame is worse. The shear is not reset here — its one carve-out, the
+        // mirrored drag, is decided where `ln` is computed below.
         if seq != nil {
             off = 2
             dx = 0
@@ -1108,7 +1107,18 @@ final class PetView: NSView {
         // The side margin is one bounce unit and the twitch already spends all
         // of it, so the two cannot both run — and a nervous tic while the pet
         // is being held in a fist is not a thing worth reserving canvas for.
-        let ln = motionOK ? Int(lean.rounded()) : 0
+        var ln = motionOK ? Int(lean.rounded()) : 0
+        // A MIRRORED drag sequence already tells the viewer which way the pet
+        // is being dragged — the flip is the facing — so the shear stands down
+        // rather than stacking on frames that carry their own reaction.
+        // Stacked, its per-row rounding lands a step mid-sprite and slides a
+        // dark face plate sideways out of the head outline: a block that swaps
+        // sides with the drag direction, measured on the 96x112 robots, whose
+        // glass/chin junction sits exactly on the 1.5-cell rounding boundary.
+        // An UNMIRRORED drag keeps the shear — direction-blind frames have no
+        // other signal — and so does a pet with no drag sequence at all, where
+        // the shear is the whole reaction.
+        if seq?.kind == .drag, activePet.sequences[.drag]?.mirror == true { ln = 0 }
         if ln != 0 { dx = 0 }
 
         let blink = mood == .waiting && motionOK && tick % 80 < 2

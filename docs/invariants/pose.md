@@ -109,12 +109,21 @@ and what the alternative lost to.
   visibly does nothing reads as a dead window. The arrival hop is the other
   half of that rule and goes the other way — it is not armed at all when `done`
   has a sequence, because those frames already are the celebration. The lean
-  stays,
-  because it is applied inside `fill()`, which every blit including the
-  sequence's already passes through, and because it is the only thing telling
-  the viewer which way the pet is being dragged: a manifest ships ONE
-  direction-agnostic `drag` sequence, and mirroring is what gives it a second
-  facing. Sequence frames also count toward `inkTop`, so a lifted frame moves
+  stays for every sequence EXCEPT a MIRRORED drag: it is applied inside
+  `fill()`, which every blit including the sequence's already passes through,
+  and for direction-blind frames it is the only thing telling the viewer
+  which way the pet is being dragged — a manifest ships ONE `drag` sequence,
+  and mirroring is what gives it a second facing. A drag that declares
+  `mirror` already expresses direction through that flip, so there `pose()`
+  zeroes the lean instead of stacking it: stacked, the shear's per-row
+  rounding lands a step mid-sprite and slides a dark face plate sideways out
+  of the head outline — a block that swaps sides with the drag direction,
+  measured on the 96x112 robots, whose glass/chin junction sits exactly on
+  the 1.5-cell rounding boundary. Every shipped pet mirrors its drag, so
+  before the carve-out the stacked shear was what every drag showed. Pinned
+  in `tools/run-pose-harness.sh` with the unmirrored and no-sequence controls
+  beside it, and both directions of the mutation were shown to fail.
+  Sequence frames also count toward `inkTop`, so a lifted frame moves
   the chrome for every mood, permanently, not only while it plays.
 - **Gaze rides a different unit for each kind of pet.** The built-in measures
   it in bounce units, because its eye rects are in design cells; a manifest
@@ -133,7 +142,8 @@ and what the alternative lost to.
   adding to it: the two share one budget. Widening the budget is a
   `canvasSize()` change, and it drags `docs/moods.gif`'s dimensions and the
   README's `width=` along with it — the hero is sized `(canvas + 8) * 6`.
-- **The drag lean is a shear, not a pose, which is why every pet has it.** The
+- **The drag lean is a shear, not a pose, which is why every pet without a
+  mirrored drag has it.** The
   top of the sprite lags the direction of travel and the bottom stays planted;
   `fill()` applies it so the base, eyes, tear, sparkle and custom blit all
   inherit it from one place, exactly as they inherit `xpad`. Two things it
@@ -143,4 +153,6 @@ and what the alternative lost to.
   uniform offset, which reads as the window sliding rather than the creature
   resisting. Codex spends two whole atlas rows (`running-left`/`running-right`)
   on this reaction; a shear is what it costs when a manifest has no second
-  pose to cut to, and at true size it reads as a sway, not a run.
+  pose to cut to, and at true size it reads as a sway, not a run. A manifest
+  that DID ship the second pose — a mirrored drag — has paid that cost
+  already, which is the carve-out above.

@@ -260,6 +260,19 @@ gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose
   'flipped: s.mirror && dragFacingLeft)' \
   'flipped: dragFacingLeft)'
 
+# The shear stacked back onto a mirrored drag: every shipped pet mirrors its
+# drag, so this mutant is the block that slides out of the face and swaps
+# sides with the drag direction — on every pet, silently.
+gate lean-stacks-on-mirrored-drag scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
+  '        if seq?.kind == .drag, activePet.sequences[.drag]?.mirror == true { ln = 0 }' \
+  '        '
+
+# The carve-out widened to every drag: a direction-blind drag loses its only
+# direction signal, and only the unmirrored control can see that.
+gate lean-lost-on-unmirrored-drag scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
+  '        if seq?.kind == .drag, activePet.sequences[.drag]?.mirror == true { ln = 0 }' \
+  '        if seq?.kind == .drag { ln = 0 }'
+
 # The unsorted walk: five defective moods, and an unsorted Dictionary picks a
 # different one per process. The case asserts BOTH that eight runs agree and
 # that they name `done`, the alphabetically first — agreement alone would let a
