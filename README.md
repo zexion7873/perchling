@@ -67,7 +67,9 @@ ships new source for it to compile.
 | 💤 | **idle** | nothing happening | sits and breathes, tail curled |
 
 Drag it and it leans into the pull, feet planted, and rights
-itself when you let go. Click it and it hops, then throws you back to Claude —
+itself when you let go. Let go at speed and it skids across the desktop,
+bleeding momentum until it settles — catch it mid-slide to stop it. Click it
+and it hops, then throws you back to Claude —
 the desktop app if that's running, otherwise whatever was frontmost when the pet
 launched.
 
@@ -81,7 +83,11 @@ A bubble above its head shows what it's doing over a line of context: your
 prompt while it works, then a snippet of Claude's reply once the turn ends. With
 more than one session open it names the session it is quoting, and that is the
 same session the face picked among the live ones, so the two cannot describe
-different windows. The status words are translated for Chinese and Japanese
+different windows. When it's waiting on you, the status names the tool that's
+blocked when the name is short enough to fit, and counts the minutes you've
+kept it waiting — "waiting for you… · Bash · 12m" is a permission prompt
+you've been ignoring for twelve. The session tray shows the same detail with
+the tool's full name, however long. The status words are translated for Chinese and Japanese
 systems and read English everywhere else. It's a frosted, click-through
 overlay, so it never steals a click, and it stays up through idle rather than
 folding itself away.

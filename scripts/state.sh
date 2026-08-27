@@ -43,6 +43,22 @@ if [ ! -t 0 ]; then
   # must degrade to no refcount, never to a sanitised name the payload picked.
   # Real ids are UUIDs, so the shape is checkable without a parser.
   case "$sid" in ''|*[!A-Za-z0-9_-]*) sid= ;; esac
+  # What a waiting session is blocked ON. Measured 2026-08-27 on a real
+  # PermissionRequest payload: "tool_name" is the CLI's own top-level key and
+  # serialises BEFORE tool_input, so the sid extraction's first-match
+  # prefix-strip is the right shape here too — a "tool_name" inside tool_input
+  # cannot win. Gated on waiting because only the waiting writers carry one
+  # worth showing, and the hot path (prompts, tool batches) should not pay
+  # even a builtin for it. The shape check mirrors the sid's, spelt against
+  # real tool names (Bash, AskUserQuestion, mcp__github__get_me): a token this
+  # rejects degrades to no detail, never to a repaired one.
+  tool=
+  if [ "${1:-}" = waiting ]; then
+    case "$payload" in
+      *'"tool_name"'*) tool=${payload#*'"tool_name"'}; tool=${tool#*'"'}; tool=${tool%%'"'*} ;;
+    esac
+    case "$tool" in *[!A-Za-z0-9_-]*) tool= ;; esac
+  fi
   # Verified against a real payload, not assumed: every hook event carries cwd.
   # Same greedy shape as the extractions around it — a tool payload with its
   # own "cwd" key would win and put a wrong directory name on one menu row
@@ -118,13 +134,21 @@ if [ ! -t 0 ]; then
     # is only written when non-empty. The read costs one fork, and only on the
     # hooks that have nothing to say.
     [ -n "$snippet" ] || snippet=$(sed -n 3p "$d/sessions/$sid" 2>/dev/null)
-    # Line 1 mood, line 2 cwd, line 3 caption. One write, one file: all three are
-    # published by the same atomic mv and removed by the same rm, so the mood,
-    # the label and the text can never disagree about whose they are. Always
-    # three lines, empty ones included — `Mood.parse` reads line one and the
-    # reader maps an empty line to nil, so the shorter forms `pet.sh` writes
-    # stay valid.
-    printf '%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" > "$d/.sess.$$" 2>/dev/null &&
+    # A waiting hook with no tool of its own keeps the last one: on a terminal
+    # host one permission decision fires PermissionRequest and then
+    # Notification, and the second write would otherwise blank the detail the
+    # first just recorded. Only waiting carries it forward — any other mood
+    # means the wait is over, and the empty line 4 below is what retires it.
+    if [ "${1:-}" = waiting ] && [ -z "$tool" ]; then
+      tool=$(sed -n 4p "$d/sessions/$sid" 2>/dev/null)
+    fi
+    # Line 1 mood, line 2 cwd, line 3 caption, line 4 the tool a waiting
+    # session is blocked on. One write, one file: all four are published by the
+    # same atomic mv and removed by the same rm, so the mood, the label and the
+    # text can never disagree about whose they are. Always four lines, empty
+    # ones included — `Mood.parse` reads line one and the reader maps an empty
+    # line to nil, so the shorter forms `pet.sh` writes stay valid.
+    printf '%s\n%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" "$tool" > "$d/.sess.$$" 2>/dev/null &&
       mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
 fi

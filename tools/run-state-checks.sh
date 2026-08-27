@@ -116,5 +116,44 @@ printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
   && ok "a tool batch carries the caption forward" \
   || no "a tool batch carries the caption forward" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
 
+# --- what a waiting session is blocked on rides line 4 ---
+# Payload shape measured 2026-08-27, not assumed: "tool_name" is the CLI's own
+# top-level key and serialises BEFORE tool_input, which is what makes the
+# first-match extraction sound. The detail exists only while the mood is
+# waiting; any other mood means the wait ended and retires it.
+h=$(fire tool waiting '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash","tool_input":{"command":"echo hi"}}')
+[ "$(sed -n 4p "$h/perchling/sessions/abc-123" 2>/dev/null)" = Bash ] \
+  && ok "line 4 is the blocking tool" \
+  || no "line 4 is the blocking tool" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
+# A "tool_name" inside tool_input must not out-rank the CLI's own.
+h=$(fire tool-nested waiting '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash","tool_input":{"tool_name":"Evil"}}')
+[ "$(sed -n 4p "$h/perchling/sessions/abc-123" 2>/dev/null)" = Bash ] \
+  && ok "a nested tool_name does not out-rank it" \
+  || no "a nested tool_name does not out-rank it" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
+# The token is drawn on screen; anything outside a real tool name's alphabet
+# degrades to no detail, never to a repaired one.
+h=$(fire tool-shape waiting '{"session_id":"abc-123","cwd":"/x","tool_name":"a;rm -rf /"}')
+[ -z "$(sed -n 4p "$h/perchling/sessions/abc-123" 2>/dev/null)" ] \
+  && ok "a hostile token degrades to none" \
+  || no "a hostile token degrades to none" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
+# One permission decision fires PermissionRequest and then Notification on a
+# terminal host; the second write carries no tool_name and must keep the first's.
+h=$(fire tool-carry waiting '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash"}')
+printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" waiting >/dev/null 2>&1
+[ "$(sed -n 4p "$h/perchling/sessions/abc-123" 2>/dev/null)" = Bash ] \
+  && ok "a second waiting hook keeps the detail" \
+  || no "a second waiting hook keeps the detail" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
+printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
+[ -z "$(sed -n 4p "$h/perchling/sessions/abc-123" 2>/dev/null)" ] \
+  && ok "any other mood retires the detail" \
+  || no "any other mood retires the detail" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
+# The hot path never records one, even when the payload offers it.
+h=$(fire tool-hot running '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash"}')
+[ -z "$(sed -n 4p "$h/perchling/sessions/abc-123" 2>/dev/null)" ] \
+  && ok "a running hook never records one" \
+  || no "a running hook never records one" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

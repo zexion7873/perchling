@@ -166,6 +166,24 @@ gate sid-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh
   "    *'\"session_id\"'*) sid=\${payload#*'\"session_id\"'}; sid=\${sid#*'\"'}; sid=\${sid%%'\"'*} ;;" \
   "    *'\"session_id\"'*) sid=\$(printf '%s' \"\$payload\" | sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -1) ;;"
 
+# The same last-match regression on the waiting detail: a "tool_name" inside
+# tool_input wins over the CLI's own, and the bubble names a tool the payload
+# chose. Cosmetic where the sid was structural, but the same one-character
+# review slip (# to ##).
+gate tool-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "      *'\"tool_name\"'*) tool=\${payload#*'\"tool_name\"'}" \
+  "      *'\"tool_name\"'*) tool=\${payload##*'\"tool_name\"'}"
+
+# The carry-forward dropped: on a terminal host one permission decision fires
+# PermissionRequest and then Notification, and the second write blanks the
+# detail the first just recorded — the feature works in every test that fires
+# one hook and fails on the host that fires two.
+gate tool-detail-blanked scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '    if [ "${1:-}" = waiting ] && [ -z "$tool" ]; then
+      tool=$(sed -n 4p "$d/sessions/$sid" 2>/dev/null)
+    fi' \
+  '    :'
+
 # A refresh that never runs is the pre-record behaviour restored for every
 # pet: picked copies frozen at pick time while the shipped art moves on —
 # the exact user report (#103) this loop exists to close.
@@ -255,6 +273,33 @@ gate nudge-never-fires scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-h
 gate state-leash-unclamped scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '        let ttl = min(moodTTL[s.mood] ?? 0, 300)' \
   '        let ttl = moodTTL[s.mood] ?? 0'
+
+# The patience meter quietly removed: waitAge answers nil forever and every
+# surface shows a bare "waiting for you…" — green everywhere except the one
+# assertion that asks for the number.
+gate wait-age-never-shows scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    return m >= 1 ? "\(m)m" : nil' \
+  '    return nil'
+
+# Friction dropped from the skid: the launch speed never bleeds, so a flick
+# glides until the screen edge stops it — every release ends at a wall.
+gate skid-friction-dropped scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    var dx = v.dx * SKID_DECAY, dy = v.dy * SKID_DECAY' \
+  '    var dx = v.dx, dy = v.dy'
+
+# The clamp keeps the axis speed it just cancelled: the pet pins itself
+# against the screen edge at full velocity instead of running the wall.
+gate skid-edge-keeps-speed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    if cx != x { dx = 0; x = cx }' \
+  '    if cx != x { x = cx }'
+
+# The bubble's tool token admitted without reserving the age slot: the tool
+# appears during the first minute and vanishes when the counter arrives —
+# a status that changes width by the clock, on the half of the line that
+# promises never to truncate.
+gate bubble-budget-unreserved scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if advances(withTool) + advances(" · 59m") <= STATUS_BUDGET { s = withTool }' \
+  '        if advances(withTool) <= STATUS_BUDGET { s = withTool }'
 
 gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   'flipped: s.mirror && dragFacingLeft)' \
