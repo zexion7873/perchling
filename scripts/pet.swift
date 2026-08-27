@@ -1180,6 +1180,15 @@ final class PetView: NSView {
     private var winAt: NSPoint?
     private var lastDrag: NSPoint?
     private var dragged = false
+    // Release momentum. The velocity is smoothed the way `lean` is and for the
+    // same reason: one jerky event must not decide the launch. Tracked in
+    // points per second off event timestamps — drag events arrive at whatever
+    // rate the mouse reports, so points-per-event would make the flick
+    // threshold a property of the pointing device.
+    var skidV = CGVector.zero
+    private var dragVX: CGFloat = 0
+    private var dragVY: CGFloat = 0
+    private var lastDragAt: TimeInterval = 0
 
     // Deliver the activating click too — an accessory app is inactive at
     // nearly every interaction, and without this AppKit eats the first
@@ -1192,6 +1201,11 @@ final class PetView: NSView {
         lastDrag = nil
         dragged = false
         dragSeqStart = -1
+        // Catching a skidding pet is the one way to stop it early.
+        skidV = .zero
+        dragVX = 0
+        dragVY = 0
+        lastDragAt = event.timestamp
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1210,7 +1224,13 @@ final class PetView: NSView {
             let cap = CGFloat(sidePad(scale))
             lean = max(-cap, min(cap, lean * 0.5 - (p.x - last.x) * 0.5))
             updateFacing(p.x - last.x)
+            let dt = event.timestamp - lastDragAt
+            if dt > 0 {
+                dragVX = dragVX * 0.5 + (p.x - last.x) / CGFloat(dt) * 0.5
+                dragVY = dragVY * 0.5 + (p.y - last.y) / CGFloat(dt) * 0.5
+            }
         }
+        lastDragAt = event.timestamp
         lastDrag = p
         w.setFrameOrigin(NSPoint(x: w0.x + (p.x - p0.x), y: w0.y + (p.y - p0.y)))
     }
@@ -1225,6 +1245,10 @@ final class PetView: NSView {
                 if activePet.sequences[.tap] != nil { tapSeqStart = tick } else { hopUntil = tick + 12 }
             }
             onTap?()
+        } else if motionOK,
+                  let v = flickVelocity(dragVX, dragVY,
+                                        sinceLastDrag: event.timestamp - lastDragAt) {
+            skidV = v
         }
         pressAt = nil
         winAt = nil
@@ -1247,6 +1271,20 @@ final class PetView: NSView {
         guard lean != 0 else { return }
         lean *= 0.8
         if abs(lean) < 0.5 { lean = 0 }
+    }
+
+    // The skid's IO; the physics is skidStep, where the harness can reach it.
+    // Runs beside decayLean under the same Reduce Motion gate — a frozen clock
+    // freezes the glide, and the residual lean decaying while the window
+    // travels is what makes the pet right itself as it comes to rest. Children
+    // (bubble, chip) ride along for free, and windowDidMove persists each
+    // step exactly as it already does for a hand drag.
+    func stepSkid() {
+        guard skidV != .zero, let w = window else { return }
+        guard let vf = (w.screen ?? NSScreen.main)?.visibleFrame else { skidV = .zero; return }
+        let r = skidStep(w.frame.origin, skidV, size: w.frame.size, bounds: vf)
+        skidV = r.v
+        w.setFrameOrigin(r.origin)
     }
 
     var onTuck: (() -> Void)?
@@ -1294,7 +1332,8 @@ final class PetView: NSView {
             // unsuffixed name), not a guard, and the alternative is a
             // force-unwrap in a process that runs all day.
             let item = NSMenuItem(title: sessionTitle(labels[r.sid] ?? sessionName(r),
-                                                      r.mood, moodStatus),
+                                                      r.mood, moodStatus,
+                                                      detail: waitSuffix(r, now: Date())),
                                   action: #selector(focusSessionAction), keyEquivalent: "")
             item.target = self
             // Two projects can share a basename; the full path is the only
@@ -1431,6 +1470,8 @@ struct SessionRow {
     let say: String?    // line 3: this session's caption; nil on the shorter forms
     let name: String?   // the host CLI's own name for it; nil when it has none
     let title: String?  // the desktop app's title for it; nil when it has none
+    let stamp: Date     // the file's mtime: when this session last wrote a hook
+    let tool: String?   // line 4: what a waiting session is blocked on; nil otherwise
 }
 
 // The one place sessions/ is read for moods. The attention fold and the menu
@@ -1467,13 +1508,18 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
         let cwd = lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let say = lines.count > 2 ? cleanCaption(String(lines[2])) : ""
+        // Trimmed, never cleaned: state.sh shape-checks the token to
+        // [A-Za-z0-9_-] before writing it, so there is nothing to unescape.
+        let tool = lines.count > 3 ? lines[3].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let ttl = moodTTL[mood] ?? 0
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
                               mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
                               say: say.isEmpty ? nil : say,
                               name: names[sid],
-                              title: titles[sid]))
+                              title: titles[sid],
+                              stamp: stamp,
+                              tool: tool.isEmpty ? nil : tool))
     }
     return out
 }
@@ -1768,13 +1814,68 @@ func sessionLabels(_ rows: [SessionRow]) -> [String: String] {
     return out
 }
 
+// How long a waiting session has been ignored, or nil when there is nothing
+// worth saying. A blocked session emits no hooks, so its file's mtime IS the
+// moment it blocked and nothing re-stamps it until the user answers. Minutes
+// are the only unit needed: `liveSessions` hides a row an hour after its last
+// write, so no age this prints ever reaches 60m. Under a minute the suffix is
+// suppressed — the common quick approval should not flicker a counter.
+func waitAge(_ mood: Mood, stamp: Date, now: Date) -> String? {
+    guard mood == .waiting else { return nil }
+    let m = Int(now.timeIntervalSince(stamp)) / 60
+    return m >= 1 ? "\(m)m" : nil
+}
+
+// The suffix a waiting row wears behind its status: the tool it is blocked on,
+// then the age. This is the TRAY's version — a menu row has no width budget,
+// so an mcp__ tool's full name rides here uncut. The bubble has a budget and
+// composes its own, below.
+func waitSuffix(_ row: SessionRow, now: Date) -> String? {
+    guard row.mood == .waiting else { return nil }
+    let parts = [row.tool, waitAge(row.mood, stamp: row.stamp, now: now)].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+}
+
+// The width arithmetic the 34-advance budget comment in BubbleView uses, as
+// code: one advance per ASCII glyph, two for anything wider. An approximation
+// of the real font metrics, and deliberately the same one the comment makes —
+// the budget is a rule of thumb, not a layout engine.
+func advances(_ s: String) -> Int {
+    s.unicodeScalars.reduce(0) { $0 + ($1.isASCII ? 1 : 2) }
+}
+
+let STATUS_BUDGET = 34
+
+// The bubble's status for a waiting row. The status is the half of the line
+// that never truncates, so the tool name rides only when the whole status
+// still fits the budget — "Bash" fits behind every shipped wording,
+// "AskUserQuestion" and the mcp__ names do not and fall back to the bare
+// status. The age's slot is reserved at its widest (59m) whether or not one
+// is showing yet, so the tool cannot appear at minute nine and vanish at ten.
+func bubbleStatus(_ base: String, _ row: SessionRow, now: Date) -> String {
+    guard row.mood == .waiting, !base.isEmpty else { return base }
+    let age = waitAge(row.mood, stamp: row.stamp, now: now)
+    var s = base
+    if let t = row.tool {
+        let withTool = "\(s) · \(t)"
+        if advances(withTool) + advances(" · 59m") <= STATUS_BUDGET { s = withTool }
+    }
+    if let a = age { s = "\(s) · \(a)" }
+    return s
+}
+
 // `status` is passed rather than read off the global so the wording under test
 // is not whatever language the machine happens to be set to. The label is passed
 // for the same reason and one more: resolving it needs the whole row set, which
 // a single row cannot see.
-func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String]) -> String {
+//
+// The detail joins with a middle dot, not a second em dash — the em dash is
+// spent joining the label to the status, and two make the line stutter.
+func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String],
+                  detail: String? = nil) -> String {
     guard let s = status[mood], !s.isEmpty else { return label }
-    return "\(label) — \(s)"
+    guard let d = detail else { return "\(label) — \(s)" }
+    return "\(label) — \(s) · \(d)"
 }
 
 // What the bubble says, and whose it is. A free function taking the wording
@@ -1800,15 +1901,19 @@ func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String]) -> St
 // widths to decide what to truncate, and fonts belong to the view.
 func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
                 _ wording: [Mood: String],
-                _ labels: [String: String]) -> (name: String?, status: String, prompt: String) {
+                _ labels: [String: String],
+                now: Date) -> (name: String?, status: String, prompt: String) {
     guard let top = rows.first else {
+        // The global state file has no row and no mtime here, so a puppeteered
+        // `waiting` shows no age — the fold's documented blind spot, unchanged.
         return (nil, wording[display] ?? "", globalSay)
     }
+    let status = bubbleStatus(wording[top.mood] ?? "", top, now: now)
     // `labels` and `rows` both come from the same `pollMoods` pass (see the
     // comment above), so `labels[top.sid]` cannot be missing — the `??` is a
     // correct-value fallback, not a guard against a case that can happen.
     return (rows.count > 1 ? labels[top.sid] ?? sessionName(top) : nil,
-            wording[top.mood] ?? "",
+            status,
             top.say ?? globalSay)
 }
 
@@ -2026,8 +2131,8 @@ final class BubbleView: NSVisualEffectView {
         // whatever room is left after it and the separator — not the other way
         // round, and not a character budget. A character count is not a width:
         // the line holds about 34 monospace advances, the longest shipped status
-        // is "waiting for you…" at 16, and a name in CJK spends two advances per
-        // character.
+        // is "waiting for you… · 59m" at 22, and a name in CJK spends two
+        // advances per character.
         private func statusLine(_ attrs: [NSAttributedString.Key: Any], _ maxW: CGFloat) -> String {
             guard let n = name, !n.isEmpty else { return status }
             let sep = " — "
@@ -2187,6 +2292,51 @@ func sessionLiveness(_ sessions: [(owner: pid_t?, stamp: Date?)],
     let remembered = owners.isEmpty ? lastOwners : owners
     if !live, !remembered.isEmpty, !remembered.contains(where: alive) { retired = true }
     return (live, retired, remembered)
+}
+
+// Letting go of a drag at speed sends the pet skidding, and these two free
+// functions are the whole physics — the window IO around them is a handful of
+// lines, for the reason foldMoods and strandedOrigin are free functions: a
+// harness cannot reach a moving NSWindow, but it can pin every number below.
+let SKID_MIN: CGFloat = 25    // pt/tick (~500 pt/s): a deliberate flick, not a settle
+let SKID_MAX: CGFloat = 120   // pt/tick: with the decay, total glide tops out ~1200 pt
+let SKID_DECAY: CGFloat = 0.9
+let SKID_STALE: TimeInterval = 0.1
+
+// Whether a release becomes a skid, and at what launch speed. `vx`/`vy` are
+// the smoothed drag velocity in points per SECOND; the result is points per
+// TICK, because the tick loop is what spends it. `sinceLastDrag` is how long
+// the mouse had been still when the button came up: velocity is only as fresh
+// as the last drag event, so a pet held still and released must not inherit
+// the speed it had before the pause. The cap preserves direction and bounds
+// the glide — a flick is a toss across the desk, not a flight across three
+// displays.
+func flickVelocity(_ vx: CGFloat, _ vy: CGFloat, sinceLastDrag: TimeInterval) -> CGVector? {
+    guard sinceLastDrag < SKID_STALE else { return nil }
+    let perTick = CGFloat(TICK_MS) / 1000
+    let tx = vx * perTick, ty = vy * perTick
+    let speed = (tx * tx + ty * ty).squareRoot()
+    guard speed >= SKID_MIN else { return nil }
+    let s = min(speed, SKID_MAX) / speed
+    return CGVector(dx: tx * s, dy: ty * s)
+}
+
+// One tick of glide: advance, clamp into the screen, bleed speed. An axis that
+// hits the edge stops dead and the other keeps sliding, so a corner-bound
+// flick runs along the wall instead of sticking to it. Friction lands after
+// the move — the first tick spends the full launch speed — and a component
+// under a point snaps to rest rather than crawling forever.
+func skidStep(_ origin: NSPoint, _ v: CGVector, size: NSSize, bounds: NSRect)
+    -> (origin: NSPoint, v: CGVector) {
+    var x = origin.x + v.dx, y = origin.y + v.dy
+    var dx = v.dx * SKID_DECAY, dy = v.dy * SKID_DECAY
+    let cx = min(max(x, bounds.minX), bounds.maxX - size.width)
+    let cy = min(max(y, bounds.minY), bounds.maxY - size.height)
+    if cx != x { dx = 0; x = cx }
+    if cy != y { dy = 0; y = cy }
+    if abs(dx) < 1 { dx = 0 }
+    if abs(dy) < 1 { dy = 0 }
+    return (NSPoint(x: x, y: y), CGVector(dx: dx, dy: dy))
 }
 
 // Where a restored window must land: nil while the frame still touches any
@@ -2671,6 +2821,7 @@ final class Controller: NSObject, NSWindowDelegate {
             if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 view.tick += 1
                 view.decayLean()
+                view.stepSkid()
             }
             if clock % 8 == 0 {
                 // Manual un-tuck: a tucked pet has no window to right-click,
@@ -2722,7 +2873,7 @@ final class Controller: NSObject, NSWindowDelegate {
                 // refreshed: a caption taken from one poll and a name from the
                 // next would name the wrong session for a tick.
                 let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus,
-                                   sessionLabelsBySid)
+                                   sessionLabelsBySid, now: Date())
                 bubbleView.name = t.name
                 bubbleView.status = t.status
                 bubbleView.prompt = t.prompt

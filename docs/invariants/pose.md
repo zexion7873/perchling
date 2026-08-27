@@ -50,6 +50,24 @@ and what the alternative lost to.
   against.** Re-measure before treating either as ruled out.
 - **Motion is measured in points, not cells.** `bounceUnit(scale)` keeps travel
   at roughly four points whatever a pet's cell size is.
+- **The skid moves the WINDOW, never the sprite, and its physics is two free
+  functions.** Releasing a drag at speed glides the window with friction —
+  `flickVelocity` decides the launch (threshold, staleness, cap) and
+  `skidStep` spends it (advance, clamp, bleed), both pure so
+  `run-session-harness.sh` can pin every number; the IO around them is a
+  handful of lines in `stepSkid`, called from the tick loop beside
+  `decayLean` under the same Reduce Motion gate. Because the window moves and
+  the sprite does not, the skid spends none of the shear/twitch side budget,
+  and the residual drag lean decaying while the window travels is what makes
+  the pet right itself as it comes to rest — no new lean is written. Velocity
+  is tracked in points per second off event timestamps, not points per event:
+  drag events arrive at whatever rate the mouse reports, and a per-event
+  figure would make the flick threshold a property of the pointing device.
+  The release must also be FRESH (`SKID_STALE`) — a pet held still and let
+  go must not inherit the speed it had before the pause. An axis stopped by
+  the screen edge zeroes its own speed and leaves the other sliding, so a
+  corner-bound flick runs the wall. `windowDidMove` already persists every
+  step, exactly as it does for a hand drag — the skid adds no writer.
 - **Reduce Motion freezes `tick`, not the poll clock.** Anything shaped like
   `deadline = tick + n` must be armed only when motion is allowed, or `tick`
   never reaches it and the state sticks forever. Liveness and mood changes must

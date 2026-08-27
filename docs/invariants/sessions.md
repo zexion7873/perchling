@@ -68,10 +68,12 @@ and what the alternative lost to.
   answer — `pollPet` clears it on every fallback — so the menu asks that rather
   than deriving the tick from the list. Fixing one row's rule without the other
   produces two checkmarks.
-- **Session files are mood, refcount, label, and caption.** Line one is the
+- **Session files are mood, refcount, label, caption, and the waiting
+  detail.** Line one is the
   mood; an optional line two is that session's `cwd`, which the tray rows show
-  and the fold ignores; an optional line three is the caption the bubble quotes.
-  `Mood.parse` reads line one, so the one- and two-line forms stay valid
+  and the fold ignores; an optional line three is the caption the bubble
+  quotes; an optional line four is the tool a `waiting` session is blocked on.
+  `Mood.parse` reads line one, so every shorter form stays valid
   forever — `pet.sh up` writes the one-line form whenever there is no payload
   behind the launch (`manual`, `enable`, `wake`). **`state.sh` carries line
   three forward when it has nothing new to say**: only a prompt and a `done`
@@ -79,7 +81,19 @@ and what the alternative lost to.
   rewritten whole on every hook — so writing the empty value would blank the
   bubble halfway through a turn. The global `say` never had that problem
   because it is only written when non-empty, which is exactly why the session
-  file has to re-read its own line 3 first. Writing a session file re-stamps
+  file has to re-read its own line 3 first. Line four has the same carry rule
+  with a mood gate on it: a `waiting` hook with no `tool_name` of its own
+  keeps the last one — a terminal host answers one permission decision with
+  `PermissionRequest` and then `Notification`, and the second write must not
+  blank what the first just recorded — while any other mood retires it,
+  because the wait is over. The extraction mirrors the sid's first-match
+  prefix-strip, not the cosmetic last-match: measured 2026-08-27,
+  `"tool_name"` is the CLI's own top-level key and serialises before
+  `tool_input`, so first-match is what keeps a nested `tool_name` from
+  naming the tool on screen. It is gated on `waiting` so the hot path never
+  pays for it, and shape-checked to a real tool name's alphabet
+  (`A-Za-z0-9_-`) — a hostile token degrades to no detail, never a repaired
+  one. Writing a session file re-stamps
   liveness; never `touch` one, because that resurrects a stale mood with a
   full TTL. The `manual` entry is a bridge for launches with no session behind
   them, retired by the first real session or by the last `SessionEnd` — it is
@@ -211,9 +225,23 @@ and what the alternative lost to.
   stays hidden whatever `sessionName` would have returned for it. The composed
   status line budgets the NAME by measured width, never a
   character count: the line holds about 34 monospace advances, the longest
-  shipped status is "waiting for you…" at 16, and a CJK name spends two advances
-  per character, so any character budget lets the status be the thing that gets
-  cut. `bubbleText` takes the wording table as a parameter for the same reason
+  shipped status is "waiting for you… · 59m" at 22, and a CJK name spends two
+  advances per character, so any character budget lets the status be the thing
+  that gets cut. The age suffix rides the STATUS half on purpose — the status is
+  the half that never truncates, and an age the layout could cut would count
+  minutes only while the desk was quiet. `waitAge` prints minutes and nothing
+  larger, which is not a style choice: `liveSessions` hides a row an hour after
+  its last write, so no age it can be handed ever reaches 60m — and a blocked
+  session emits no hooks, so the file's mtime IS the moment it blocked. Under a
+  minute the suffix stays off; the common quick approval should not flicker a
+  counter. The tool the wait is blocked on splits by surface: `waitSuffix`
+  is the tray's version and carries any tool uncut, because a menu row has no
+  width budget; `bubbleStatus` admits the tool only while the whole status
+  fits the 34-advance budget WITH the age's widest slot (`· 59m`) reserved —
+  reserved whether or not an age is showing yet, so the tool cannot appear
+  during the first minute and vanish when the counter arrives. "Bash" fits
+  behind every shipped wording; "AskUserQuestion" and the `mcp__` names do
+  not, and fall back to the bare status rather than truncating it. `bubbleText` takes the wording table as a parameter for the same reason
   `sessionTitle` does, and `BubbleView` has no `mood`: it is handed the status
   string, because deriving it a second time in the view would leave the rule
   under test and the rule on screen as two pieces of code that merely agree.

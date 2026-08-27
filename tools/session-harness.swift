@@ -38,8 +38,10 @@ let words: [Mood: String] = [.idle: "idle", .running: "running",
                              .waiting: "waiting", .done: "done", .error: "error"]
 
 func row(_ sid: String, _ mood: Mood, cwd: String? = nil,
-         say: String? = nil, name: String? = nil, title: String? = nil) -> SessionRow {
-    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name, title: title)
+         say: String? = nil, name: String? = nil, title: String? = nil,
+         stamp: Date = Date(), tool: String? = nil) -> SessionRow {
+    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name, title: title,
+               stamp: stamp, tool: tool)
 }
 
 // MARK: - sessionName
@@ -57,10 +59,11 @@ do {
     let dir = tempDir("live")
     writeFile(dir, "s1", "running\n/Users/x/Project/perchling\nhello")
     writeFile(dir, "s2", "idle")
+    writeFile(dir, "s3", "waiting\n/p/x\n\nBash")
     let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"],
                             titles: ["s1": "titled"])
         .sorted { $0.sid < $1.sid }
-    check("liveSessions reads both files", rows.count, 2)
+    check("liveSessions reads every file", rows.count, 3)
     check("liveSessions reads line 2", rows[0].cwd, "/Users/x/Project/perchling")
     check("liveSessions reads line 3", rows[0].say, "hello")
     check("the one-line form stays valid", rows[1].cwd, nil)
@@ -68,8 +71,20 @@ do {
     check("a session absent from the registry has no name", rows[1].name, nil)
     check("a desktop title reaches the row", rows[0].title, "titled")
     check("a session with no desktop record has no title", rows[1].title, nil)
+    check("liveSessions reads line 4", rows[2].tool, "Bash")
+    check("an empty caption above a tool still maps to nil", rows[2].say, nil)
+    check("the three-line form has no tool", rows[0].tool, nil)
     check("a dead owner drops the row",
           liveSessions(dir, now: Date(), alive: { _ in false }, names: [:], titles: [:]).count, 0)
+    // The stamp IS the file's mtime, pinned by setting one and reading it back
+    // through the row — the age suffix upstream is only as honest as this.
+    let blocked = Date(timeIntervalSinceReferenceDate:
+                       (Date().timeIntervalSinceReferenceDate - 720).rounded())
+    try! FileManager.default.setAttributes([.modificationDate: blocked],
+                                           ofItemAtPath: dir.appendingPathComponent("s1").path)
+    let stamped = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+        .first { $0.sid == "s1" }
+    check("the row carries the file's own mtime", stamped?.stamp, blocked)
 }
 
 // MARK: - menuRows
@@ -96,14 +111,82 @@ do {
     let one = [row("s1", .running, cwd: "/p/alpha", say: "hi")]
     let two = menuRows([row("s1", .running, cwd: "/p/alpha", say: "hi"),
                         row("s2", .idle, cwd: "/p/alpha")])
+    let t0 = Date()
     check("one session needs no name",
-          bubbleText(one, .running, "", words, sessionLabels(one)).name, nil)
+          bubbleText(one, .running, "", words, sessionLabels(one), now: t0).name, nil)
     check("two sessions name the top one with its resolved label",
-          bubbleText(two, .running, "", words, sessionLabels(two)).name, "alpha · s1")
+          bubbleText(two, .running, "", words, sessionLabels(two), now: t0).name, "alpha · s1")
     check("the caption is the top session's own line",
-          bubbleText(two, .running, "global", words, sessionLabels(two)).prompt, "hi")
+          bubbleText(two, .running, "global", words, sessionLabels(two), now: t0).prompt, "hi")
     check("no rows falls back to the global say",
-          bubbleText([], .done, "global", words, [:]).prompt, "global")
+          bubbleText([], .done, "global", words, [:], now: t0).prompt, "global")
+}
+
+// MARK: - waitAge
+
+do {
+    let t0 = Date()
+    let blocked = t0.addingTimeInterval(-720)
+    check("a waiting session's age is whole minutes",
+          waitAge(.waiting, stamp: blocked, now: t0), "12m")
+    check("under a minute there is no age",
+          waitAge(.waiting, stamp: t0.addingTimeInterval(-59), now: t0), nil)
+    check("exactly a minute is the first age shown",
+          waitAge(.waiting, stamp: t0.addingTimeInterval(-60), now: t0), "1m")
+    check("only waiting has an age, however stale the row",
+          waitAge(.running, stamp: blocked, now: t0), nil)
+    check("a title carries the detail behind a middle dot",
+          sessionTitle("alpha", .waiting, words, detail: "12m"), "alpha — waiting · 12m")
+    check("a title with no detail is unchanged",
+          sessionTitle("alpha", .waiting, words), "alpha — waiting")
+    let stale = [row("s1", .waiting, say: "hi", stamp: blocked)]
+    check("the bubble status of an ignored wait carries the age",
+          bubbleText(stale, .waiting, "", words, sessionLabels(stale), now: t0).status,
+          "waiting · 12m")
+    let fresh = [row("s1", .waiting, say: "hi", stamp: t0)]
+    check("a fresh wait shows the bare status",
+          bubbleText(fresh, .waiting, "", words, sessionLabels(fresh), now: t0).status,
+          "waiting")
+    check("a puppeteered waiting with no row behind it has no age",
+          bubbleText([], .waiting, "", words, [:], now: t0).status, "waiting")
+}
+
+// MARK: - waitSuffix and the bubble's status budget
+
+do {
+    let t0 = Date()
+    let blocked = t0.addingTimeInterval(-720)
+    check("the tray suffix is tool then age",
+          waitSuffix(row("s", .waiting, stamp: blocked, tool: "Bash"), now: t0), "Bash · 12m")
+    check("a fresh wait's suffix is the tool alone",
+          waitSuffix(row("s", .waiting, stamp: t0, tool: "Bash"), now: t0), "Bash")
+    check("an mcp tool rides the tray uncut",
+          waitSuffix(row("s", .waiting, stamp: blocked, tool: "mcp__github__get_me"), now: t0),
+          "mcp__github__get_me · 12m")
+    check("no tool and no age is no suffix",
+          waitSuffix(row("s", .waiting, stamp: t0), now: t0), nil)
+    check("a session that is not waiting has none",
+          waitSuffix(row("s", .running, stamp: blocked, tool: "Bash"), now: t0), nil)
+
+    check("advances count ASCII as one and CJK as two", advances("ab你好"), 6)
+    // The real longest base: "waiting for you…" — 15 ASCII glyphs and the
+    // two-advance ellipsis. Bash fits behind it with the widest age reserved;
+    // AskUserQuestion busts the budget and falls back to the bare status.
+    let base = "waiting for you…"
+    check("a short tool rides the bubble status",
+          bubbleStatus(base, row("s", .waiting, stamp: blocked, tool: "Bash"), now: t0),
+          "waiting for you… · Bash · 12m")
+    check("a tool that busts the budget stays off the bubble",
+          bubbleStatus(base, row("s", .waiting, stamp: blocked, tool: "AskUserQuestion"), now: t0),
+          "waiting for you… · 12m")
+    // The reserve is the widest age, not the current one: the tool must not
+    // appear during the first minute and vanish when the counter arrives.
+    check("the budget reserves the age slot before one shows",
+          bubbleStatus(base, row("s", .waiting, stamp: t0, tool: "WebSearches"), now: t0),
+          base)
+    check("a non-waiting status is untouched",
+          bubbleStatus("running", row("s", .running, stamp: blocked, tool: "Bash"), now: t0),
+          "running")
 }
 
 // MARK: - registryNames
@@ -796,6 +879,49 @@ do {
           NSPoint(x: 1356, y: 100))
     check("no home screen leaves it untouched",
           strandedOrigin(frame: stranded, screens: [], home: nil), nil)
+}
+
+// MARK: - flick & skid
+//
+// The physics of release momentum, every number of it — the window IO around
+// these two functions is too thin to hide a defect that these do not already
+// catch. Velocities go through arithmetic the harness cannot spell exactly
+// (0.9 and 0.05 have no binary representation), so speed assertions use a
+// tolerance; clamped POSITIONS are assigned, not computed, and stay exact.
+
+func near(_ got: CGFloat?, _ want: CGFloat) -> Bool {
+    got.map { abs($0 - want) < 0.001 } ?? false
+}
+
+do {
+    check("a gentle release does not skid",
+          flickVelocity(300, 0, sinceLastDrag: 0.01) == nil, true)
+    check("a flick does",
+          flickVelocity(800, 0, sinceLastDrag: 0.01) != nil, true)
+    check("a pause before release parks the pet",
+          flickVelocity(800, 0, sinceLastDrag: 0.5) == nil, true)
+    // 800 pt/s across 50 ms ticks is 40 pt/tick — under the cap, so the
+    // conversion is the only thing between input and output.
+    check("velocity converts to points per tick",
+          near(flickVelocity(800, 0, sinceLastDrag: 0.01)?.dx, 40), true)
+    // 4000 pt/s would be 200 pt/tick; the cap holds the launch to SKID_MAX.
+    check("the cap bounds the launch speed",
+          near(flickVelocity(4000, 0, sinceLastDrag: 0.01)?.dx, SKID_MAX), true)
+
+    let bounds = NSRect(x: 0, y: 0, width: 1440, height: 900)
+    let size = NSSize(width: 84, height: 99)
+    let step = skidStep(NSPoint(x: 100, y: 100), CGVector(dx: 40, dy: 0),
+                        size: size, bounds: bounds)
+    check("a step advances by the velocity", step.origin.x, 100 + 40)
+    check("and bleeds speed", near(step.v.dx, 36), true)
+    let wall = skidStep(NSPoint(x: 1400, y: 100), CGVector(dx: 40, dy: 20),
+                        size: size, bounds: bounds)
+    check("the screen edge stops that axis", wall.origin.x, bounds.maxX - size.width)
+    check("and zeroes its speed", wall.v.dx, 0)
+    check("while the other axis keeps sliding", near(wall.v.dy, 18), true)
+    let crawl = skidStep(NSPoint(x: 100, y: 100), CGVector(dx: 1, dy: 0),
+                         size: size, bounds: bounds)
+    check("a crawl snaps to rest", crawl.v.dx, 0)
 }
 
 print(failures == 0 ? "\nall passed" : "\n\(failures) FAILED")
