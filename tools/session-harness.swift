@@ -39,9 +39,9 @@ let words: [Mood: String] = [.idle: "idle", .running: "running",
 
 func row(_ sid: String, _ mood: Mood, cwd: String? = nil,
          say: String? = nil, name: String? = nil, title: String? = nil,
-         stamp: Date = Date(), tool: String? = nil) -> SessionRow {
+         stamp: Date = Date(), tool: String? = nil, turns: Int? = nil) -> SessionRow {
     SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name, title: title,
-               stamp: stamp, tool: tool)
+               stamp: stamp, tool: tool, turns: turns)
 }
 
 // MARK: - sessionName
@@ -74,6 +74,7 @@ do {
     check("liveSessions reads line 4", rows[2].tool, "Bash")
     check("an empty caption above a tool still maps to nil", rows[2].say, nil)
     check("the three-line form has no tool", rows[0].tool, nil)
+    check("the four-line form has no odometer", rows[2].turns, nil)
     check("a dead owner drops the row",
           liveSessions(dir, now: Date(), alive: { _ in false }, names: [:], titles: [:]).count, 0)
     // The stamp IS the file's mtime, pinned by setting one and reading it back
@@ -85,6 +86,23 @@ do {
     let stamped = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
         .first { $0.sid == "s1" }
     check("the row carries the file's own mtime", stamped?.stamp, blocked)
+}
+
+// MARK: - the odometer, line 5
+
+do {
+    let dir = tempDir("turns")
+    writeFile(dir, "t1", "running\n/p/x\nhello\n\n7")
+    writeFile(dir, "t2", "running\n/p/x\nhello\n\n12abc")
+    writeFile(dir, "t3", "running\n/p/x\nhello\n\n0")
+    writeFile(dir, "t4", "running\n/p/x\nhello\n\n+5")
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+        .sorted { $0.sid < $1.sid }
+    check("liveSessions reads line 5", rows[0].turns, 7)
+    check("a non-digit odometer degrades to none", rows[1].turns, nil)
+    check("zero is below the odometer's floor", rows[2].turns, nil)
+    // Int() alone admits a sign; the digits-only shape check must not.
+    check("a signed count is not digits", rows[3].turns, nil)
 }
 
 // MARK: - menuRows
@@ -167,6 +185,17 @@ do {
           waitSuffix(row("s", .waiting, stamp: t0), now: t0), nil)
     check("a session that is not waiting has none",
           waitSuffix(row("s", .running, stamp: blocked, tool: "Bash"), now: t0), nil)
+
+    // trayDetail: the odometer rides behind the waiting detail, on every mood.
+    check("the odometer joins the waiting detail",
+          trayDetail(row("s", .waiting, stamp: blocked, tool: "Bash", turns: 7), now: t0),
+          "Bash · 12m · 7t")
+    check("a running row wears the odometer alone",
+          trayDetail(row("s", .running, stamp: blocked, tool: "Bash", turns: 7), now: t0), "7t")
+    check("no odometer, no invention",
+          trayDetail(row("s", .running, stamp: blocked), now: t0), nil)
+    check("a waiting row without turns keeps its old suffix",
+          trayDetail(row("s", .waiting, stamp: blocked, tool: "Bash"), now: t0), "Bash · 12m")
 
     check("advances count ASCII as one and CJK as two", advances("ab你好"), 6)
     // The real longest base: "waiting for you…" — 15 ASCII glyphs and the

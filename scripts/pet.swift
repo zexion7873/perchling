@@ -1333,7 +1333,7 @@ final class PetView: NSView {
             // force-unwrap in a process that runs all day.
             let item = NSMenuItem(title: sessionTitle(labels[r.sid] ?? sessionName(r),
                                                       r.mood, moodStatus,
-                                                      detail: waitSuffix(r, now: Date())),
+                                                      detail: trayDetail(r, now: Date())),
                                   action: #selector(focusSessionAction), keyEquivalent: "")
             item.target = self
             // Two projects can share a basename; the full path is the only
@@ -1472,6 +1472,7 @@ struct SessionRow {
     let title: String?  // the desktop app's title for it; nil when it has none
     let stamp: Date     // the file's mtime: when this session last wrote a hook
     let tool: String?   // line 4: what a waiting session is blocked on; nil otherwise
+    let turns: Int?     // line 5: prompts this session has answered; nil below one
 }
 
 // The one place sessions/ is read for moods. The attention fold and the menu
@@ -1511,6 +1512,12 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
         // Trimmed, never cleaned: state.sh shape-checks the token to
         // [A-Za-z0-9_-] before writing it, so there is nothing to unescape.
         let tool = lines.count > 3 ? lines[3].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        // The reader's own shape check, digits only: state.sh writes digits or
+        // nothing, and a file that says otherwise degrades to no odometer,
+        // never to a repaired one — Int() alone would admit "+5".
+        let turnsRaw = lines.count > 4 ? lines[4].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        let turns = turnsRaw.isEmpty || !turnsRaw.allSatisfy({ $0.isASCII && $0.isNumber })
+            ? nil : Int(turnsRaw).flatMap { $0 > 0 ? $0 : nil }
         let ttl = moodTTL[mood] ?? 0
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
@@ -1519,7 +1526,8 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
                               name: names[sid],
                               title: titles[sid],
                               stamp: stamp,
-                              tool: tool.isEmpty ? nil : tool))
+                              tool: tool.isEmpty ? nil : tool,
+                              turns: turns))
     }
     return out
 }
@@ -1833,6 +1841,15 @@ func waitAge(_ mood: Mood, stamp: Date, now: Date) -> String? {
 func waitSuffix(_ row: SessionRow, now: Date) -> String? {
     guard row.mood == .waiting else { return nil }
     let parts = [row.tool, waitAge(row.mood, stamp: row.stamp, now: now)].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+}
+
+// The whole tray suffix: the waiting detail, then the odometer — how many
+// prompts this session has answered, worn by every mood. Tray only: a menu
+// row has no width budget, and the bubble's 34 advances are already spoken
+// for by the status, the tool and the age.
+func trayDetail(_ row: SessionRow, now: Date) -> String? {
+    let parts = [waitSuffix(row, now: now), row.turns.map { "\($0)t" }].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
 }
 

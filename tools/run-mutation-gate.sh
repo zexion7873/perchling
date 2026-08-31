@@ -180,9 +180,16 @@ gate tool-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.s
 # one hook and fails on the host that fires two.
 gate tool-detail-blanked scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '    if [ "${1:-}" = waiting ] && [ -z "$tool" ]; then
-      tool=$(sed -n 4p "$d/sessions/$sid" 2>/dev/null)
+      tool="$prev4"
     fi' \
   '    :'
+
+# The odometer counts machinery: drop the snippet guard and every running
+# hook increments — tool batches, task notifications — so the tray reports a
+# session ridden ten times harder than its human ever asked.
+gate odometer-counts-machinery scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '    [ "${1:-}" = running ] && [ -n "$snippet" ] && turn=1' \
+  '    [ "${1:-}" = running ] && turn=1'
 
 # The autopsy arm forgotten: StopFailure still flips the mood, but the bubble
 # keeps whatever it last said while the CLI's own error text sits unread in

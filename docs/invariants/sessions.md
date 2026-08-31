@@ -68,11 +68,18 @@ and what the alternative lost to.
   answer — `pollPet` clears it on every fallback — so the menu asks that rather
   than deriving the tick from the list. Fixing one row's rule without the other
   produces two checkmarks.
-- **Session files are mood, refcount, label, caption, and the waiting
-  detail.** Line one is the
+- **Session files are mood, refcount, label, caption, the waiting
+  detail, and the odometer.** Line one is the
   mood; an optional line two is that session's `cwd`, which the tray rows show
   and the fold ignores; an optional line three is the caption the bubble
-  quotes; an optional line four is the tool a `waiting` session is blocked on.
+  quotes; an optional line four is the tool a `waiting` session is blocked on;
+  an optional line five is the turn count — HUMAN prompts only, which costs
+  nothing to define because only `UserPromptSubmit` payloads carry `"prompt"`
+  and the caption's machinery filter has already blanked the fake ones. It is
+  carried forward on every rewrite and incremented on typed prompts alone, and
+  both ends shape-check it to bare digits — a corrupt count restarts, never
+  repairs. The tray row wears it as `· Nt`; the bubble never does, its 34
+  advances being spoken for.
   `Mood.parse` reads line one, so every shorter form stays valid
   forever — `pet.sh up` writes the one-line form whenever there is no payload
   behind the launch (`manual`, `enable`, `wake`). **`state.sh` carries line

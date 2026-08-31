@@ -197,5 +197,43 @@ h=$(fire scrape-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"prompt
   && ok "running never scrapes" \
   || no "running never scrapes" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
 
+# --- the odometer: line 5 counts HUMAN prompts and nothing else ---
+# A turn is a typed prompt: only UserPromptSubmit carries "prompt", and the
+# machinery filter blanks the harness's fake ones. Everything else — tool
+# batches, waits, the turn's own end — carries the count forward untouched.
+h=$(fire odo running '{"session_id":"abc-123","cwd":"/x","prompt":"first"}')
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
+  && ok "a typed prompt counts one" \
+  || no "a typed prompt counts one" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"second"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
+  && ok "a second prompt counts two" \
+  || no "a second prompt counts two" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
+  && ok "a tool batch never counts" \
+  || no "a tool batch never counts" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"<task-notification>abc</task-notification>"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
+  && ok "machinery never counts" \
+  || no "machinery never counts" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+printf '%s' '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" waiting >/dev/null 2>&1
+printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" done >/dev/null 2>&1
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
+  && ok "waits and ends carry the count" \
+  || no "waits and ends carry the count" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+# A fifth line that is not digits degrades to a fresh count, never repaired.
+printf 'running\n/x\nhello\n\n12abc' > "$h/perchling/sessions/abc-123"
+printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"again"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
+  && ok "a corrupt count restarts at one" \
+  || no "a corrupt count restarts at one" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -135,28 +135,53 @@ if [ ! -t 0 ]; then
   # the reply.
   if [ -n "$sid" ]; then
     mkdir -p "$d/sessions" 2>/dev/null
+    # A turn is a HUMAN prompt. Only UserPromptSubmit carries "prompt", so a
+    # tool batch's running write reaches here with an empty snippet, and the
+    # machinery filter above has already blanked the harness's fake prompts —
+    # task notifications, slash commands. Decided BEFORE the carry below,
+    # which would make every captionless hook on a captioned session look
+    # like a turn.
+    turn=
+    [ "${1:-}" = running ] && [ -n "$snippet" ] && turn=1
+    # Lines 3-5 of the previous write, read with builtins: the odometer needs
+    # line 5 on EVERY rewrite, and the old pair of conditional sed forks would
+    # have become three — one read block is cheaper than any single fork was.
+    # Values are read unconditionally, used under the same conditions as
+    # before. The -r test keeps the redirect off a missing file, because this
+    # script must never write to a hook's stderr.
+    prev3=; prev4=; prev5=
+    if [ -r "$d/sessions/$sid" ]; then
+      { IFS= read -r _; IFS= read -r _; IFS= read -r prev3
+        IFS= read -r prev4; IFS= read -r prev5; } < "$d/sessions/$sid"
+    fi
     # An empty snippet must not erase the last one. Only a prompt and a reply
     # produce text; a tool batch produces none, and a session file is rewritten
     # whole on every hook, so writing the empty value would blank the bubble
     # halfway through a turn. The global `say` never had this problem because it
-    # is only written when non-empty. The read costs one fork, and only on the
-    # hooks that have nothing to say.
-    [ -n "$snippet" ] || snippet=$(sed -n 3p "$d/sessions/$sid" 2>/dev/null)
+    # is only written when non-empty.
+    [ -n "$snippet" ] || snippet="$prev3"
     # A waiting hook with no tool of its own keeps the last one: on a terminal
     # host one permission decision fires PermissionRequest and then
     # Notification, and the second write would otherwise blank the detail the
     # first just recorded. Only waiting carries it forward — any other mood
     # means the wait is over, and the empty line 4 below is what retires it.
     if [ "${1:-}" = waiting ] && [ -z "$tool" ]; then
-      tool=$(sed -n 4p "$d/sessions/$sid" 2>/dev/null)
+      tool="$prev4"
     fi
+    # Line 5 is the odometer and it is drawn on screen, so the shape check
+    # mirrors the sid's: a fifth line that is not digits degrades to a fresh
+    # count, never to a repaired one.
+    case "$prev5" in *[!0-9]*) prev5= ;; esac
+    turns="$prev5"
+    [ -n "$turn" ] && turns=$((${prev5:-0} + 1))
     # Line 1 mood, line 2 cwd, line 3 caption, line 4 the tool a waiting
-    # session is blocked on. One write, one file: all four are published by the
-    # same atomic mv and removed by the same rm, so the mood, the label and the
-    # text can never disagree about whose they are. Always four lines, empty
-    # ones included — `Mood.parse` reads line one and the reader maps an empty
-    # line to nil, so the shorter forms `pet.sh` writes stay valid.
-    printf '%s\n%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" "$tool" > "$d/.sess.$$" 2>/dev/null &&
+    # session is blocked on, line 5 the turn count. One write, one file: all
+    # five are published by the same atomic mv and removed by the same rm, so
+    # the mood, the label and the text can never disagree about whose they
+    # are. Always five lines, empty ones included — `Mood.parse` reads line
+    # one and the reader maps an empty line to nil, so the shorter forms
+    # `pet.sh` writes stay valid.
+    printf '%s\n%s\n%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" "$tool" "$turns" > "$d/.sess.$$" 2>/dev/null &&
       mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
 fi
