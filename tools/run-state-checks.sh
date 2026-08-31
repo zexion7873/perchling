@@ -155,5 +155,47 @@ h=$(fire tool-hot running '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash"
   && ok "a running hook never records one" \
   || no "a running hook never records one" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
 
+# --- the transcript scrape: done gets the reply, error gets the autopsy ---
+# One fixture serves both moods, because it is the same branch. The reply
+# record's shape is captured from a real transcript, not invented: role and
+# the text-block signature on one line, with a tool_use record AFTER it so
+# the tail-1-of-text-lines rule is what the assertion exercises. The error
+# fixture's last assistant record is the CLI's own <synthetic> one, which a
+# hook-time snapshot (2026-08-31) shows is already written when StopFailure
+# fires.
+tscript="$W/transcript.jsonl"
+cat > "$tscript" <<'EOT'
+{"type":"user","message":{"role":"user","content":"hi"}}
+{"parentUuid":"a1","type":"assistant","message":{"model":"claude-x","role":"assistant","content":[{"type":"text","text":"the reply itself"}]}}
+{"parentUuid":"a2","type":"assistant","message":{"model":"claude-x","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash"}]}}
+EOT
+h=$(fire scrape-done done "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"transcript_path\":\"$tscript\"}")
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "the reply itself" ] \
+  && ok "done: the reply is the caption" \
+  || no "done: the reply is the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+
+escript="$W/transcript-error.jsonl"
+cat > "$escript" <<'EOT'
+{"type":"user","message":{"role":"user","content":"hi"}}
+{"parentUuid":"a1","type":"assistant","message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error: 400 forced failure"}]}}
+EOT
+h=$(fire scrape-error error "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"transcript_path\":\"$escript\"}")
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "API Error: 400 forced failure" ] \
+  && ok "error: the autopsy is the caption" \
+  || no "error: the autopsy is the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+[ "$(cat "$h/perchling/say" 2>/dev/null)" = "API Error: 400 forced failure" ] \
+  && ok "error: the bubble gets it too" \
+  || no "error: the bubble gets it too" "say: '$(cat "$h/perchling/say" 2>/dev/null)'"
+
+# The other moods must NOT scrape: a running hook offering a transcript keeps
+# the prompt as its caption. Guards the condition against widening — every
+# tool batch carries transcript_path, and scraping on the hot path would both
+# pay the file read per batch and caption the bubble with a STALE reply while
+# the turn is still going.
+h=$(fire scrape-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"prompt\":\"typed this\",\"transcript_path\":\"$tscript\"}")
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "typed this" ] \
+  && ok "running never scrapes" \
+  || no "running never scrapes" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
