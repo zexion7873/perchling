@@ -80,7 +80,8 @@ Controls below has which is which.
 ### 💬 The speech bubble
 
 A bubble above its head shows what it's doing over a line of context: your
-prompt while it works, then a snippet of Claude's reply once the turn ends. With
+prompt while it works, then a snippet of Claude's reply once the turn ends — or,
+when the turn died instead, the error that killed it, so the frown says why. With
 more than one session open it names the session it is quoting, and that is the
 same session the face picked among the live ones, so the two cannot describe
 different windows. When it's waiting on you, the status names the tool that's

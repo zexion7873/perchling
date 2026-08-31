@@ -99,7 +99,15 @@ if [ ! -t 0 ]; then
   # results and image attachments are also text blocks, and a base64 payload in
   # the bubble helps nobody. 64KB of tail covers it: the p95 record is a few KB
   # and the reply is the last thing written.
-  if [ "${1:-}" = done ]; then
+  #
+  # On StopFailure the same scrape is the autopsy: the CLI appends a
+  # <synthetic> assistant record carrying its own error text ("API Error:
+  # 400 ..."), and a snapshot taken INSIDE the hook (2026-08-31) shows the
+  # record already in the file when the hook fires — the transcript-lag
+  # warning in the docs does not bite here. The payload's top-level
+  # last_assistant_message says the same thing and lost only on being a
+  # second extraction mechanism: one scrape, two moods, one place to break.
+  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
     tp=$(printf '%s' "$payload" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
     if [ -n "$tp" ] && [ -r "$tp" ]; then
       # Drop the leading line only when the tail actually cut one in half. On a

@@ -184,6 +184,14 @@ gate tool-detail-blanked scripts/state.sh PERCHLING_STATE_SH tools/run-state-che
     fi' \
   '    :'
 
+# The autopsy arm forgotten: StopFailure still flips the mood, but the bubble
+# keeps whatever it last said while the CLI's own error text sits unread in
+# the transcript's <synthetic> record — the pet frowns and refuses to say why,
+# with every other state line green.
+gate error-autopsy-forgotten scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then' \
+  '  if [ "${1:-}" = done ]; then'
+
 # A refresh that never runs is the pre-record behaviour restored for every
 # pet: picked copies frozen at pick time while the shipped art moves on —
 # the exact user report (#103) this loop exists to close.
