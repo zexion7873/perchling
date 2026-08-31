@@ -88,7 +88,8 @@ different windows. When it's waiting on you, the status names the tool that's
 blocked when the name is short enough to fit, and counts the minutes you've
 kept it waiting — "waiting for you… · Bash · 12m" is a permission prompt
 you've been ignoring for twelve. The session tray shows the same detail with
-the tool's full name, however long. The status words are translated for Chinese and Japanese
+the tool's full name, however long — plus a small odometer per session, "7t"
+for the seven prompts you have fed it. The status words are translated for Chinese and Japanese
 systems and read English everywhere else. It's a frosted, click-through
 overlay, so it never steals a click, and it stays up through idle rather than
 folding itself away.
