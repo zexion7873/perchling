@@ -75,6 +75,9 @@ Rules the loader enforces:
   overrides the blink color, which is otherwise the brightest color occupying
   at least 3% of the box. `perchling --validate` prints the box it read and
   says `blink UNAVAILABLE` if nothing in the box is bright enough to close.
+  **`"range": 0` buys the blink and switches the gaze off** — reach for it when
+  the eyes have no flat margin to slide into. A blink repaints the whole box
+  and needs no margin; a gaze with nowhere to go smears the face instead.
 - **sequences** (optional) puts several frames on a clock:
   `"sequences": { "hover": { "frames": [ <grid>, <grid> ], "steps": [[0,150],[1,150]] } }`.
   Eight names are recognised. Three are reactions: `hover` plays when the cursor
@@ -142,12 +145,11 @@ Rules the loader enforces:
   flag. `perchling --export` prints it.
 
   **No shipped pet declares `eyes`**, so there is no worked example to copy —
-  read the `eyes` rules above, and `README.md`'s "Eyes that follow", which
-  covers the same block from the user's side. Every pet that ships animates all
-  five moods, and a mood loop suppresses the gaze and the blink, so the block
-  would buy them nothing. If a user wants eyes that follow, you are writing the
-  first one: lean on `--validate`, which prints the box it read and says `blink
-  UNAVAILABLE` when nothing in the box is bright enough.
+  the `eyes` rules above are the whole reference. Every pet that ships animates
+  all five moods, and a mood loop suppresses the gaze and the blink, so the
+  block would buy them nothing. If a user wants eyes that follow, you are
+  writing the first one: lean on `--validate`, which prints the box it read and
+  says `blink UNAVAILABLE` when nothing in the box is bright enough.
 
   `plays` does have one. `examples/chinchilla.json` declares `"plays": 2` on its
   `tap`, and `--validate` reports it as `5 steps x2 ... 1.90s total` — the arc

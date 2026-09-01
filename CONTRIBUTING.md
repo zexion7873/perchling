@@ -48,7 +48,7 @@ bash scripts/pet.sh stop       # drop refcounts and kill the pet
 bash tools/run-mutation-gate.sh  # every harness goes red against its own defect
 ```
 
-The nine layer harnesses are listed in AGENTS.md and all run by hand exactly as
+The ten layer harnesses are listed in AGENTS.md and all run by hand exactly as
 they run in CI — `.github/workflows/harnesses.yml` is a thin caller. Run them
 before you open a PR; the mutation gate is the slow one and the one that
 matters.

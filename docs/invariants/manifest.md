@@ -12,8 +12,10 @@ and what the alternative lost to.
   `loadCustomPet` a user's `pet.json` goes through, and `--export` hands the
   loaded TEXT straight back — so the export is an exact round-trip rather than a
   re-serialisation, and there is exactly one copy of it in the repo. It used to
-  be 449KB of string literal called `BUILTIN_MANIFEST`, which is most of why the
-  binary was 917KB and is now 458.
+  be 449KB of string literal called `BUILTIN_MANIFEST`, which is most of why
+  taking it out of the binary took that binary from 917KB to 458 at the time.
+  Do not read 458 as the current size — it is the measurement that sized the
+  change, and the binary grows with every feature since.
 
   Selecting it by NAME rather than by path is what makes swapping the default
   creature one line, and the menu needs no help: `petChoices` hides whichever
