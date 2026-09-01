@@ -63,7 +63,7 @@ would first appear at the user's *next* session. Don't make them wait — launch
 it immediately:
 
 ```bash
-bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | head -1)" up manual
+bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)" up manual
 ```
 
 This builds (first run) and starts the pet right away; it perches at the
@@ -72,12 +72,19 @@ after which real Claude Code sessions keep the pet alive via their own hooks.
 
 ## Control & uninstall
 
-The control script lives inside the installed plugin and its path carries a
-version number, so resolve it once:
+The control script lives inside the installed plugin, under a directory named
+for the version, so resolve it rather than hardcoding a path:
 
 ```bash
-pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | head -1)
+pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)
 ```
+
+Search `plugins/cache` and take the HIGHEST version, never `plugins` and
+`head -1`. Every version ever installed keeps its own directory, so a machine
+that has updated a few times offers many — `head -1` picks by filesystem order,
+and a plain `plugins` search also reaches the marketplace clone, which tracks
+the repo's main branch rather than what is installed. Building from that one
+compiles unreleased source into the user's binary.
 
 Then, in that same shell, run the one the user asked for — not the whole
 block; `enable` and `wake` start a real pet.

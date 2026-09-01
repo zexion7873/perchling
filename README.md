@@ -13,8 +13,6 @@ needs you.**
 [![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
-[![GitHub stars](https://img.shields.io/github/stars/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/stargazers)
-[![Last commit](https://img.shields.io/github/last-commit/zexion7873/perchling?style=flat)](https://github.com/zexion7873/perchling/commits)
 
 No Electron. No WebSocket server. No log scraping. One native Swift binary,
 driven straight off Claude Code hook events.
@@ -47,8 +45,7 @@ From inside a Claude Code session:
 ```
 
 The pet appears on your next session and builds itself from source — a few
-seconds on first launch, and again after every plugin update, since an update
-ships new source for it to compile.
+seconds on first launch, and again after every plugin update.
 
 > [!IMPORTANT]
 > **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
@@ -66,54 +63,46 @@ ships new source for it to compile.
 | 😢 | **error** | an API failure ended the turn | droops, a red cross through each eye |
 | 💤 | **idle** | nothing happening | sits and breathes, tail curled |
 
-Drag it and it leans into the pull, feet planted, and rights
-itself when you let go. Let go at speed and it skids across the desktop,
-bleeding momentum until it settles — catch it mid-slide to stop it. Click it
-and it hops, then throws you back to Claude —
-the desktop app if that's running, otherwise whatever was frontmost when the pet
-launched.
+Drag it and it leans into the pull, feet planted, and rights itself when you
+let go. Let go at speed and it skids across the desktop until it settles —
+catch it mid-slide to stop it. Click it and it hops, then throws you back to
+Claude — the desktop app if it's running, otherwise whatever was frontmost when
+the pet launched. Drag it anywhere; the position sticks.
 
-Drag it anywhere; the position sticks. Right-click for **Tuck away** (hides
-until `pet.sh wake`), **Mute notifications**, **Disable**, or **Quit** —
-Controls below has which is which.
+Right-click for **Tuck away**, **Mute notifications**, **Disable**, or
+**Quit** — [Controls](#-controls) has which is which.
 
 ### 💬 The speech bubble
 
 A bubble above its head shows what it's doing over a line of context: your
 prompt while it works, then a snippet of Claude's reply once the turn ends — or,
-when the turn died instead, the error that killed it, so the frown says why. With
-more than one session open it names the session it is quoting, and that is the
-same session the face picked among the live ones, so the two cannot describe
-different windows. When it's waiting on you, the status names the tool that's
-blocked when the name is short enough to fit, and counts the minutes you've
-kept it waiting — "waiting for you… · Bash · 12m" is a permission prompt
-you've been ignoring for twelve. The session tray shows the same detail with
-the tool's full name, however long — plus a small odometer per session, "7t"
-for the seven prompts you have fed it. The status words are translated for Chinese and Japanese
-systems and read English everywhere else. It's a frosted, click-through
-overlay, so it never steals a click, and it stays up through idle rather than
-folding itself away.
+when the turn died instead, the error that killed it, so the frown says why.
+With more than one session open it names the session it is quoting.
 
-A small disc sits beside the top of its head, right edge flush with the
-bubble's above it. Click it to fold the bubble away or bring it back — the
-choice sticks across restarts. When something happened while you were looking elsewhere, the disc
-turns into a count of how much you missed; coming back to Claude, or opening
-the bubble, clears it.
+When it's waiting on you, the status names the blocked tool and counts the
+minutes — "waiting for you… · Bash · 12m" is a permission prompt you've been
+ignoring for twelve. The session tray shows the same detail with the tool's
+full name however long, plus a per-session odometer: "7t" for the seven prompts
+you have fed it. Status words are translated for Chinese and Japanese systems.
+It's a frosted, click-through overlay, so it never steals a click.
+
+A small disc sits beside the top of its head. Click it to fold the bubble away
+or bring it back; the choice sticks across restarts. When something happened
+while you were looking elsewhere, the disc turns into a count of how much you
+missed — coming back to Claude, or opening the bubble, clears it.
 
 The bubble and the disc share a theme: right-click the pet and pick one under
-**Bubble theme** — the warm amber default, a neutral graphite that goes with
-any wallpaper, or a deep-sea abyss blue. The choice sticks across restarts and
-belongs to you, not the pet: swapping pets never repaints it.
+**Bubble theme** — the warm amber default, a neutral graphite, or a deep-sea
+abyss blue. It belongs to you, not the pet, so swapping pets never repaints it.
 
 ### 🔔 When you've looked away
 
 **waiting**, **done** and **error** each post a macOS notification with a
 chirp — but only while you're in another app. Look at Claude and it shuts up.
-And it works the other way round: switch away while a session is still waiting
-on you (or sitting on an error) and one nudge follows you out — once per wait,
-so glancing back and leaving again doesn't ring twice. **Mute notifications**
-in the right-click menu turns the banners and the chirp off; the unread count
-on the chip stays, so a muted pet still keeps score.
+It works the other way round too: switch away while a session is still waiting
+on you and one nudge follows you out, once per wait. **Mute notifications** in
+the right-click menu turns the banners and the chirp off; the unread count on
+the disc stays, so a muted pet still keeps score.
 
 > [!NOTE]
 > macOS attributes these notifications to "Script Editor". Allow them when the
@@ -137,11 +126,10 @@ scratch — chilling…
 Two rows that would otherwise show the same name get a short ` · id`
 appended so you can still tell them apart.
 
-Clicking a row brings Claude forward, the same as tapping the pet — individual
-terminal tabs aren't addressable from an accessory app, so it doesn't pretend
-to jump you there. Stale moods expire on their own, so a session killed
-mid-flight can't leave the pet bouncing forever. It honours the system Reduce
-Motion setting throughout.
+Clicking a row brings Claude forward, the same as tapping the pet — it can't
+jump you to an individual terminal tab. Stale moods expire on their own, so a
+session killed mid-flight can't leave the pet bouncing forever. It honours the
+system Reduce Motion setting throughout.
 
 ---
 
@@ -231,24 +219,15 @@ lettering, so it is yours to grant. On anything else `mirror` does nothing;
 a burst and a resting state have no direction of travel.
 
 > [!WARNING]
-> A manifest carries pixels, and what it can say about them is where the eyes
-> are and which frames animate. Declare `eyes` and a pet gets the
-> cursor-following gaze and a blink; without it, neither. Declare `sequences`
-> and it gets the reactions and mood loops you named; a pet that ships no
-> `hover` frames has no hover reaction at all. The two do not stack: a playing
-> sequence takes the body over, so a mood you animate is a mood that stops
-> tracking the cursor and stops blinking — `waiting` is the only mood that had
+> A pet gets exactly what it declares. No `eyes` block, no gaze and no blink;
+> no `hover` frames, no hover reaction. And the two do not stack: a playing
+> sequence takes the body over, so **a mood you animate is a mood that stops
+> tracking the cursor and stops blinking**. `waiting` is the only mood that had
 > either, so it is the only one where the choice costs anything.
-> The sideways twitch moves the whole body rather than just the eyes.
-> The drag lean works on any pet — it bends the pixels that are already there.
 >
-> The built-in is a manifest like any other, so all of this applies to it too,
-> and it is the pet that spends the whole trade above rather than dodging it. It
-> declares all eight sequences — every mood, plus `hover`, `drag` and `tap`,
-> with `"mirror": true` on the drag — and it declares no `eyes` at all. So it
-> never follows your cursor and never blinks, and in exchange every mood moves.
-> `perchling --export` prints it, so the worked example for every one of these
-> blocks is one command away.
+> The built-in spends that trade rather than dodging it: all eight sequences,
+> no `eyes` at all — every mood moves, and it never blinks.
+> `perchling --export` prints it, so a worked example is one command away.
 
 ### 📚 Your pet library
 
@@ -259,11 +238,10 @@ built-in. The examples that ship with the plugin are listed there too, and get
 copied into your library the first time you pick one. A copy you have not
 edited keeps up with plugin updates on its own; the moment you edit it, it is
 yours and updates never touch it again. Six ship in
-[`examples/`](examples/), all of them animals that animate every mood and every
-reaction, `drag` included — `husky`, `otter` and `chinchilla` on land, `whale`,
-`shark` and `sea-lion` in the water. Only five have a row: whichever one is
-currently the built-in is the creature you already have, so it is not offered
-twice.
+[`examples/`](examples/), all animals that animate every mood and every
+reaction — `husky`, `otter` and `chinchilla` on land, `whale`, `shark` and
+`sea-lion` in the water. Only five have a row: whichever is currently the
+built-in is the creature you already have.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:
@@ -296,9 +274,8 @@ flowchart LR
 
 Each session's mood is a file, and the same file is the liveness refcount —
 re-stamped on every prompt, removed when the session ends, and retired an hour
-after it stops being re-stamped for the sessions that end without saying so.
-That's the whole protocol: no IPC, no daemon framework, and no network traffic
-at runtime.
+later for sessions that end without saying so. That's the whole protocol: no
+IPC, no daemon framework, no network traffic at runtime.
 
 The built-in creature is a manifest shipped beside the binary, parsed by the
 same loader a pet you draw goes through. `--export` hands that text back
@@ -318,21 +295,14 @@ what is allowed to bring it back:
 | **Quit perchling** | ends | the next session you start |
 | **Disable** | ends, and leaves a marker behind | **only you**, with `pet.sh enable` |
 
-Tuck and Quit look the same on screen and are not: a tucked pet is still
-running and still watching your sessions, so its notifications keep working
-while it hides. Quit leaves nothing watching, so it waits for the next session
-to start it.
+Disable is the one with a memory: the marker survives restarts, reboots and new
+projects until you take it away, and `pet.sh wake` will not override it.
 
-Disable is the one with a memory. Every session start checks for that marker
-first and leaves the pet alone, so it stays gone across restarts, reboots and
-new projects until you take the marker away — `pet.sh wake` will not override
-it either, and says so.
-
-The control script lives inside the installed plugin, and that path changes on
-every update — resolve it once:
+The control script lives inside the installed plugin, under a directory named
+for the version — so resolve the newest one rather than hardcoding a path:
 
 ```bash
-pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" -type f -path '*perchling*/scripts/pet.sh' | head -1)
+pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' | sort -V | tail -1)
 ```
 
 ```bash
