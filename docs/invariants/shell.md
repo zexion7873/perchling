@@ -86,12 +86,26 @@ alone cleans up, exactly once.
   `waiting`, and a false one would self-heal anyway: nothing has to clear
   `waiting`, the next tool batch writes `running` on its own.
 - **Adding an event name to `hooks/hooks.json` is a compatibility decision, and
-  getting it wrong is silent and total.** An event key the running CLI does not
-  recognise voids EVERY hook in the file, not just its own entry — so the pet
-  never launches at all, no `SessionStart`, no error anywhere the user can see.
-  Measured one variable at a time with throwaway plugins and a
+  how badly it bites depends on the CLI the user is running.** An unknown event
+  key used to void EVERY hook in the file, not just its own entry — the pet
+  never launched at all, no `SessionStart`, no error anywhere the user could
+  see. Measured one variable at a time with throwaway plugins and a
   `UserPromptSubmit` canary: `UserPromptSubmit` alone fires, `PermissionRequest`
   + `UserPromptSubmit` fires, and adding one bogus key to either kills both.
+
+  **2.1.258 no longer does this, and the change was measured at runtime rather
+  than read off the message.** `claude plugin validate` now answers a bogus key
+  with a WARNING — `unknown hook event; entry ignored at runtime` — instead of
+  the old `Invalid key in record` error. A throwaway plugin declaring one bogus
+  event beside a real `SessionStart` fired the real one, so the entry really is
+  dropped alone. The boundary sits somewhere between 2.1.109 and 2.1.258 and
+  was not narrowed. **This does not make an unknown key safe**: every CLI old
+  enough still takes the whole file down, and the newer one silently drops the
+  behaviour the key was added for, which is its own bug with no error message.
+  `run-hooks-check.sh` matches both message shapes for that reason, and its
+  mutation half is what caught the wording moving — it went red the day the CLI
+  shipped, on the daily schedule, with the repo untouched.
+
   **A `--settings` file does the exact opposite and ignores unknown keys**, so a
   probe run with `claude --settings` proves nothing about this file; they are
   separate validators with opposite failure modes, and the permissive one is the

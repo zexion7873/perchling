@@ -86,9 +86,10 @@ file's rules, not a summary of it.
   review like tidying.
 - **[shell.md](docs/invariants/shell.md)** — `pet.sh`, `state.sh`,
   `hooks/hooks.json`, the launch lock. The rule: one event key the running CLI
-  does not recognise voids EVERY hook in the plugin, silently — and a
-  `--settings` probe proves nothing, because that validator ignores unknown
-  keys; the two failure modes are opposites.
+  does not recognise is silently fatal — to EVERY hook in the plugin on a CLI
+  old enough, and to that entry alone on 2.1.258 — and a `--settings` probe
+  proves nothing either way, because that validator ignores unknown keys; the
+  two failure modes are opposites.
 - **[harnesses.md](docs/invariants/harnesses.md)** — how to verify anything
   here without opening a window, and the stub rules above.
 

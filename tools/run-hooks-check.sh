@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
-# Guards one silent failure: an event key `hooks/hooks.json` declares that the
-# running CLI does not recognise voids EVERY hook in the file, not just that
-# entry. The pet then never launches — no SessionStart, no error anywhere the
-# user can see. `claude plugin validate` runs the same schema and catches it.
+# Guards an event key in `hooks/hooks.json` that the running CLI does not
+# recognise. What that costs depends on the CLI, so the check outlives the
+# consequence: up to some version between 2.1.109 and 2.1.258 an unknown key
+# voided EVERY hook in the file — the pet never launched, no SessionStart, no
+# error anywhere the user could see. 2.1.258 downgrades it to a warning and
+# drops only that entry, measured at RUNTIME rather than taken from the
+# message: a plugin declaring one bogus event beside a real `SessionStart`
+# still fired the real one. Users on older CLIs keep the total failure, so an
+# unknown key stays a release blocker either way.
+#
+# Both message shapes are matched because both are live in the wild — older
+# CLIs say `Invalid key in record`, 2.1.258 says `unknown hook event`.
+# `claude plugin validate` runs the same schema the runtime does.
 #
 # It has to run against a copy: pointed at this repo it finds
 # .claude-plugin/marketplace.json first and validates that instead, never
 # reaching hooks.json. The copy carries plugin.json and hooks/ and nothing else.
 #
-# A clean file prints no "Validating hooks:" line at all, so the mutation half
-# is what proves the check is live rather than silently skipping.
+# The mutation half is what proves the check is live rather than silently
+# skipping — and it has now caught the validator's wording changing under it
+# once, which is the whole reason it exists.
 #
 # Both halves grep a captured file rather than a pipe: under `pipefail` the
 # status of `claude ... | grep -q` is the validator's, not the grep's, so the
@@ -31,9 +41,10 @@ fail=0
 VERSION="$(claude --version)"
 
 claude plugin validate "$SCRATCH/plugin" > "$SCRATCH/real.log" 2>&1
-if grep -q 'Invalid key in record' "$SCRATCH/real.log"; then
+if grep -qE 'Invalid key in record|unknown hook event' "$SCRATCH/real.log"; then
   echo "FAIL: hooks/hooks.json declares an event $VERSION does not know."
-  echo "      Every perchling hook is dead on this version, silently."
+  echo "      That entry is dead here, and on a CLI old enough, so is every"
+  echo "      other hook in the file — silently."
   grep '❯' "$SCRATCH/real.log"
   fail=1
 else
@@ -51,10 +62,12 @@ json.dump(h, open(p, "w"), indent=2)
 PY
 
 claude plugin validate "$SCRATCH/plugin" > "$SCRATCH/mutated.log" 2>&1
-if grep -q 'Invalid key in record' "$SCRATCH/mutated.log"; then
-  echo "ok: unknown event key still rejected — the check is live"
+if grep -qE 'Invalid key in record|unknown hook event' "$SCRATCH/mutated.log"; then
+  echo "ok: unknown event key still flagged — the check is live"
 else
-  echo "FAIL: unknown event key accepted; this check is no longer testing anything"
+  echo "FAIL: unknown event key passed silently; this check is no longer testing"
+  echo "      anything. The validator's wording moved again — find what it says"
+  echo "      now with: claude plugin validate <a plugin with a bogus event>"
   fail=1
 fi
 
