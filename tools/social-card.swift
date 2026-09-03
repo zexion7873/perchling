@@ -12,6 +12,13 @@
 let CARD_W = 1280, CARD_H = 640          // GitHub's recommended 2:1
 let PET_SCALE: CGFloat = 6
 let MARGIN = 96
+// The pet sits further in than the text does. LINE, iMessage and their kind
+// do not show a 2:1 card; they crop its centre square (x 320..960 here) into
+// a thumbnail, and at a 96px margin that square ends between the goggles.
+// 196 puts the whole head — ears included, which reached column 1057 on a
+// 96px margin — inside it, at the cost of 100px of text column. The report
+// line says which ink columns the square holds; check it if the art moves.
+let PET_MARGIN = 196
 // idle's timeline holds frame 0 for its first second (steps[0] is [0, 1000])
 // and the base bob rests at off 2 while tick % 64 < 56. 5 sits inside both,
 // so this is the pose the pet spends most of its idle time in.
@@ -170,7 +177,7 @@ ctx.fill(CGRect(x: 0, y: 0, width: CARD_W, height: CARD_H))
 
 // Pet: ink right-aligned to the margin and vertically centred. (petX, petY)
 // is the render's top-left corner on the card, top-down.
-let petX = CARD_W - MARGIN - inkR - 1
+let petX = CARD_W - PET_MARGIN - inkR - 1
 let petY = (CARD_H - inkH) / 2 - inkT
 ctx.saveGState()
 ctx.interpolationQuality = .none
@@ -225,10 +232,19 @@ func height(_ s: NSAttributedString, width: Int) -> Int {
                             options: [.usesLineFragmentOrigin, .usesFontLeading]).height))
 }
 
-let title = paragraph("perchling", font(112, .bold, rounded: true), TITLE)
-let pitchText = paragraph(pitch, font(32, .regular), BODY, lineSpacing: 6)
+// The title never wraps. At 112pt it is ~480px wide, and a pet whose ink is
+// wider than the built-in's narrows the column below that (otter's does) —
+// a title broken across two lines is the one failure the card cannot
+// survive. Step the size down until one line fits; size() measures unwrapped.
+var titleSize: CGFloat = 112
+var title = paragraph("perchling", font(titleSize, .bold, rounded: true), TITLE)
+while Int(ceil(title.size().width)) > textW, titleSize > 64 {
+    titleSize -= 4
+    title = paragraph("perchling", font(titleSize, .bold, rounded: true), TITLE)
+}
+let pitchText = paragraph(pitch, font(28, .regular), BODY, lineSpacing: 6)
 let moodsText = paragraph(moods, font(30, .semibold), ACCENT)
-let footText = paragraph(footnote, font(26, .regular), BODY.withAlphaComponent(0.7))
+let footText = paragraph(footnote, font(24, .regular), BODY.withAlphaComponent(0.7))
 
 let blocks: [(NSAttributedString, Int)] = [
     (title, 0), (pitchText, 28), (moodsText, 18), (footText, 22),
@@ -310,7 +326,8 @@ guard mismatched == 0 else { die("\(mismatched) pet pixels on the card differ fr
 
 var report = "wrote \(outURL.path) — \(CARD_W)x\(CARD_H), \(bytes / 1024)KB\n"
 report += "pet: \(b.name) @\(Int(PET_SCALE))x, ink \(inkW)x\(inkH) at (\(petX + inkL), \(petY + inkT)) top-left\n"
-report += "text: \(textW)px column, \(total)px stack\n"
+report += "text: \(textW)px column, \(total)px stack, title \(Int(titleSize))pt\n"
+report += "centre square (\(CARD_W / 4)..\(CARD_W * 3 / 4)) holds ink columns \(petX + inkL)..\(min(petX + inkR, CARD_W * 3 / 4)) of \(petX + inkL)..\(petX + inkR)\n"
 report += "palette: \(seen.count) inks, " + (perChannel == 0
     ? "matching the manifest exactly\n" : "within the 1-per-channel bound\n")
 report += "round-trip: every pet pixel decodes back where draw() put it\n"
