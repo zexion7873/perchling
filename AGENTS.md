@@ -100,6 +100,7 @@ bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
+bash tools/make-social-card.sh  # regenerate the GitHub social preview from this checkout
 bash tools/run-session-harness.sh  # 180 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
@@ -250,10 +251,15 @@ user's `--export > draft.json` gets. Match what is there:
 `JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
 `json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
 
-Two things a change to the built-in's art still leaves behind, and both lie
-quietly rather than failing: `docs/moods.gif` is the README hero, and the
+Three things a change to the built-in's art still leaves behind, and all lie
+quietly rather than failing: `docs/moods.gif` is the README hero, the
 README's `width=` must equal the GIF's real pixel width or the browser resamples
-the pixel art into mush. Regenerate both in the same change. The GIF tool encodes its own output and decodes it back pixel-for-pixel
+the pixel art into mush, and `docs/social-card.png` is the image GitHub shows
+wherever a link to the repo is pasted. Regenerate all three in the same change.
+The GIF tool encodes its own output and decodes it back pixel-for-pixel
 before it will exit 0, so a green run really does mean the file is right — and
 two runs of it are byte-identical, so a diff on `docs/moods.gif` means the art
-moved.
+moved. The card tool makes the same promise for the pet on the card, and no
+promise about the text beside it. The card has one step no script can do:
+GitHub takes the social preview only through Settings → General → Social
+preview, so a regenerated PNG is not live until someone uploads it there.

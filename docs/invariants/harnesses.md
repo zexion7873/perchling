@@ -21,12 +21,19 @@ Verify without launching:
   there has to stub it the way that one does. (There is no `BUILTIN_MANIFEST`
   to keep. The built-in's art has been a file since 1.14.)
   This exercises the real `draw()`, so what you see is what ships.
-  `tools/moods-gif.swift` is a worked example of the same cut. Give the view no
+  `tools/moods-gif.swift` is a worked example of the same cut, and
+  `tools/social-card.swift` a second. Give the view no
   window: `gaze()` returns neutral without one, whereas a view in a window aims
   its pupils at wherever the mouse happens to be, which is how a render stops
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
-  and turns a handful of flat inks into a million.
+  and turns a handful of flat inks into a million. And when the PIXEL count of
+  the render matters, allocate the `NSBitmapImageRep` yourself, sized in pixels
+  to the canvas in points: `bitmapImageRepForCachingDisplay(in:)` on a
+  windowless view takes the main screen's backing scale, which on a retina Mac
+  is 2x, and a harness that asked for six pixels per cell gets twelve. The GIF
+  tool never noticed because it draws that 2x image into a 1x context, which
+  downsamples it back; the card tool did, because its blit is 1:1.
 - **Session/tray logic** — `Mood.parse`, `liveSessions`, `foldMoods`,
   `menuRows`, `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
   `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above

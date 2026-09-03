@@ -17,7 +17,9 @@ command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)"
 
 # The cut point is the first line of CLI dispatch. Matching the assignment
 # rather than a line number keeps this working when the file above it grows.
-cut=$(grep -n '^let argv = CommandLine.arguments' "$src" | cut -d: -f1)
+# `|| true`, or a missing anchor fails the substitution under pipefail and the
+# script exits 1 in silence before the message below can say why.
+cut=$(grep -n '^let argv = CommandLine.arguments' "$src" | cut -d: -f1 || true)
 [ -n "$cut" ] || { echo "cannot find the CLI dispatch in $src" >&2; exit 1; }
 
 work="$(mktemp -d)"
