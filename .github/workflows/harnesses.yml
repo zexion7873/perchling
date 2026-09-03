@@ -89,6 +89,12 @@ jobs:
         # NOT diffed against the committed one: byte-identity is proven per
         # machine, and a runner's colour management is not this machine's.
         run: bash tools/make-moods-gif.sh "$RUNNER_TEMP/hero.gif"
+      - name: the social card regenerates and round-trips
+        # Same contract as the hero, same reason it is not diffed against
+        # docs/social-card.png. It binds pet.swift symbols the GIF tool never
+        # touches (CustomPet's memberwise init, sidePad, PetView.scale/xpad),
+        # so a refactor that keeps the hero green can still break it.
+        run: bash tools/make-social-card.sh "$RUNNER_TEMP/card.png"
       - name: nothing leaked into the real runtime home
         # AGENTS.md forbids tests from touching ~/.claude/perchling in three
         # separate places; this is the first thing that checks it.
