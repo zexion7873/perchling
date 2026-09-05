@@ -1,0 +1,6 @@
+# Git for Windows checks out with core.autocrlf=true by default and bash reads
+# the CR as part of the token, so a CRLF hook script exits 2 before its
+# platform gate runs. See docs/invariants/shell.md.
+*	text=auto eol=lf
+*.png	binary
+*.gif	binary

@@ -301,3 +301,19 @@ alone cleans up, exactly once.
   `cmd_up` when nothing is running. This is easy to get backwards — and was, in
   advice given to the user — because the next prompt visibly does re-stamp
   `sessions/<sid>`, so the refcount returns without the process.
+- **Every script here must be LF, and `.gitattributes` is the only thing holding
+  that.** Git for Windows installs with `core.autocrlf=true`, the marketplace
+  clone honours it, and bash treats the CR as part of the token: a CRLF
+  `state.sh` fails at `exit 0<CR>` on its platform gate under Git Bash (and at
+  `case "$payload" in<CR>` on a Mac, measured on bash 3.2), a CRLF `pet.sh` at
+  `set -u<CR>` — both exit 2 before any platform-aware line runs. Exit 2 is the
+  one status a hook must never return by accident: on `UserPromptSubmit` it
+  blocks and erases the prompt, so the README's "silently inactive on every
+  other platform" was, on Windows, "eats every prompt". The dying `state.sh`
+  also runs a few lines first and leaves a directory literally named
+  `perchling<CR><CR>` under the config dir. `* text=auto eol=lf` pins every text
+  file, and the two hook scripts carry the note at their top. An attribute added
+  later renormalises nothing an existing clone already has — `git pull` rewrites
+  only the files the pulled commits touch — so an install cloned before the
+  attribute keeps CRLF in every untouched file until it is removed and re-added,
+  and any future fix to line endings must touch the scripts it means to repair.
