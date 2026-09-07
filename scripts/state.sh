@@ -1,5 +1,12 @@
 #!/bin/bash
 # Hot path: fires on every prompt / tool batch. Keep it cheap and never fail a hook.
+# This file must stay LF, and .gitattributes pins it. Git for Windows checks
+# out with core.autocrlf=true by default, and bash reads the CR as part of the
+# token: `exit 0<CR>` on the gate below is "numeric argument required", the
+# `case` further down is a syntax error, and either way the script exits 2
+# before any platform-aware line runs. On UserPromptSubmit exit 2 is a
+# blocking error that erases the prompt, so a CRLF checkout does not go quiet
+# on the wrong platform — it eats every prompt.
 [ "$(uname)" = Darwin ] || exit 0
 d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 # `disable` has to reach the hot path or it only half means it. `cmd_up` has
