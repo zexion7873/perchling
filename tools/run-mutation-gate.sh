@@ -394,6 +394,22 @@ gate wedged-lock-never-cleared scripts/pet.sh PERCHLING_PET_SH tools/run-launch-
   '      { rmdir "$lock" 2>/dev/null || mv "$lock" "$ROOT/.launch.wedged.$$" 2>/dev/null; }' \
   '      rmdir "$lock" 2>/dev/null'
 
+# `.gitattributes` is the whole Windows story: without the pin, Git for Windows
+# checks the hook scripts out CRLF and state.sh exits 2 on every prompt. The
+# mutant keeps a valid attributes line rather than emptying the file, so what
+# reds is the missing eol pin and not an unparseable one.
+gate gitattributes-lf-pin-gone .gitattributes PERCHLING_GITATTRIBUTES tools/run-release-checks.sh \
+  '*	text=auto eol=lf' \
+  '*	text=auto'
+
+# The pin can be intact while a CR reaches a tracked file anyway — a commit from
+# a checkout older than the pin. One CR on the shebang is enough to make bash
+# read `#!/bin/bash\r` and is the smallest mutant that proves the byte check
+# runs; the pin assertion cannot see it, which is why these are two lines.
+gate hook-script-carries-cr scripts/state.sh PERCHLING_STATE_SH tools/run-release-checks.sh \
+  '#!/bin/bash' \
+  $'#!/bin/bash\r'
+
 echo "---"
 echo "$pass mutants caught, $fail escaped"
 [ "$fail" = 0 ]

@@ -28,6 +28,9 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PLUGIN="${PERCHLING_PLUGIN_JSON:-$ROOT/.claude-plugin/plugin.json}"
 MARKET="${PERCHLING_MARKETPLACE_JSON:-$ROOT/.claude-plugin/marketplace.json}"
+ATTRS="${PERCHLING_GITATTRIBUTES:-$ROOT/.gitattributes}"
+PET_SH="${PERCHLING_PET_SH:-$ROOT/scripts/pet.sh}"
+STATE_SH="${PERCHLING_STATE_SH:-$ROOT/scripts/state.sh}"
 
 pass=0; fail=0
 ok(){ printf '  ok   %-38s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
@@ -174,6 +177,43 @@ a, b = sys.argv[1], sys.argv[2]
 n = min(len(a), len(b))
 i = next((k for k in range(n) if a[k] != b[k]), n)
 print("first differ at %d: %r vs %r" % (i, a[i:i+28], b[i:i+28]))' "$p_desc" "$m_desc")"
+fi
+
+# --- the hook scripts are LF, and something says so -------------------------
+# Git for Windows checks out with core.autocrlf=true, the marketplace clone
+# honours it, and bash reads the CR as part of the token: a CRLF state.sh exits
+# 2 before its platform gate, and exit 2 on UserPromptSubmit erases the prompt.
+# `.gitattributes` is the only thing standing between that and a Windows user;
+# delete it and every other check in this repo stays green, which is how the
+# defect shipped for 34 releases in the first place.
+#
+# Two assertions rather than one, because they fail apart: the pin can be
+# deleted while the working tree still happens to be LF (the next Windows clone
+# breaks, nothing local does), and a CR can reach a tracked file while the pin
+# is intact (someone commits from a checkout that predates it). The second one
+# reads BYTES rather than asking `git check-attr`, so it can be pointed at a
+# mutant like every other assertion here — check-attr answers about the real
+# repository and would test the clean tree no matter what it was handed.
+if [ ! -r "$ATTRS" ]; then
+  no "text files are pinned to LF" "no readable .gitattributes at $ATTRS"
+elif grep -qE '^\*[[:space:]]+text=auto[[:space:]]+eol=lf[[:space:]]*$' "$ATTRS"; then
+  ok "text files are pinned to LF"
+else
+  no "text files are pinned to LF" "$ATTRS has no '* text=auto eol=lf' line"
+fi
+
+crlf=""
+for f in "$PET_SH" "$STATE_SH"; do
+  if [ ! -r "$f" ]; then
+    crlf="$crlf $(basename "$f"):unreadable"
+  elif LC_ALL=C grep -qU $'\r' "$f"; then
+    crlf="$crlf $(basename "$f"):$(LC_ALL=C tr -d -c '\r' < "$f" | wc -c | tr -d ' ')CR"
+  fi
+done
+if [ -z "$crlf" ]; then
+  ok "the hook scripts carry no CR byte"
+else
+  no "the hook scripts carry no CR byte" "$crlf"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
