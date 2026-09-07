@@ -8,8 +8,9 @@ body:
         Two things decide whether a report is actionable here, and both are easy
         to check before you write anything:
 
-        - **`bash scripts/pet.sh status`** — says whether the binary, the process
-          and the session refcounts are what you think they are.
+        - **`pet.sh status`** — says whether the binary, the process and the
+          session refcounts are what you think they are. Resolve the script
+          rather than guessing a path; the field below carries the one-liner.
         - **`claude plugin list`** — the version that actually reached you. An update
           only lands on sessions started *after* it, so a fix you read about may
           not be the one running.
@@ -19,7 +20,16 @@ body:
     attributes:
       label: perchling version
       description: "`claude plugin list` — the line for `perchling@perchling`. Not the version on `main`: a plugin update only reaches sessions started after it."
-      placeholder: "1.17.0"
+      placeholder: "1.21.2"
+    validations:
+      required: true
+
+  - type: input
+    id: cli
+    attributes:
+      label: Claude Code version
+      description: "`claude --version`. A CLI that does not recognise one of the hook events this plugin declares drops hooks silently — on older ones, every hook in the file — so \"no pet, no error\" can be a version answer rather than a bug."
+      placeholder: "2.1.259"
     validations:
       required: true
 
@@ -68,7 +78,12 @@ body:
     id: status
     attributes:
       label: Output of pet.sh status
-      description: "`bash scripts/pet.sh status`, run from the marketplace clone at `~/.claude/plugins/marketplaces/perchling`. Pasted as-is — it is one of the few things in a report that cannot be misremembered."
+      description: |
+        Pasted as-is — it is one of the few things in a report that cannot be misremembered. Resolve the script out of `plugins/cache` and take the highest version; a `plugins` search also reaches the marketplace clone, which tracks `main` rather than what you have installed, and reports the wrong thing.
+
+        ```bash
+        bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)" status
+        ```
       render: text
 
   - type: textarea

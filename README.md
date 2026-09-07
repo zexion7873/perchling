@@ -48,7 +48,13 @@ The pet appears on your next session and builds itself from source — a few
 seconds on first launch, and again after every plugin update.
 
 > [!IMPORTANT]
-> **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`).
+> **Requirements:** macOS with Xcode Command Line Tools (`xcode-select --install`),
+> and a Claude Code new enough to know every hook event this plugin declares —
+> one it does not recognise is dropped without an error, and on older CLIs it
+> takes every other hook in the file with it. The newest event here,
+> `PermissionRequest`, was accepted as far back as 2.1.109; older than that is
+> unmeasured. If the pet never appears and `pet.sh status` looks healthy, update
+> the CLI before filing a bug.
 > On every other platform the plugin stays silently inactive rather than erroring.
 
 ---

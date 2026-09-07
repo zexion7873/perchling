@@ -30,13 +30,21 @@ puts three things on your disk:
 - **A runtime home** at `${CLAUDE_CONFIG_DIR:-~/.claude}/perchling` holding the
   binary, the session refcounts, and the active pet manifest.
 
-It makes no network requests, opens no ports, and reads nothing outside that
-runtime home and the paths the hook payload names.
+It makes no network requests and opens no ports. Outside the runtime home it
+reads three things, all of them locally written and none of them ever sent
+anywhere: the paths the hook payload names, the CLI's own session records under
+`${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`, and — for the titles shown in the
+menu — the desktop app's session records under
+`~/Library/Application Support/Claude/claude-code-sessions`. Both registries
+are written by another program, so content arriving from them is parsed as
+untrusted input and only ever reaches a menu label.
 
 ### In scope
 
 - Anything in a hook script that lets payload content escape its quoting — the
   session id becomes a filename, and a traversal in it was a real bug once.
+- Anything in the two session registries above that escapes being a menu
+  label — a name that reaches a shell, a path, or a file operation.
 - Anything that writes outside the runtime home, or that follows a link out of
   it.
 - A pet manifest that can do more than render badly. Manifests are a shareable
