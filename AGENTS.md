@@ -202,7 +202,23 @@ clean tree and passes forever), and requires the harness to go red.
 `.github/workflows/harnesses.yml` runs the harnesses, the gate,
 `run-release-checks.sh` and `run-hooks-check.sh` on every PR and push to main; the hooks check also runs on
 a daily schedule, because the CLI it validates against moves without this repo
-moving. The workflow is a thin caller — everything of substance is one of these
+moving.
+
+The two jobs that compile SELECT their Xcode — `Xcode_16.4.app`, Swift 6.1.2 —
+rather than taking the image's default. The default moving is a scheduled event,
+not a hypothesis: the `macos-15` image already carries nine Xcodes up to 26.3
+and merely defaults to 16.4 today. Nothing in this repo compiles Swift on the
+cron, so the day it moves, the drift lands on whoever opens the next PR and
+reads as their fault. Selecting makes it a reviewed one-line diff instead, and
+when the image finally drops this Xcode the `toolchain` step fails by name
+rather than the harnesses failing for a reason nobody can see. The version is
+ASSERTED after selecting rather than inferred from it, because every /usr/bin
+dev tool on macOS is an xcrun shim and `swiftc` resolving proves nothing about
+which Xcode it resolved to. Bumping means changing the path and the assertion
+together, in both jobs — which is the whole point, and it is why a dev machine's
+Swift has never been evidence about CI's.
+
+The workflow is a thin caller — everything of substance is one of these
 scripts and runs identically by hand. And thirteen green lines are not thirteen
 guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
 the race window, so they pass against a broken script too and the file labels
