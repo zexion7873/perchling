@@ -12,7 +12,7 @@
 # rather than jq because it is what the rest of tools/ already depends on.
 #
 # Takes PERCHLING_PLUGIN_JSON / PERCHLING_MARKETPLACE_JSON / PERCHLING_README /
-# PERCHLING_MOODS_GIF and the rest, so it can be pointed at a mutant carrying
+# PERCHLING_MOODS_GIF / PERCHLING_HOOKS_JSON and the rest, so it can be pointed at a mutant carrying
 # exactly the defect each line is named after and shown to FAIL. That is the
 # only reason to believe any of them:
 #     sed 's/"version": "1\./"version": "0./' .claude-plugin/plugin.json > /tmp/back.json
@@ -34,6 +34,7 @@ PET_SH="${PERCHLING_PET_SH:-$ROOT/scripts/pet.sh}"
 STATE_SH="${PERCHLING_STATE_SH:-$ROOT/scripts/state.sh}"
 README="${PERCHLING_README:-$ROOT/README.md}"
 GIF="${PERCHLING_MOODS_GIF:-$ROOT/docs/moods.gif}"
+HOOKS="${PERCHLING_HOOKS_JSON:-$ROOT/hooks/hooks.json}"
 
 pass=0; fail=0
 ok(){ printf '  ok   %-38s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
@@ -276,6 +277,69 @@ PYW
     ok "the README's width matches the GIF" "$detail"
   else
     no "the README's width matches the GIF" "$detail"
+  fi
+fi
+
+# --- every file hooks.json names still exists --------------------------------
+# `hooks/hooks.json` reaches its scripts through `${CLAUDE_PLUGIN_ROOT}`, which
+# resolves to the plugin's install directory — a VERBATIM copy of this tree, no
+# `files` field and no `.claudeignore`, so a path that is right here is right
+# there. Which means the reverse holds too: rename or move one of these scripts
+# and every hook in the plugin dies for every installed user, on their next
+# session, silently, with a green tick on the commit that did it.
+#
+# `run-hooks-check.sh` cannot see this. It asks the CLI whether the JSON's
+# SHAPE is loadable; a perfectly-shaped entry pointing at a file that is not
+# there validates cleanly.
+#
+# The paths are extracted from the file rather than listed here. A hard-coded
+# pair would keep passing after hooks.json stopped naming them, which is the
+# same defect wearing the check's own clothes. An empty extraction is a FAIL
+# for that reason: it means either the paths moved out of reach of this pattern
+# or the hooks stopped naming any file at all, and neither should be silent.
+if [ ! -r "$HOOKS" ]; then
+  no "hooks.json's scripts are all present" "no readable hooks.json at $HOOKS"
+else
+  detail=$(python3 - "$HOOKS" "$ROOT" <<'PYH'
+import json, re, sys
+
+hooks, root = sys.argv[1], sys.argv[2]
+
+try:
+    doc = json.load(open(hooks, encoding="utf-8"))
+except Exception as e:
+    print("hooks.json is not JSON: %s" % e)
+    sys.exit(1)
+
+def strings(o):
+    if isinstance(o, str):
+        yield o
+    elif isinstance(o, dict):
+        for v in o.values():
+            yield from strings(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from strings(v)
+
+paths = sorted({m for s in strings(doc)
+                for m in re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]+)", s)})
+if not paths:
+    print("hooks.json names no file under ${CLAUDE_PLUGIN_ROOT}")
+    sys.exit(1)
+
+import os
+missing = [p for p in paths if not os.access(os.path.join(root, p), os.R_OK)]
+if missing:
+    print("hooks.json points at %s, which %s not in the tree"
+          % (", ".join(missing), "are" if len(missing) > 1 else "is"))
+    sys.exit(1)
+print("%d: %s" % (len(paths), ", ".join(paths)))
+PYH
+)
+  if [ $? -eq 0 ]; then
+    ok "hooks.json's scripts are all present" "$detail"
+  else
+    no "hooks.json's scripts are all present" "$detail"
   fi
 fi
 
