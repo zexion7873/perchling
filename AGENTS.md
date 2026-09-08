@@ -112,7 +112,7 @@ bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps l
 bash tools/run-library-refresh.sh   # a picked pet takes shipped updates only while provably untouched
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 bash tools/run-toggle-checks.sh     # disable / enable / wake, and what each may claim
-bash tools/run-release-checks.sh    # manifests parse, version holds, LF and the hero's width hold
+bash tools/run-release-checks.sh    # manifests parse, version holds, LF, hero width, hook paths
 bash tools/run-mutation-gate.sh     # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -145,12 +145,12 @@ the toggle).
 Ten of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
 `PERCHLING_STATE_SH` — and so does the release gate below
 (`PERCHLING_PLUGIN_JSON`, `PERCHLING_MARKETPLACE_JSON`,
-`PERCHLING_GITATTRIBUTES`, `PERCHLING_README`, `PERCHLING_MOODS_GIF`, and the
-same `PERCHLING_PET_SH`/`PERCHLING_STATE_SH` the shell harnesses take), so each
-can be pointed at a mutant carrying exactly the defect it is named after and
-shown to FAIL.
-Seven of the release gate's nine lines are pinned that way and each of the
-seven was shown to ESCAPE against a copy with that one assertion removed, which is
+`PERCHLING_GITATTRIBUTES`, `PERCHLING_README`, `PERCHLING_MOODS_GIF`,
+`PERCHLING_HOOKS_JSON`, and the same `PERCHLING_PET_SH`/`PERCHLING_STATE_SH`
+the shell harnesses take), so each can be pointed at a mutant carrying exactly
+the defect it is named after and shown to FAIL.
+Eight of the release gate's ten lines are pinned that way and each of the
+eight was shown to ESCAPE against a copy with that one assertion removed, which is
 the difference between proof and a cascade; its two `parses as JSON` lines are
 deliberately unpinned, for the reason given beside them. The LF pair —
 the `.gitattributes` pin and the no-CR-byte check on the hook scripts —
@@ -158,12 +158,16 @@ are two lines rather than one because they fail apart: the pin can go while the
 working tree is still LF, and a CR can reach a tracked file while the pin is
 intact. The byte check reads BYTES rather than asking `git check-attr`, which
 answers about the real repository and so would test the clean tree whatever it
-was handed. The newest line compares the README's `width=` against
+was handed. The width line compares the README's `width=` against
 `docs/moods.gif`'s own Logical Screen Descriptor. It lives in the toolchain-free
 gate because it reads BYTES on both sides and so answers the same on every
 machine — and it is those two numbers rather than a `cmp` against a regenerated
 hero because the GIF tool ships a MEASURED ±1-per-channel tolerance, which makes
-the file itself a coin flip across runners while the numbers are not. That is
+the file itself a coin flip across runners while the numbers are not. The
+newest asks whether the scripts `hooks/hooks.json` names are still in the tree,
+and it EXTRACTS those paths rather than listing them: a hard-coded pair keeps
+passing after hooks.json stops naming them, which is the defect wearing the
+check's own clothes. That is
 the only reason to believe any of them, and the
 launch one has now been wrong twice in a way its own green lines could not show. Its first
 version asserted `pgrep -x -f` as its own literal text and passed against the
@@ -191,7 +195,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of forty-eight defects a harness is named after —
+generates a mutant from HEAD for each of forty-nine defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.
@@ -208,9 +212,12 @@ Nothing else here has a test suite. Two scripts in `tools/` are not layer
 harnesses and are not counted above: `run-hooks-check.sh` tests no Swift at all
 — it asks the installed CLI whether `hooks/hooks.json` is loadable — and
 `run-release-checks.sh` parses `.claude-plugin/plugin.json` and
-`marketplace.json`, guards the LF line-ending contract and holds the README
-hero's declared width to the GIF's real one, none of which anything in CI had
-ever read. Thirty-four releases
+`marketplace.json`, guards the LF line-ending contract, holds the README hero's
+declared width to the GIF's real one, and checks that the scripts hooks.json
+names are still in the tree, none of which anything in CI had ever read. Those
+last two are the same file asked two different questions: the CLI validates the
+JSON's SHAPE, and a perfectly-shaped entry pointing at a file that is not there
+validates cleanly. Thirty-four releases
 shipped that one version line unchecked, and this repo IS the marketplace, so
 the version landing on main IS the publish: there is no staging where a stray
 comma could be caught later. Both belong to the same release gate, because both
@@ -227,7 +234,7 @@ It reads ALL of them, not `HEAD~1`. `HEAD~1` is only the FIRST parent, and the
 hole that leaves was measured rather than argued: a feature branch that merged
 main, resolved the version line keep-ours and was fast-forwarded onto main
 takes main from 1.16.0 back to 1.15.1, and a `HEAD~1` baseline reports
-`1.15.1 -> 1.15.1` and prints nine green lines over the exact regression it
+`1.15.1 -> 1.15.1` and prints ten green lines over the exact regression it
 exists to catch. Walking every parent reds it, covers `pull_request` (the merge
 commit's parents include the base tip) and still works at depth 2. It does NOT
 see a regression buried mid-push — a two-commit push whose first commit

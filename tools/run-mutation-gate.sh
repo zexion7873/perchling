@@ -421,6 +421,16 @@ gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh 
   'src="docs/moods.gif" width="600"' \
   'src="docs/moods.gif" width="640"'
 
+# The real defect is a script being RENAMED while hooks.json keeps the old name,
+# which mutate() cannot stage — it edits text, it does not move files. Mutating
+# the reference instead reaches the same assertion from the other side: a name in
+# hooks.json with no file behind it. Only the first of eight state.sh references
+# is replaced and that is enough, because the check collects a SET of paths and
+# one unreachable member reds it.
+gate hook-path-renamed hooks/hooks.json PERCHLING_HOOKS_JSON tools/run-release-checks.sh \
+  '/scripts/state.sh' \
+  '/scripts/state-renamed.sh'
+
 echo "---"
 echo "$pass mutants caught, $fail escaped"
 [ "$fail" = 0 ]
