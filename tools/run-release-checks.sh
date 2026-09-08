@@ -11,9 +11,10 @@
 # Shell and python3 only — no Swift, nothing compiled, nothing launched. python3
 # rather than jq because it is what the rest of tools/ already depends on.
 #
-# Takes PERCHLING_PLUGIN_JSON / PERCHLING_MARKETPLACE_JSON so it can be pointed
-# at a mutant carrying exactly the defect each line is named after and shown to
-# FAIL. That is the only reason to believe any of them:
+# Takes PERCHLING_PLUGIN_JSON / PERCHLING_MARKETPLACE_JSON / PERCHLING_README /
+# PERCHLING_MOODS_GIF and the rest, so it can be pointed at a mutant carrying
+# exactly the defect each line is named after and shown to FAIL. That is the
+# only reason to believe any of them:
 #     sed 's/"version": "1\./"version": "0./' .claude-plugin/plugin.json > /tmp/back.json
 #     PERCHLING_PLUGIN_JSON=/tmp/back.json bash tools/run-release-checks.sh
 # The recipe anchors on the version line's SHAPE, not on today's number: a
@@ -31,6 +32,8 @@ MARKET="${PERCHLING_MARKETPLACE_JSON:-$ROOT/.claude-plugin/marketplace.json}"
 ATTRS="${PERCHLING_GITATTRIBUTES:-$ROOT/.gitattributes}"
 PET_SH="${PERCHLING_PET_SH:-$ROOT/scripts/pet.sh}"
 STATE_SH="${PERCHLING_STATE_SH:-$ROOT/scripts/state.sh}"
+README="${PERCHLING_README:-$ROOT/README.md}"
+GIF="${PERCHLING_MOODS_GIF:-$ROOT/docs/moods.gif}"
 
 pass=0; fail=0
 ok(){ printf '  ok   %-38s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
@@ -214,6 +217,66 @@ if [ -z "$crlf" ]; then
   ok "the hook scripts carry no CR byte"
 else
   no "the hook scripts carry no CR byte" "$crlf"
+fi
+
+# --- the README hero declares the GIF's real width ---------------------------
+# The README's `width=` and the GIF's own header are one fact written twice, and
+# when they disagree the browser resamples pixel art to a size it was never
+# drawn at — the failure this art is least able to survive and the one a
+# reviewer is least likely to catch, because the image still loads, still
+# animates, and merely looks slightly wrong. Nothing mechanical held them
+# together before this line; the PR template asks a human, and a checkbox is not
+# a check. The hero was already quietly stale for a whole run of releases once
+# (bf009f6 — "every art change since has left it quietly stale ... nobody could
+# tell without comparing it to a fresh render by eye").
+#
+# BYTES on both sides — the GIF's Logical Screen Descriptor at offset 6, and
+# the literal attribute in the README — so this needs no renderer, no AppKit
+# and no colour management, and answers the same on every machine. That is
+# also why it is this assertion and not a `cmp` against a regenerated hero:
+# the gif tool ships a MEASURED +/-1-per-channel tolerance because its palette
+# is harvested from pixels that went through NSColor, so comparing the file
+# itself is a coin flip across machines while comparing these two numbers is
+# not.
+if [ ! -r "$README" ]; then
+  no "the README's width matches the GIF" "no readable README at $README"
+elif [ ! -r "$GIF" ]; then
+  no "the README's width matches the GIF" "no readable GIF at $GIF"
+else
+  detail=$(python3 - "$README" "$GIF" <<'PYW'
+import re, struct, sys
+
+readme, gif = sys.argv[1], sys.argv[2]
+
+tags = [t for t in re.findall(r"<img\b[^>]*>", open(readme, encoding="utf-8").read())
+        if re.search(r'src\s*=\s*"[^"]*moods\.gif"', t)]
+if len(tags) != 1:
+    print("the README has %d <img> tags for moods.gif, expected exactly 1" % len(tags))
+    sys.exit(1)
+
+m = re.search(r'width\s*=\s*"(\d+)"', tags[0])
+if not m:
+    print("the README's moods.gif <img> declares no width=")
+    sys.exit(1)
+declared = int(m.group(1))
+
+head = open(gif, "rb").read(10)
+if len(head) < 10 or head[:4] != b"GIF8":
+    print("%s is not a GIF (header %r)" % (gif, head[:6]))
+    sys.exit(1)
+real = struct.unpack("<H", head[6:8])[0]
+
+if declared != real:
+    print("the README says width=%d, the GIF is %d px wide" % (declared, real))
+    sys.exit(1)
+print("%d px" % real)
+PYW
+)
+  if [ $? -eq 0 ]; then
+    ok "the README's width matches the GIF" "$detail"
+  else
+    no "the README's width matches the GIF" "$detail"
+  fi
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

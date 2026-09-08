@@ -410,6 +410,17 @@ gate hook-script-carries-cr scripts/state.sh PERCHLING_STATE_SH tools/run-releas
   '#!/bin/bash' \
   $'#!/bin/bash\r'
 
+# The README hero's `width=` and the GIF's own Logical Screen Descriptor are one
+# fact written twice, and a browser handed the wrong one resamples pixel art
+# into mush while still loading and animating — the failure a reviewer's eye is
+# least likely to stop on. The anchor carries the src alongside the number so it
+# cannot drift onto some other image's width; it does pin TODAY's number, so a
+# deliberate hero resize breaks it and mutate() says "anchor not found" rather
+# than quietly testing a clean tree.
+gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh \
+  'src="docs/moods.gif" width="600"' \
+  'src="docs/moods.gif" width="640"'
+
 echo "---"
 echo "$pass mutants caught, $fail escaped"
 [ "$fail" = 0 ]

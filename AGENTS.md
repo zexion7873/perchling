@@ -112,7 +112,7 @@ bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps l
 bash tools/run-library-refresh.sh   # a picked pet takes shipped updates only while provably untouched
 bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
 bash tools/run-toggle-checks.sh     # disable / enable / wake, and what each may claim
-bash tools/run-release-checks.sh    # manifests parse, version never goes backwards, text files stay LF
+bash tools/run-release-checks.sh    # manifests parse, version holds, LF and the hero's width hold
 bash tools/run-mutation-gate.sh     # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -145,19 +145,26 @@ the toggle).
 Ten of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
 `PERCHLING_STATE_SH` — and so does the release gate below
 (`PERCHLING_PLUGIN_JSON`, `PERCHLING_MARKETPLACE_JSON`,
-`PERCHLING_GITATTRIBUTES`, and the same `PERCHLING_PET_SH`/`PERCHLING_STATE_SH`
-the shell harnesses take), so each can be pointed at a mutant carrying exactly
-the defect it is named after and shown to FAIL.
-Six of the release gate's eight lines are pinned that way and each of the six
-was shown to ESCAPE against a copy with that one assertion removed, which is
+`PERCHLING_GITATTRIBUTES`, `PERCHLING_README`, `PERCHLING_MOODS_GIF`, and the
+same `PERCHLING_PET_SH`/`PERCHLING_STATE_SH` the shell harnesses take), so each
+can be pointed at a mutant carrying exactly the defect it is named after and
+shown to FAIL.
+Seven of the release gate's nine lines are pinned that way and each of the
+seven was shown to ESCAPE against a copy with that one assertion removed, which is
 the difference between proof and a cascade; its two `parses as JSON` lines are
-deliberately unpinned, for the reason given beside them. The two newest —
-the `.gitattributes` LF pin and the no-CR-byte check on the hook scripts —
+deliberately unpinned, for the reason given beside them. The LF pair —
+the `.gitattributes` pin and the no-CR-byte check on the hook scripts —
 are two lines rather than one because they fail apart: the pin can go while the
 working tree is still LF, and a CR can reach a tracked file while the pin is
 intact. The byte check reads BYTES rather than asking `git check-attr`, which
 answers about the real repository and so would test the clean tree whatever it
-was handed. That is the only reason to believe any of them, and the
+was handed. The newest line compares the README's `width=` against
+`docs/moods.gif`'s own Logical Screen Descriptor. It lives in the toolchain-free
+gate because it reads BYTES on both sides and so answers the same on every
+machine — and it is those two numbers rather than a `cmp` against a regenerated
+hero because the GIF tool ships a MEASURED ±1-per-channel tolerance, which makes
+the file itself a coin flip across runners while the numbers are not. That is
+the only reason to believe any of them, and the
 launch one has now been wrong twice in a way its own green lines could not show. Its first
 version asserted `pgrep -x -f` as its own literal text and passed against the
 broken script it was written to catch. The replacement went the same way for a
@@ -184,7 +191,7 @@ therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
 `cfg+test (1)` scenario reds deterministically.
 
 `tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of forty-seven defects a harness is named after —
+generates a mutant from HEAD for each of forty-eight defects a harness is named after —
 never a committed copy, which drifts silently — asserts the anchor was actually
 found and the file actually changed (a replacement matching nothing tests the
 clean tree and passes forever), and requires the harness to go red.
@@ -201,8 +208,9 @@ Nothing else here has a test suite. Two scripts in `tools/` are not layer
 harnesses and are not counted above: `run-hooks-check.sh` tests no Swift at all
 — it asks the installed CLI whether `hooks/hooks.json` is loadable — and
 `run-release-checks.sh` parses `.claude-plugin/plugin.json` and
-`marketplace.json` and guards the LF line-ending contract, none of which
-anything in CI had ever read. Thirty-four releases
+`marketplace.json`, guards the LF line-ending contract and holds the README
+hero's declared width to the GIF's real one, none of which anything in CI had
+ever read. Thirty-four releases
 shipped that one version line unchecked, and this repo IS the marketplace, so
 the version landing on main IS the publish: there is no staging where a stray
 comma could be caught later. Both belong to the same release gate, because both
@@ -219,7 +227,7 @@ It reads ALL of them, not `HEAD~1`. `HEAD~1` is only the FIRST parent, and the
 hole that leaves was measured rather than argued: a feature branch that merged
 main, resolved the version line keep-ours and was fast-forwarded onto main
 takes main from 1.16.0 back to 1.15.1, and a `HEAD~1` baseline reports
-`1.15.1 -> 1.15.1` and prints eight green lines over the exact regression it
+`1.15.1 -> 1.15.1` and prints nine green lines over the exact regression it
 exists to catch. Walking every parent reds it, covers `pull_request` (the merge
 commit's parents include the base tip) and still works at depth 2. It does NOT
 see a regression buried mid-push — a two-commit push whose first commit
@@ -260,15 +268,20 @@ user's `--export > draft.json` gets. Match what is there:
 `JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
 `json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
 
-Three things a change to the built-in's art still leaves behind, and all lie
-quietly rather than failing: `docs/moods.gif` is the README hero, the
-README's `width=` must equal the GIF's real pixel width or the browser resamples
-the pixel art into mush, and `docs/social-card.png` is the image GitHub shows
-wherever a link to the repo is pasted. Regenerate all three in the same change.
+Three things a change to the built-in's art still leaves behind. One of them
+now fails loudly: `run-release-checks.sh` compares the README's `width=` against
+`docs/moods.gif`'s own header, so a hero regenerated at a new size with the
+README left behind reds the release gate instead of resampling the pixel art
+into mush in every reader's browser. The other two still lie quietly — nothing
+compares `docs/moods.gif` itself against a fresh render, and
+`docs/social-card.png` is the image GitHub shows wherever a link to the repo is
+pasted. Regenerate all three in the same change.
 The GIF tool encodes its own output and decodes it back pixel-for-pixel
 before it will exit 0, so a green run really does mean the file is right — and
 two runs of it are byte-identical, so a diff on `docs/moods.gif` means the art
 moved. The card tool makes the same promise for the pet on the card, and no
-promise about the text beside it. The card has one step no script can do:
+promise about the text beside it. The card has one step nothing here does:
 GitHub takes the social preview only through Settings → General → Social
-preview, so a regenerated PNG is not live until someone uploads it there.
+preview, so a regenerated PNG is not live until someone uploads it there. That
+omission is detectable after the fact — the `og:image` GitHub serves IS the
+uploaded bytes — but never as a merge gate, for the reason in #117.
