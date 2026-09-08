@@ -49,7 +49,27 @@ jobs:
         with:
           persist-credentials: false
       - name: toolchain
-        run: swiftc --version
+        # PINNED, and the pin is the point. `macos-15` already carries nine
+        # Xcodes up to 26.3 while defaulting to 16.4, so the default moving is a
+        # scheduled event rather than a hypothesis — and nothing in this repo
+        # compiles Swift on the daily cron, so the day it moves the drift lands
+        # on whoever opens the next PR, reading as their fault. Selecting the
+        # version turns an unbounded external variable into a reviewed one-line
+        # diff. When the image finally drops this Xcode, THIS step fails, by
+        # name, instead of the harnesses failing for a reason nobody can see.
+        #
+        # The version is asserted after selecting, not assumed from it: every
+        # /usr/bin dev tool on macOS is an xcrun shim, so `swiftc` resolving is
+        # not evidence that it resolved to the Xcode just chosen.
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          ver=$(swiftc --version 2>&1) || { printf '%s\n' "$ver"; exit 1; }
+          printf '%s\n' "$ver"
+          case "$ver" in
+            *"Apple Swift version 6.1.2"*) ;;
+            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — see the pin note in AGENTS.md before bumping"; exit 1 ;;
+          esac
       - name: every harness
         run: |
           set -euo pipefail
@@ -117,7 +137,27 @@ jobs:
       # harness dies in preflight, and dying is indistinguishable from red
       # without this step failing first.
       - name: toolchain
-        run: swiftc --version
+        # PINNED, and the pin is the point. `macos-15` already carries nine
+        # Xcodes up to 26.3 while defaulting to 16.4, so the default moving is a
+        # scheduled event rather than a hypothesis — and nothing in this repo
+        # compiles Swift on the daily cron, so the day it moves the drift lands
+        # on whoever opens the next PR, reading as their fault. Selecting the
+        # version turns an unbounded external variable into a reviewed one-line
+        # diff. When the image finally drops this Xcode, THIS step fails, by
+        # name, instead of the harnesses failing for a reason nobody can see.
+        #
+        # The version is asserted after selecting, not assumed from it: every
+        # /usr/bin dev tool on macOS is an xcrun shim, so `swiftc` resolving is
+        # not evidence that it resolved to the Xcode just chosen.
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          ver=$(swiftc --version 2>&1) || { printf '%s\n' "$ver"; exit 1; }
+          printf '%s\n' "$ver"
+          case "$ver" in
+            *"Apple Swift version 6.1.2"*) ;;
+            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — see the pin note in AGENTS.md before bumping"; exit 1 ;;
+          esac
       - name: every harness goes red against the defect it is named after
         run: bash tools/run-mutation-gate.sh
 
