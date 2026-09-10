@@ -96,6 +96,18 @@ Verify without launching:
   `NotificationRecord` request id, which timestamps when the banner appeared
   and when it cleared. Use `/usr/bin/log`; the bare name is a zsh builtin and
   silently does something else.
+- **A harness that EXTRACTS a rule from the code under test rather than
+  restating it has to prove the extraction ran.** Restating is worse — an
+  assertion that hardcodes the rule passes against the broken code it was
+  written to catch — but a `sed` that yields nothing callable, or a body
+  referencing a variable the probe never sets, turns every probe into a clean
+  error and the assertion reports "0 false hits" having tested nothing. That has
+  disarmed a shipped harness three times, twice in one afternoon. Three guards,
+  and the third exists because the first two were not enough: the extracted name
+  must be CALLABLE, every probe must come back with a VERDICT rather than a
+  cause, and a POSITIVE CONTROL must run first — the extraction has to report a
+  hit against a case that genuinely is one before its silence about anything
+  else is evidence. `tools/run-launch-race.sh` is the worked example.
 
 `screencapture` needs Screen Recording permission that a shell spawned by
 Claude Code generally lacks, and the desktop-control tools cannot target

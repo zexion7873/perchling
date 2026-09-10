@@ -14,6 +14,7 @@
 .codegraph/
 .claude/worktrees/
 
-# A harness compiled in the checkout instead of a scratch directory. AGENTS.md
-# says to build them elsewhere; this is the net for when someone doesn't.
+# A harness compiled in the checkout instead of a scratch directory.
+# docs/invariants/harnesses.md says to build them elsewhere; this is the net
+# for when someone doesn't.
 /perchling
