@@ -5,15 +5,25 @@ overlay, driven by hook scripts that write mood files. No package manager, no
 test framework, no dependencies. `README.md` covers what it does for a user —
 this file covers what will waste your time if you assume it.
 
+What earns a place here: the command, what it covers, and the trap. Rationale
+does not — a harness's argument for itself belongs in the script it justifies
+and CI's in the workflow. This file is loaded into every session in the repo,
+and the last time that rule went unwritten it grew from 211 lines to 310 in
+nineteen days.
+
 ## Changes reach the running system by two different paths
 
 - **`scripts/pet.swift`** — `bash scripts/pet.sh build` recompiles
   `~/.claude/perchling/bin/perchling` from *this* checkout. Live on next
   launch. Fast loop.
 - **the built-in's art** — `examples/$PERCHLING_BUILTIN.json`, copied into the
-  runtime home by `cmd_up` from whichever `pet.sh` ran. So a dev checkout's
-  `pet.sh up` installs the checkout's art exactly as it installs the checkout's
-  binary, and neither reaches a hook-driven session until published.
+  runtime home by `cmd_up` and ONLY by `cmd_up`, which ends in a launch: there
+  is no art-only install. The two paths also differ in how they revert. The
+  binary is gated on mtime, so a dev `pet.sh build` IS what the next hook-driven
+  session launches, until something newer replaces it. The art is gated on
+  CONTENT, so the marketplace clone's next `cmd_up` silently puts the published
+  art back. To install a checkout's art without launching anything:
+  `cp examples/$PERCHLING_BUILTIN.json ~/.claude/perchling/builtin.json`.
 - **`scripts/pet.sh`, `scripts/state.sh`, `hooks/hooks.json`** — hooks resolve
   `${CLAUDE_PLUGIN_ROOT}` to the **installed marketplace clone**, never this
   checkout. Editing them here changes nothing until the commit is pushed and
@@ -25,8 +35,13 @@ running the same script by hand works fine. To test hook-path changes without
 publishing, pipe a fake payload straight into the dev script:
 
 ```bash
-printf '{"session_id":"test","prompt":"hi"}' | bash scripts/state.sh running
+printf '{"session_id":"test","prompt":"hi"}' \
+  | CLAUDE_CONFIG_DIR="$(mktemp -d)" bash scripts/state.sh running
 ```
+
+`state.sh` resolves its home from `CLAUDE_CONFIG_DIR`, so without that override
+this writes a `sessions/test` into the LIVE install — a tray row for a session
+nobody typed in, which also holds the 30s idle-quit open for an hour.
 
 A session only gains a plugin's hooks at session start, so a freshly installed
 or updated plugin is invisible to sessions that were already open.
@@ -40,10 +55,13 @@ parallel litters the desktop with pets that outlive the terminals that spawned
 them. Unknown arguments print usage and exit 2, so a mistyped flag is safe, but
 a bare invocation is not.
 
-The rest of the launch story — the mkdir mutex, why the lock's reclaim is a
-second critical section that must be SERIALISED rather than made atomic, and
-why a wedged lock is renamed aside rather than removed — is in
-[docs/invariants/shell.md](docs/invariants/shell.md). The two commandments
+`pet.sh up`, `enable` and `wake` all end in the same launch path, and reach it
+through the REBUILD gate — so a checkout's `wake` compiles WIP `pet.swift` into
+the user's live binary and then opens a window from it. A scratch
+`CLAUDE_CONFIG_DIR` is not a sandbox until a stub is already sitting in it.
+
+The rest of the launch story — the mkdir mutex, the reclaim, the wedged lock —
+is in [docs/invariants/shell.md](docs/invariants/shell.md). Two commandments
 survive out here: never launch a bare `perchling` to see if it works, and
 never write into a `.launch.lock`.
 
@@ -56,10 +74,13 @@ here too: a harness stub must be a compiled executable that stays alive and is
 **never a copy of the real binary** — the cheapest stub that satisfies the
 first two clauses is the one that opens a pet window.
 
+"Verified" still means: it compiles, the examples still validate, `--export`
+still round-trips, malformed manifests are still rejected, and you have looked
+at a rendered frame. A harness is one more kind of evidence for the code it
+covers, not a replacement for any of those.
+
 ## Where the invariants live
 
-878 lines of layer invariants used to sit here, flat, and the traps drowned
-each other. They moved verbatim into `docs/invariants/`, one file per layer.
 **Before editing a layer, read its file** — every bullet in them was earned by
 a shipped bug, and the one-liner quoted below is only the most lethal of each
 file's rules, not a summary of it.
@@ -99,212 +120,94 @@ file's rules, not a summary of it.
 bash scripts/pet.sh build     # recompile the binary from this checkout
 bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
-bash tools/make-moods-gif.sh  # regenerate the README hero from this checkout
-bash tools/make-social-card.sh  # regenerate the GitHub social preview from this checkout
+bash tools/make-moods-gif.sh   [OUT.gif]  # README hero; NO ARG OVERWRITES docs/moods.gif
+bash tools/make-social-card.sh [OUT.png]  # social preview; NO ARG OVERWRITES docs/social-card.png
 bash tools/run-session-harness.sh  # 180 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
-bash tools/run-launch-race.sh       # cmd_up launches exactly one pet, 13 assertions
-bash tools/run-build-gate.sh        # what a FAILED build may do to a working install
-bash tools/run-state-checks.sh      # what state.sh writes, and what it must refuse to
-bash tools/run-prune-checks.sh      # cmd_up retires stale refcounts and keeps live ones
-bash tools/run-library-refresh.sh   # a picked pet takes shipped updates only while provably untouched
-bash tools/run-art-checks.sh        # no shipped pet has a hole the desktop shows through
-bash tools/run-toggle-checks.sh     # disable / enable / wake, and what each may claim
-bash tools/run-release-checks.sh    # manifests parse, version holds, LF, hero width, hook paths
-bash tools/run-mutation-gate.sh     # every harness goes red against the defect it is named after
+bash tools/run-launch-race.sh      # cmd_up launches exactly one pet; 13 lines, 11 guarantees
+bash tools/run-build-gate.sh       # what a FAILED build may do to a working install
+bash tools/run-state-checks.sh     # what state.sh writes, and what it must refuse to
+bash tools/run-prune-checks.sh     # cmd_up retires stale refcounts and keeps live ones
+bash tools/run-library-refresh.sh  # a picked pet takes shipped updates only while provably untouched
+bash tools/run-art-checks.sh       # no shipped pet has a hole the desktop shows through
+bash tools/run-toggle-checks.sh    # disable / enable / wake, and what each may claim
+bash tools/run-release-checks.sh   # manifests parse, version holds, LF, hero width, hook paths
+bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
-Ten layers have harnesses — the session/tray layer and the pet library
-(`tools/run-session-harness.sh`), `state.sh` itself
-(`tools/run-state-checks.sh`, shell only, since that script compiles nothing
-and launches nothing), `cmd_up`'s housekeeping
-(`tools/run-prune-checks.sh` — kept apart from the launch, build and
-library-refresh harnesses because they are four unrelated properties of one
-function and one file would make a failure ambiguous), the library refresh
-inside the same `cmd_up` (`tools/run-library-refresh.sh`, shell only with
-byte fixtures — the refresh compares files and never parses them), the manifest parser
-(`tools/run-manifest-checks.sh`, which compiles a throwaway binary rather than
-rebuilding the installed one) and sequence precedence inside `pose()`
-(`tools/run-pose-harness.sh`, which cuts at `let argv` rather than before the
-runtime-home block, because `PetView` lives below that line) and `cmd_up`'s
-launch path (`tools/run-launch-race.sh`, which is shell only and compiles a C
-stub rather than touching `pet.swift`) and what a failed build may do to a
-working install (`tools/run-build-gate.sh`, shell only for the same reason, and
-using the same kind of C stub) and the shipped art (`tools/run-art-checks.sh`,
-which cuts where the session harness cuts so it can reach `builtinPet`) and the
-three commands that take the pet off the screen and put it back
-(`tools/run-toggle-checks.sh` — its own file rather than another section of an
-existing one, for the reason the others are separate: it covers
-`cmd_disable`/`cmd_enable`/`cmd_wake`, not `cmd_up`, so a failure has to name
-the toggle).
+Ten of the `run-*` scripts are layer harnesses; `run-hooks-check.sh`,
+`run-release-checks.sh` and `run-mutation-gate.sh` are not. Each script's own
+header says what it covers, why it is a separate file, and where it cuts
+`pet.swift` — read that before editing one. `--validate` and `--export` read the
+INSTALLED binary and the installed `builtin.json`, never this checkout.
 
-Ten of them take an override — `PERCHLING_PET_SH`, `PERCHLING_PET_SWIFT` and
-`PERCHLING_STATE_SH` — and so does the release gate below
-(`PERCHLING_PLUGIN_JSON`, `PERCHLING_MARKETPLACE_JSON`,
-`PERCHLING_GITATTRIBUTES`, `PERCHLING_README`, `PERCHLING_MOODS_GIF`,
-`PERCHLING_HOOKS_JSON`, and the same `PERCHLING_PET_SH`/`PERCHLING_STATE_SH`
-the shell harnesses take), so each can be pointed at a mutant carrying exactly
-the defect it is named after and shown to FAIL.
-Eight of the release gate's ten lines are pinned that way and each of the
-eight was shown to ESCAPE against a copy with that one assertion removed, which is
-the difference between proof and a cascade; its two `parses as JSON` lines are
-deliberately unpinned, for the reason given beside them. The LF pair —
-the `.gitattributes` pin and the no-CR-byte check on the hook scripts —
-are two lines rather than one because they fail apart: the pin can go while the
-working tree is still LF, and a CR can reach a tracked file while the pin is
-intact. The byte check reads BYTES rather than asking `git check-attr`, which
-answers about the real repository and so would test the clean tree whatever it
-was handed. The width line compares the README's `width=` against
-`docs/moods.gif`'s own Logical Screen Descriptor. It lives in the toolchain-free
-gate because it reads BYTES on both sides and so answers the same on every
-machine — and it is those two numbers rather than a `cmp` against a regenerated
-hero because the GIF tool ships a MEASURED ±1-per-channel tolerance, which makes
-the file itself a coin flip across runners while the numbers are not. The
-newest asks whether the scripts `hooks/hooks.json` names are still in the tree,
-and it EXTRACTS those paths rather than listing them: a hard-coded pair keeps
-passing after hooks.json stops naming them, which is the defect wearing the
-check's own clothes. That is
-the only reason to believe any of them, and the
-launch one has now been wrong twice in a way its own green lines could not show. Its first
-version asserted `pgrep -x -f` as its own literal text and passed against the
-broken script it was written to catch. The replacement went the same way for a
-subtler reason: it reconstructs `running()` by `sed`-ing one line out of the
-script under test, which silently yields nothing callable for four of the five
-ways to spell that function — every probe then exits 127, prints `miss`, and the
-assertion reports "0 false hits" having tested nothing. It now asserts the
-extracted name is callable before trusting the count — and, because that proved
-insufficient the same afternoon, that all eight probes came back with a VERDICT.
-`BIN_RE` was added to `pet.sh` hours later; the extracted `running()` referenced
-it, the probe did not set it, every subshell died on `set -u`, and the
-assertion counted zero hits among zero verdicts and reported ok. Both failures
-were "the extracted function did not run", so the guard now counts what came
-back rather than naming a cause. Counting verdicts still cannot see an
-extracted `running()` that runs and never matches — a body refactored to
-delegate to a helper the `sed` misses turns every probe into a clean 127
-"miss", 8 verdicts, 0 hits, ok — so a POSITIVE control now runs first: the
-extracted function must report a HIT against a stub genuinely live at `$BIN`
-before its silence about anything else is believed. A third escape is measured rather than
-suspected: removing `-x` from `running()`'s pgrep leaves all thirteen lines
-GREEN whenever the eight concurrent probes fail to overlap — probe-self-match
-detects that mutant by timing luck, not by construction. The mutation gate
-therefore uses the UNESCAPED `BIN_RE` as its launch-race case, which the
-`cfg+test (1)` scenario reds deterministically.
+Every layer harness and the release gate takes `PERCHLING_*` overrides — each
+script's header names its own — so it can be pointed at a mutant carrying
+exactly the defect it names and shown to FAIL. That is the only reason to
+believe any of them, and the escape test described beside them is what makes a
+red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs the whole argument above as one command: it
-generates a mutant from HEAD for each of forty-nine defects a harness is named after —
-never a committed copy, which drifts silently — asserts the anchor was actually
-found and the file actually changed (a replacement matching nothing tests the
-clean tree and passes forever), and requires the harness to go red.
+`tools/run-mutation-gate.sh` runs that argument as one command: forty-nine
+mutants generated from HEAD — never a committed copy, which drifts silently —
+each asserted to red the harness it is named after. A new harness assertion
+needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's
+glob automatically — skip it by name if it must not run there.
 `.github/workflows/harnesses.yml` runs the harnesses, the gate,
-`run-release-checks.sh` and `run-hooks-check.sh` on every PR and push to main; the hooks check also runs on
-a daily schedule, because the CLI it validates against moves without this repo
-moving.
+`run-release-checks.sh` and `run-hooks-check.sh` on every PR and push to main;
+the hooks check also runs daily, because the CLI it validates against moves
+without this repo moving.
 
-The two jobs that compile SELECT their Xcode — `Xcode_16.4.app`, Swift 6.1.2 —
-rather than taking the image's default. The default moving is a scheduled event,
-not a hypothesis: the `macos-15` image already carries nine Xcodes up to 26.3
-and merely defaults to 16.4 today. Nothing in this repo compiles Swift on the
-cron, so the day it moves, the drift lands on whoever opens the next PR and
-reads as their fault. Selecting makes it a reviewed one-line diff instead, and
-when the image finally drops this Xcode the `toolchain` step fails by name
-rather than the harnesses failing for a reason nobody can see. The version is
-ASSERTED after selecting rather than inferred from it, because every /usr/bin
-dev tool on macOS is an xcrun shim and `swiftc` resolving proves nothing about
-which Xcode it resolved to. Bumping means changing the path and the assertion
-together, in both jobs — which is the whole point, and it is why a dev machine's
-Swift has never been evidence about CI's.
+CI compiles with a PINNED Xcode 16.4 / Swift 6.1.2, asserted rather than
+inferred. A dev machine's Swift has never been evidence about CI's, and bumping
+means changing the path AND the assertion, in BOTH jobs.
 
-The workflow is a thin caller — everything of substance is one of these
-scripts and runs identically by hand. And thirteen green lines are not thirteen
-guarantees: `staggered-16ms` and `staggered-20ms` sit past the top of
-the race window, so they pass against a broken script too and the file labels
-them negative controls rather than coverage.
+This repo IS the marketplace: the version line in `.claude-plugin/plugin.json`
+is the publish, with no staging where a stray comma gets caught later. Run
+`bash tools/run-release-checks.sh` by hand before pushing one.
 
-Nothing else here has a test suite. Two scripts in `tools/` are not layer
-harnesses and are not counted above: `run-hooks-check.sh` tests no Swift at all
-— it asks the installed CLI whether `hooks/hooks.json` is loadable — and
-`run-release-checks.sh` parses `.claude-plugin/plugin.json` and
-`marketplace.json`, guards the LF line-ending contract, holds the README hero's
-declared width to the GIF's real one, and checks that the scripts hooks.json
-names are still in the tree, none of which anything in CI had ever read. Those
-last two are the same file asked two different questions: the CLI validates the
-JSON's SHAPE, and a perfectly-shaped entry pointing at a file that is not there
-validates cleanly. Thirty-four releases
-shipped that one version line unchecked, and this repo IS the marketplace, so
-the version landing on main IS the publish: there is no staging where a stray
-comma could be caught later. Both belong to the same release gate, because both
-catch failures that take the whole plugin down without printing anything.
+## The built-in's art
 
-The release one runs in its own ubuntu job rather than the macOS harness loop,
-and is skipped by that loop the way `run-hooks-check.sh` and
-`run-mutation-gate.sh` are. It needs no toolchain, and a manifest check that
-dies alongside `swiftc` is a manifest check that never runs. Its checkout, and
-the mutation gate's, both set `fetch-depth: 2`, because the version comparison
-reads HEAD's parents.
+**It has no generator, and only one thing checks it.** `examples/husky.json` is
+449KB of row strings quantised from raster art, so changing the built-in means
+replacing the whole file — there is no `build()` to re-run, and nothing that
+will notice if the DRAWING comes out wrong. 1.7–1.12 emitted the manifest from
+parametric geometry with a guard holding the two together; the generator only
+ever drew the hippo, so it went when the hippo did. If it is ever generated
+again, bind the guard to the shipped file and nothing else — a copy parked under
+`examples/` puts the check one indirection from what ships.
 
-It reads ALL of them, not `HEAD~1`. `HEAD~1` is only the FIRST parent, and the
-hole that leaves was measured rather than argued: a feature branch that merged
-main, resolved the version line keep-ours and was fast-forwarded onto main
-takes main from 1.16.0 back to 1.15.1, and a `HEAD~1` baseline reports
-`1.15.1 -> 1.15.1` and prints ten green lines over the exact regression it
-exists to catch. Walking every parent reds it, covers `pull_request` (the merge
-commit's parents include the base tip) and still works at depth 2. It does NOT
-see a regression buried mid-push — a two-commit push whose first commit
-regresses and whose second leaves the line alone compares HEAD against its own
-parent and passes; closing that needs the published baseline, which CI does not
-have. The comparison is NON-DECREASING rather than strictly increasing: most
-commits do not touch that line. A baseline it cannot resolve is an ERROR that
-exits 1 WITHOUT printing a FAIL line, because `run-mutation-gate.sh` scores a
-catch by counting red assertions, and infra death that spells itself FAIL is
-exactly how a broken toolchain once reported "10 mutants caught".
-"Verified" still means: it compiles, the examples still validate, `--export`
-still round-trips, malformed manifests are still rejected, and you have looked
-at a rendered frame. The harness is one more kind of evidence for the code it
-covers, not a replacement for any of those.
+`tools/run-art-checks.sh` is the one check that exists. It globs
+`examples/*.json`, so a seventh pet is covered the moment it lands, and it
+answers exactly one question — is any transparent pixel unreachable from the
+border — because that one is decidable without knowing what the art should look
+like. A featureless blob passes it. It is not a substitute for rendering a frame
+and looking at it.
 
-**The built-in's art has no generator, and only one thing checks it.**
-`examples/husky.json` is 449KB of row strings quantised from raster art, so
-changing the built-in means replacing the whole file — there is no `build()` to
-re-run, and nothing that will notice if the DRAWING comes out wrong. That is a real regression against 1.7–1.12, where the manifest was
-emitted from parametric geometry and a guard held the two together; the
-generator only ever drew the hippo, so it went when the hippo did. If the
-built-in is ever generated again, bind the guard to this string and nothing
-else — a copy parked under `examples/` puts the check one indirection from what
-ships, and a drift between them is invisible to it.
+Adding a pet that is NOT the built-in is otherwise ungated: `README.md` states
+the shipped count in prose and nothing holds it to the directory, and each pet
+carries its own fractional `scale` tuned so the creature lands near 90pt.
 
-`tools/run-art-checks.sh` is the one check that does exist: it is handed
-every manifest in `examples/` as a path, the built-in among them — the files
-that actually ship, with nothing in between to drift — plus the embedded
-placeholder, which no path can reach. It answers exactly one question — is any
-transparent pixel unreachable from the border — because that one is decidable
-without knowing what the art is supposed to look like. It is not a substitute
-for rendering a frame and looking at it, and it cannot be: a pet drawn as a
-featureless blob passes.
+The format `--export` round-trips, and the exact serialisation anything writing
+a manifest must match, are in
+[docs/invariants/manifest.md](docs/invariants/manifest.md).
 
-`--export` hands back the TEXT of `examples/$PERCHLING_BUILTIN.json` as loaded,
-not a re-serialisation of it, so whatever formatting is in that file is what a
-user's `--export > draft.json` gets. Match what is there:
-`JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
-`json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
-
-Three things a change to the built-in's art still leaves behind. One of them
-now fails loudly: `run-release-checks.sh` compares the README's `width=` against
-`docs/moods.gif`'s own header, so a hero regenerated at a new size with the
-README left behind reds the release gate instead of resampling the pixel art
-into mush in every reader's browser. The other two still lie quietly — nothing
-compares `docs/moods.gif` itself against a fresh render, and
-`docs/social-card.png` is the image GitHub shows wherever a link to the repo is
-pasted. Regenerate all three in the same change.
-The GIF tool encodes its own output and decodes it back pixel-for-pixel
-before it will exit 0, so a green run really does mean the file is right — and
-two runs of it are byte-identical, so a diff on `docs/moods.gif` means the art
-moved. The card tool makes the same promise for the pet on the card, and no
-promise about the text beside it. The card has one step nothing here does:
-GitHub takes the social preview only through Settings → General → Social
-preview, so a regenerated PNG is not live until someone uploads it there. That
-omission is detectable after the fact — the `og:image` GitHub serves IS the
-uploaded bytes — but never as a merge gate, for the reason in #117.
+Three artifacts go stale behind an art change, and they do not share a trigger.
+The built-in's art moving or `draw()` changing stales `docs/moods.gif` AND
+`docs/social-card.png`; `plugin.json`'s description stales the card alone.
+Only one of the three fails loudly: `run-release-checks.sh` holds the README's
+`width=` to the GIF's real header, so a hero regenerated at a new size with the
+README left behind reds the gate instead of resampling the pixel art into mush
+in every reader's browser. Nothing compares either image against a fresh render.
+Both tools decode their own output before exiting 0, so a green run means the
+file is right — but byte-reproducibility holds per MACHINE only (the GIF tool
+ships a measured ±1-per-channel tolerance), which is why CI refuses to `cmp` the
+committed file. The card tool promises nothing about the text beside the pet.
+And the card has one step nothing here does: GitHub takes the social preview
+only through Settings → General → Social preview, so a regenerated PNG is not
+live until someone uploads it there. That omission is detectable after the fact
+— the `og:image` GitHub serves IS the uploaded bytes — but never as a merge
+gate.

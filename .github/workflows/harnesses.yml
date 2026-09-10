@@ -68,7 +68,7 @@ jobs:
           printf '%s\n' "$ver"
           case "$ver" in
             *"Apple Swift version 6.1.2"*) ;;
-            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — see the pin note in AGENTS.md before bumping"; exit 1 ;;
+            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — bump the path AND this assertion, in BOTH jobs"; exit 1 ;;
           esac
       - name: every harness
         run: |
@@ -116,8 +116,8 @@ jobs:
         # so a refactor that keeps the hero green can still break it.
         run: bash tools/make-social-card.sh "$RUNNER_TEMP/card.png"
       - name: nothing leaked into the real runtime home
-        # AGENTS.md forbids tests from touching ~/.claude/perchling in three
-        # separate places; this is the first thing that checks it.
+        # Four harness headers forbid touching ~/.claude/perchling and each
+        # says why for its own cut; this is the only thing that checks it.
         run: test ! -e "$HOME/.claude/perchling"
 
   mutation-gate:
@@ -156,7 +156,7 @@ jobs:
           printf '%s\n' "$ver"
           case "$ver" in
             *"Apple Swift version 6.1.2"*) ;;
-            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — see the pin note in AGENTS.md before bumping"; exit 1 ;;
+            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — bump the path AND this assertion, in BOTH jobs"; exit 1 ;;
           esac
       - name: every harness goes red against the defect it is named after
         run: bash tools/run-mutation-gate.sh

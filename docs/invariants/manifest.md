@@ -33,7 +33,10 @@ and what the alternative lost to.
   `run-art-checks.sh` both do, next to the `examplesRoot` stub they already
   had). And `builtinText` is the file with its trailing newline dropped, so
   `print()` puts exactly one back and `--export > draft.json` is byte-identical
-  to the file it came from.
+  to the file it came from. Whatever formatting is in that file is therefore
+  what a user's export gets, so anything writing a manifest must match it:
+  `JSONSerialization(.prettyPrinted, .sortedKeys)`, which Python reproduces as
+  `json.dumps(d, indent=2, sort_keys=True, separators=(',', ' : '))`.
 
   What is still embedded is `PLACEHOLDER_MANIFEST`, 1.8KB, and it renders only
   when that file is missing or will not parse. Both mean a broken install rather

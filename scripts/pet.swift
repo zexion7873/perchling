@@ -2924,12 +2924,13 @@ final class Controller: NSObject, NSWindowDelegate {
 // doze-and-peek, cursor gaze and the blink — are gone rather than dormant.
 // They come back as declared `sequences`, not as branches.
 // What is embedded is the LAST RESORT, not the pet. The husky's manifest is
-// 449KB of row strings and it lives in assets/builtin.json, which pet.sh copies
-// into the runtime home beside the binary on the same staleness check it
-// already uses to decide a rebuild. Keeping it out of the binary is why that
-// binary is under half a megabyte; keeping it in the runtime home rather than
-// reading it out of the plugin directory is why an overlay launched by hand,
-// with no PERCHLING_EXAMPLES and no idea where the plugin went, still finds it.
+// 449KB of row strings and it ships as examples/<PERCHLING_BUILTIN>.json, which
+// pet.sh copies to builtin.json in the runtime home beside the binary — by
+// CONTENT, not on the mtime check it uses to decide a rebuild. Keeping it out
+// of the binary is why that binary is under half a megabyte; keeping it in the
+// runtime home rather than reading it out of the plugin directory is why an
+// overlay launched by hand, with no PERCHLING_EXAMPLES and no idea where the
+// plugin went, still finds it.
 //
 // This placeholder renders when that file is missing or will not parse. Both
 // mean a broken install rather than a choice anybody made, so it is deliberately

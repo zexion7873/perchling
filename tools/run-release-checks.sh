@@ -21,6 +21,14 @@
 # worked example that silently stops matching prints "6 passed, 0 failed" and
 # becomes a demonstration that the check does nothing.
 #
+# A mutant going red proves the GATE noticed, not which line noticed — a
+# cascade where one broken fact reds four assertions looks identical to four
+# independent checks. So each pinned line was also ESCAPE-tested: amputate that
+# single assertion from a copy of this script under tools/, re-run the same
+# mutant, and require the copy to pass. Eight of the ten lines are pinned that
+# way; the two `parses as JSON` lines are deliberately not, for the reason given
+# beside them.
+#
 # An unusable baseline is an ERROR: it exits 1 WITHOUT printing a FAIL line,
 # because run-mutation-gate.sh scores a catch by counting red assertions, and
 # infra death that spells itself FAIL is exactly how a broken toolchain once

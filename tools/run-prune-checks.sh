@@ -1,9 +1,10 @@
 #!/bin/bash
 # cmd_up's housekeeping: what it removes from sessions/ and owners/, and what
 # it must not. Separate from run-launch-race.sh (which is about launching
-# exactly once) and run-build-gate.sh (about a failed build) because they are
-# three unrelated properties of the same function and a single file would make
-# a failure ambiguous.
+# exactly once), run-build-gate.sh (about a failed build) and
+# run-library-refresh.sh (about the shipped-art refresh) because they are four
+# unrelated properties of the same function and a single file would make a
+# failure ambiguous.
 #
 # Takes PERCHLING_PET_SH so it can be pointed at a mutant and shown to FAIL.
 # The stub is a compiled C binary that stays alive: cmd_up ends in launch_once,
