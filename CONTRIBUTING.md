@@ -60,6 +60,10 @@ a replacement for any of those.
 
 ## Pull requests
 
+Do not open a pull request you could not explain line by line if asked. That
+rule, and the two beside it, are in the
+[Code of Conduct](CODE_OF_CONDUCT.md#send-work-you-understand).
+
 Conventional Commits (`feat:` / `fix:` / `refactor:` / `docs:` / `chore:` /
 `test:` / `perf:`), in English, saying WHY rather than WHAT. One logical change
 per commit. Do not bump the version in your PR — releases are cut separately.
