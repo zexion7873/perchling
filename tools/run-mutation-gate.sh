@@ -421,6 +421,27 @@ gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh 
   'src="docs/moods.gif" width="600"' \
   'src="docs/moods.gif" width="640"'
 
+# The README's pet count and examples/ are one fact written twice, and the
+# sentence is the paragraph a reader consults to find out what they are
+# getting. Two cases because the assertion reads two numbers and either can
+# rot alone: the second is the first minus the built-in. Both anchors pin
+# TODAY's numbers, deliberately — a seventh pet rewrites this sentence, the
+# anchor stops matching, and mutate() says "anchor not found" instead of
+# quietly testing a clean tree. They do NOT pin the line breaks: both phrases
+# sit wholly inside one line today and survive a re-wrap unless the new wrap
+# falls inside the phrase itself.
+#
+# Both mutate the README, because that is the only side mutate() can stage —
+# it replaces text in a file. That `shipped` is COUNTED from examples/ rather
+# than hardcoded is proven by the escape test, not by these two.
+gate readme-pet-count-drifts README.md PERCHLING_README tools/run-release-checks.sh \
+  'Six ship in' \
+  'Seven ship in'
+
+gate readme-row-count-drifts README.md PERCHLING_README tools/run-release-checks.sh \
+  'Only five have a row' \
+  'Only four have a row'
+
 # The real defect is a script being RENAMED while hooks.json keeps the old name,
 # which mutate() cannot stage — it edits text, it does not move files. Mutating
 # the reference instead reaches the same assertion from the other side: a name in
