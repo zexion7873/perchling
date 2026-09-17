@@ -18,14 +18,14 @@
 #     sed 's/"version": "1\./"version": "0./' .claude-plugin/plugin.json > /tmp/back.json
 #     PERCHLING_PLUGIN_JSON=/tmp/back.json bash tools/run-release-checks.sh
 # The recipe anchors on the version line's SHAPE, not on today's number: a
-# worked example that silently stops matching prints "6 passed, 0 failed" and
+# worked example that silently stops matching prints "11 passed, 0 failed" and
 # becomes a demonstration that the check does nothing.
 #
 # A mutant going red proves the GATE noticed, not which line noticed — a
 # cascade where one broken fact reds four assertions looks identical to four
 # independent checks. So each pinned line was also ESCAPE-tested: amputate that
 # single assertion from a copy of this script under tools/, re-run the same
-# mutant, and require the copy to pass. Eight of the ten lines are pinned that
+# mutant, and require the copy to pass. Nine of the eleven lines are pinned that
 # way; the two `parses as JSON` lines are deliberately not, for the reason given
 # beside them.
 #
@@ -43,6 +43,7 @@ STATE_SH="${PERCHLING_STATE_SH:-$ROOT/scripts/state.sh}"
 README="${PERCHLING_README:-$ROOT/README.md}"
 GIF="${PERCHLING_MOODS_GIF:-$ROOT/docs/moods.gif}"
 HOOKS="${PERCHLING_HOOKS_JSON:-$ROOT/hooks/hooks.json}"
+EXAMPLES="${PERCHLING_EXAMPLES_DIR:-$ROOT/examples}"
 
 pass=0; fail=0
 ok(){ printf '  ok   %-38s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
@@ -285,6 +286,88 @@ PYW
     ok "the README's width matches the GIF" "$detail"
   else
     no "the README's width matches the GIF" "$detail"
+  fi
+fi
+
+# --- the README's pet count is the size of examples/ -------------------------
+# The paragraph a reader consults to find out what they are getting states the
+# count in prose, twice, and nothing held either number to the directory it
+# describes. Adding a pet is otherwise cheap — run-art-checks.sh globs
+# examples/*.json and covers a seventh the moment it lands — so the sentence is
+# the one thing left behind, and a stale one misdescribes the product on the
+# page that sells it.
+#
+# Two numbers, one assertion, because they are one fact written twice: the
+# second is the first minus the built-in, which is the creature the reader
+# already has and so never gets a menu row. The count comes from the directory
+# rather than a list spelled out here, because a list would be a third copy of
+# the same fact. Any match count other than ONE is a FAIL: zero means the
+# paragraph was reworded out from under the check, and two means a sentence
+# elsewhere — the session-tray section is entirely about rows — has become
+# the number compared, leaving a green tick on a check reading the wrong line.
+if [ ! -r "$README" ]; then
+  no "the README's counts match examples/" "no readable README at $README"
+elif [ ! -d "$EXAMPLES" ]; then
+  no "the README's counts match examples/" "no directory at $EXAMPLES"
+else
+  detail=$(python3 - "$README" "$EXAMPLES" <<'PYC'
+import os, re, sys
+
+readme, examples = sys.argv[1], sys.argv[2]
+text = open(readme, encoding="utf-8").read()
+
+WORDS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
+
+def number(word):
+    # isdecimal, not isdigit: "\u00b2".isdigit() is True and int() then raises,
+    # turning a guarded FAIL into a traceback.
+    return int(word) if word.isdecimal() else WORDS.get(word.lower())
+
+def sole(pattern, shape):
+    # Exactly one match, never the first of several. The README's session-tray
+    # section is entirely about rows; one sentence up there of this shape would
+    # otherwise become the number compared here while the pet paragraph went
+    # unread — green, with a detail line that looks like it read it.
+    hits = re.findall(pattern, text)
+    if len(hits) != 1:
+        print("the README has %d '%s' sentences, expected exactly 1" % (len(hits), shape))
+        sys.exit(1)
+    return hits[0]
+
+# os.listdir rather than glob: glob patterns the DIRECTORY part too, so a
+# checkout under a path holding [ ] * or ? would red a correct tree.
+shipped = len([f for f in os.listdir(examples)
+               if f.endswith(".json") and os.path.isfile(os.path.join(examples, f))])
+if shipped == 0:
+    print("no *.json under %s" % examples)
+    sys.exit(1)
+
+# Both patterns tolerate the line break the README's hard wrap moves around.
+claimed = number(sole(r"(\w+)\s+ship\s+in\s+\[`examples/`\]", "<n> ship in [`examples/`]"))
+if claimed is None:
+    print("the README's ship count is not a number this check knows")
+    sys.exit(1)
+
+rows = number(sole(r"[Oo]nly\s+(\w+)\s+have\s+a\s+row", "Only <n> have a row"))
+if rows is None:
+    print("the README's row count is not a number this check knows")
+    sys.exit(1)
+
+if claimed != shipped:
+    print("the README says %d ship, examples/ holds %d" % (claimed, shipped))
+    sys.exit(1)
+if rows != shipped - 1:
+    print("the README says %d have a row, %d shipped means %d" % (rows, shipped, shipped - 1))
+    sys.exit(1)
+print("%d shipped, %d with a row" % (shipped, rows))
+PYC
+)
+  if [ $? -eq 0 ]; then
+    ok "the README's counts match examples/" "$detail"
+  else
+    no "the README's counts match examples/" "$detail"
   fi
 fi
 

@@ -133,7 +133,7 @@ bash tools/run-prune-checks.sh     # cmd_up retires stale refcounts and keeps li
 bash tools/run-library-refresh.sh  # a picked pet takes shipped updates only while provably untouched
 bash tools/run-art-checks.sh       # no shipped pet has a hole the desktop shows through
 bash tools/run-toggle-checks.sh    # disable / enable / wake, and what each may claim
-bash tools/run-release-checks.sh   # manifests parse, version holds, LF, hero width, hook paths
+bash tools/run-release-checks.sh   # manifests parse, version holds, LF, hero width, pet count, hook paths
 bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -151,7 +151,7 @@ exactly the defect it names and shown to FAIL. That is the only reason to
 believe any of them, and the escape test described beside them is what makes a
 red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs that argument as one command: forty-nine
+`tools/run-mutation-gate.sh` runs that argument as one command: fifty-one
 mutants generated from HEAD — never a committed copy, which drifts silently —
 each asserted to red the harness it is named after. A new harness assertion
 needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's
@@ -187,9 +187,11 @@ border — because that one is decidable without knowing what the art should loo
 like. A featureless blob passes it. It is not a substitute for rendering a frame
 and looking at it.
 
-Adding a pet that is NOT the built-in is otherwise ungated: `README.md` states
-the shipped count in prose and nothing holds it to the directory, and each pet
-carries its own fractional `scale` tuned so the creature lands near 90pt.
+Adding a pet that is NOT the built-in is mostly unheld: `run-release-checks.sh`
+pins `README.md`'s two prose counts to the size of `examples/`, and nothing pins
+the six names beside them or the same counts repeated in
+`skills/draw-pet/SKILL.md`, `docs/invariants/` and `run-manifest-checks.sh`.
+Each pet also carries its own fractional `scale` tuned so it lands near 90pt.
 
 The format `--export` round-trips, and the exact serialisation anything writing
 a manifest must match, are in

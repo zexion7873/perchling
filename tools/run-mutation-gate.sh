@@ -421,6 +421,23 @@ gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh 
   'src="docs/moods.gif" width="600"' \
   'src="docs/moods.gif" width="640"'
 
+# The README's pet count and examples/ are one fact written twice, and the
+# sentence is the paragraph a reader consults to find out what they are
+# getting. Two cases because the assertion reads two numbers and either can
+# rot alone: the second is the first minus the built-in. Both anchors pin
+# TODAY's numbers AND today's line breaks, deliberately — a seventh pet or a
+# re-wrapped paragraph stops them matching and mutate() says "anchor not
+# found" instead of quietly testing a clean tree. The assertion itself is
+# wrap-tolerant on purpose; these are not, and loud is the right side to
+# fail on.
+gate readme-pet-count-drifts README.md PERCHLING_README tools/run-release-checks.sh \
+  'Six ship in' \
+  'Seven ship in'
+
+gate readme-row-count-drifts README.md PERCHLING_README tools/run-release-checks.sh \
+  'Only five have a row' \
+  'Only four have a row'
+
 # The real defect is a script being RENAMED while hooks.json keeps the old name,
 # which mutate() cannot stage — it edits text, it does not move files. Mutating
 # the reference instead reaches the same assertion from the other side: a name in
