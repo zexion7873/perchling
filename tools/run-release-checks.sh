@@ -301,20 +301,29 @@ fi
 # second is the first minus the built-in, which is the creature the reader
 # already has and so never gets a menu row. The count comes from the directory
 # rather than a list spelled out here, because a list would be a third copy of
-# the same fact. Any match count other than ONE is a FAIL: zero means the
-# paragraph was reworded out from under the check, and two means a sentence
-# elsewhere — the session-tray section is entirely about rows — has become
-# the number compared, leaving a green tick on a check reading the wrong line.
+# the same fact. The numbers are read from the PET PARAGRAPH — the one block
+# carrying the examples/ link — and not from the document, because a
+# document-wide count is satisfied by one match in any section: the
+# session-tray section is entirely about rows, so a pet paragraph that lost
+# its claim could pass on a stray sentence a hundred lines away. Neither
+# number is read today from anywhere but that paragraph; the anchor is there
+# so that stays true. Fenced blocks and HTML comments are stripped first: a
+# commented-out paragraph is the normal way to park prose mid-rewrite, and
+# certifying a number no reader can see inverts the whole point.
 if [ ! -r "$README" ]; then
   no "the README's counts match examples/" "no readable README at $README"
-elif [ ! -d "$EXAMPLES" ]; then
-  no "the README's counts match examples/" "no directory at $EXAMPLES"
+elif [ ! -d "$EXAMPLES" ] || [ ! -r "$EXAMPLES" ]; then
+  no "the README's counts match examples/" "no readable directory at $EXAMPLES"
 else
   detail=$(python3 - "$README" "$EXAMPLES" <<'PYC'
 import os, re, sys
 
 readme, examples = sys.argv[1], sys.argv[2]
-text = open(readme, encoding="utf-8").read()
+raw = open(readme, encoding="utf-8").read()
+
+# What a reader sees, not what the file holds.
+text = re.sub(r"```.*?```", "", raw, flags=re.S)
+text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 WORDS = {w: i for i, w in enumerate(
     "zero one two three four five six seven eight nine ten eleven twelve "
@@ -322,37 +331,43 @@ WORDS = {w: i for i, w in enumerate(
 
 def number(word):
     # isdecimal, not isdigit: "\u00b2".isdigit() is True and int() then raises,
-    # turning a guarded FAIL into a traceback.
+    # turning a guarded FAIL into a traceback. Hyphenated words above twenty
+    # are captured whole and land here unknown, which is a loud FAIL rather
+    # than a silent read of the tail.
     return int(word) if word.isdecimal() else WORDS.get(word.lower())
 
+LINK = "[`examples/`](examples/)"
+paras = [p for p in re.split(r"\n[ \t]*\n", text) if LINK in p]
+if len(paras) != 1:
+    print("the README has %d paragraphs carrying %s, expected exactly 1" % (len(paras), LINK))
+    sys.exit(1)
+para = paras[0]
+
 def sole(pattern, shape):
-    # Exactly one match, never the first of several. The README's session-tray
-    # section is entirely about rows; one sentence up there of this shape would
-    # otherwise become the number compared here while the pet paragraph went
-    # unread — green, with a detail line that looks like it read it.
-    hits = re.findall(pattern, text)
+    hits = re.findall(pattern, para)
     if len(hits) != 1:
-        print("the README has %d '%s' sentences, expected exactly 1" % (len(hits), shape))
+        print("the pet paragraph has %d '%s' sentences, expected exactly 1" % (len(hits), shape))
         sys.exit(1)
     return hits[0]
 
-# os.listdir rather than glob: glob patterns the DIRECTORY part too, so a
-# checkout under a path holding [ ] * or ? would red a correct tree.
+# os.listdir rather than glob, which patterns the DIRECTORY part too and would
+# red a correct tree from a checkout path holding [ ] * or ?.
 shipped = len([f for f in os.listdir(examples)
                if f.endswith(".json") and os.path.isfile(os.path.join(examples, f))])
 if shipped == 0:
     print("no *.json under %s" % examples)
     sys.exit(1)
 
-# Both patterns tolerate the line break the README's hard wrap moves around.
-claimed = number(sole(r"(\w+)\s+ship\s+in\s+\[`examples/`\]", "<n> ship in [`examples/`]"))
-if claimed is None:
-    print("the README's ship count is not a number this check knows")
-    sys.exit(1)
+# \s+ between every word: the README is hard-wrapped, so the line break moves.
+claimed_w = sole(r"([\w-]+)\s+ship\s+in\s+\[`examples/`\]", "<n> ship in [`examples/`]")
+rows_w = sole(r"[Oo]nly\s+([\w-]+)\s+have\s+a\s+row", "Only <n> have a row")
 
-rows = number(sole(r"[Oo]nly\s+(\w+)\s+have\s+a\s+row", "Only <n> have a row"))
+claimed, rows = number(claimed_w), number(rows_w)
+if claimed is None:
+    print("the README ships %r, which is not a number this check knows" % claimed_w)
+    sys.exit(1)
 if rows is None:
-    print("the README's row count is not a number this check knows")
+    print("the README rows %r, which is not a number this check knows" % rows_w)
     sys.exit(1)
 
 if claimed != shipped:

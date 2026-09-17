@@ -425,11 +425,15 @@ gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh 
 # sentence is the paragraph a reader consults to find out what they are
 # getting. Two cases because the assertion reads two numbers and either can
 # rot alone: the second is the first minus the built-in. Both anchors pin
-# TODAY's numbers AND today's line breaks, deliberately — a seventh pet or a
-# re-wrapped paragraph stops them matching and mutate() says "anchor not
-# found" instead of quietly testing a clean tree. The assertion itself is
-# wrap-tolerant on purpose; these are not, and loud is the right side to
-# fail on.
+# TODAY's numbers, deliberately — a seventh pet rewrites this sentence, the
+# anchor stops matching, and mutate() says "anchor not found" instead of
+# quietly testing a clean tree. They do NOT pin the line breaks: both phrases
+# sit wholly inside one line today and survive a re-wrap unless the new wrap
+# falls inside the phrase itself.
+#
+# Both mutate the README, because that is the only side mutate() can stage —
+# it replaces text in a file. That `shipped` is COUNTED from examples/ rather
+# than hardcoded is proven by the escape test, not by these two.
 gate readme-pet-count-drifts README.md PERCHLING_README tools/run-release-checks.sh \
   'Six ship in' \
   'Seven ship in'

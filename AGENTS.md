@@ -187,11 +187,14 @@ border — because that one is decidable without knowing what the art should loo
 like. A featureless blob passes it. It is not a substitute for rendering a frame
 and looking at it.
 
-Adding a pet that is NOT the built-in is mostly unheld: `run-release-checks.sh`
-pins `README.md`'s two prose counts to the size of `examples/`, and nothing pins
-the six names beside them or the same counts repeated in
-`skills/draw-pet/SKILL.md`, `docs/invariants/` and `run-manifest-checks.sh`.
-Each pet also carries its own fractional `scale` tuned so it lands near 90pt.
+Adding a pet that is NOT the built-in reds two files and stales several more.
+`run-release-checks.sh` pins `README.md`'s two prose counts to the size of
+`examples/`, and `run-mutation-gate.sh` quotes those same counts as anchors, so
+both go red until the sentence is updated — the gate says "anchor not found",
+not "count wrong". Nothing pins the six pet names beside them, or the same
+counts repeated in `skills/draw-pet/SKILL.md`, `docs/invariants/manifest.md`,
+`docs/invariants/chrome.md` and `run-manifest-checks.sh`. Each pet also carries
+its own fractional `scale` tuned so it lands near 90pt.
 
 The format `--export` round-trips, and the exact serialisation anything writing
 a manifest must match, are in
