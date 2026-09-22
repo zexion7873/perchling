@@ -266,12 +266,13 @@ live — which is exactly what the built-in row in the Pets menu does.
 
 ```mermaid
 flowchart LR
-    Hooks["Claude Code hooks<br/>prompt · notification · stop"]
+    Hooks["Claude Code hooks<br/>start · prompt · notification · stop"]
     Files[("sessions/&lt;id&gt;<br/>one file per live session")]
     Fold["attention fold<br/>waiting &gt; error &gt; done &gt; running"]
     Pet["🐣 the overlay"]
     Exit["exits ~30s later"]
 
+    Hooks -.->|"session start: pet.sh up"| Pet
     Hooks -->|"state.sh writes a mood"| Files
     Files -->|"polled at 20 fps"| Fold
     Fold --> Pet
