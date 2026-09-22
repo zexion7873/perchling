@@ -37,10 +37,11 @@ and what the alternative lost to.
     the exact inverse of `tap`: a poke compresses, a surprise recoils. Why a
     deformation and not a drawn startle is under the hover bullet below.
   - **gaze and blink are gone, and a RULE removes them rather than an art
-    budget.** A mood loop takes the eye box; `waiting` is the only mood that
-    ever carried either; the husky animates `waiting`. So a pet that animates
-    everything has neither whatever it declares — and the husky declares no
-    `eyes` at all, which settles it twice.
+    budget.** A mood loop takes the eye box; `waiting` and `idle` are the only
+    moods that ever carried either (`idle` the gaze alone, as its proximity
+    peek); the husky animates both. So a pet that animates everything has
+    neither whatever it declares — and the husky declares no `eyes` at all,
+    which settles it twice.
 
   Earlier editions argued gaze and tear out on measured geometry: amber bboxes,
   a coral margin, a five-row runway under the eye. Every one of those numbers
@@ -111,17 +112,18 @@ and what the alternative lost to.
   here — the `else` at the `mouseUp` site needs no `tap`, and the arrival hop
   needs `sequence(for: .done) == nil`. It stays because a third-party manifest
   may omit either, which is exactly the pet that has nothing else to move. Do
-  not read a green harness run as evidence it works: nothing in `tools/`
-  mentions `hopUntil`, and no fixture in the repo exercises either branch.
-- **A playing sequence owns the body, and the shear is the one thing it does
+  not read a green harness run as evidence it works:
+  `tools/run-pose-harness.sh` sets `hopUntil` by hand to pin only the hop's
+  mood-loop exception in `pose()`, and no fixture in the repo drives either
+  arming site.- **A playing sequence owns the body, and the shear is the one thing it does
   not take.** While a sequence plays, `pose()` pins the bounce to its resting
   value and zeroes the twitch, the gaze and the blink: the frames carry their
   own motion, so a bounce added on top double-counts a jump's lift, and the eye
   box is declared against the MOOD frames — on a real pet `done` already lands
   37.5% of it on the shell, and a lifted frame is worse. A mood loop therefore
   TRADES that mood's gaze and blink away, permanently rather than for a burst,
-  and `waiting` is the only mood that had either — so animating `waiting` is the
-  one that costs something, and a pet that animates it never blinks again,
+  and only `waiting` and `idle` ever had either — so animating those two is
+  what costs something, and a pet that animates `waiting` never blinks again,
   `blinkFrame` and all. The one exception is the tap hop, which outranks a mood
   loop and nothing else: a resting state is not a reaction, and a poke that
   visibly does nothing reads as a dead window. The arrival hop is the other
@@ -143,28 +145,29 @@ and what the alternative lost to.
   beside it, and both directions of the mutation were shown to fail.
   Sequence frames also count toward `inkTop`, so a lifted frame moves
   the chrome for every mood, permanently, not only while it plays.
-- **Gaze rides a different unit for each kind of pet.** The built-in measures
-  it in bounce units, because its eye rects are in design cells; a manifest
-  measures it in its own `eyes.range` pixels, because the box is the only
-  thing that knows how much headroom the eyes have. `Pose.dx` moves the whole
+- **Gaze is measured in `eyes.range` pixels, the eye box's own unit, never in
+  bounce units.** The built-in is a manifest like any other now, through the
+  same `loadCustomPet`, and the box is the only thing that knows how much
+  headroom the eyes have. `Pose.dx` moves the whole
   sprite, so the eye offset needs its own `eyeDX`/`eyeDY` — reusing `dx` drags
   the body along with the glance. `gazeVector()` returns a DIRECTION, one of
-  sixteen sectors with a deadzone dead ahead; callers scale x and y by
-  different amounts because an eye box is wider than it is tall. Sixteen
-  survives the rounding even at a two-pixel radius — all sixteen sectors land
-  on distinct integer offsets — so the resolution is not decorative.
+  sixteen sectors with a deadzone dead ahead; both callers scale it by
+  `eyes.range`, the same amount on each axis. Sixteen survives the rounding
+  even at a two-pixel radius — all sixteen sectors land on distinct integer
+  offsets — so the resolution is not decorative.
 - **The side margin is one bounce unit and the twitch already spends all of
   it.** `sidePad()` is what keeps a shifted sprite from being sliced, and the
   twitch moves a custom pet by a full unit, so nothing else may move the body
   sideways at the same time. That is why the drag lean zeroes `dx` rather than
   adding to it: the two share one budget. Widening the budget is a
   `canvasSize()` change, and it drags `docs/moods.gif`'s dimensions and the
-  README's `width=` along with it — the hero is sized `(canvas + 8) * 6`.
+  README's `width=` along with it — the hero is sized `(canvas + 8) * 5`, one
+  cell per mood.
 - **The drag lean is a shear, not a pose, which is why every pet without a
   mirrored drag has it.** The
   top of the sprite lags the direction of travel and the bottom stays planted;
-  `fill()` applies it so the base, eyes, tear, sparkle and custom blit all
-  inherit it from one place, exactly as they inherit `xpad`. Two things it
+  `fill()` applies it, so the one blit in `draw()` — a per-pixel loop over the
+  resolved grid — inherits it there, as it inherits `xpad`. Two things it
   must not become: state read inside `pose()`, which has to stay pure because
   `draw()` and `repaintIfChanged()` both call it — the decay belongs in the
   tick loop next to `tick += 1`, where Reduce Motion already gates it; and a

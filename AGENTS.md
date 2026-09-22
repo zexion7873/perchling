@@ -172,7 +172,7 @@ is the publish, with no staging where a stray comma gets caught later. Run
 ## The built-in's art
 
 **It has no generator, and only one thing checks it.** `examples/husky.json` is
-449KB of row strings quantised from raster art, so changing the built-in means
+460KB of row strings quantised from raster art, so changing the built-in means
 replacing the whole file — there is no `build()` to re-run, and nothing that
 will notice if the DRAWING comes out wrong. 1.7–1.12 emitted the manifest from
 parametric geometry with a guard holding the two together; the generator only

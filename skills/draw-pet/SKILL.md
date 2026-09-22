@@ -206,9 +206,10 @@ Rules the loader enforces:
    `bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build`, and retry.
 4. Install atomically — the app watches mtime, and a partial write would
    flash the fallback pet. `<slug>` is the manifest's `name` lowercased, with
-   letters and digits of any script kept and everything else turned into a
-   dash — the same rule the app uses when it adopts a pet, so a pet named
-   貓咪 becomes `貓咪.json`:
+   letters and digits of any script, `-` and `_` kept and everything else
+   turned into a dash, then leading and trailing dashes dropped (`pet` if
+   nothing is left) — the same rule the app uses when it adopts a pet, so a
+   pet named 貓咪 becomes `貓咪.json`:
    ```bash
    mkdir -p "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets"
    # A pet.json from before the library is a real file, not a link into pets/,
@@ -260,9 +261,9 @@ like. Two sources, and which one you want depends on the question:
   it.
 
   **Read them for FORMAT, never for art.** They were quantised from raster
-  renders: 44 inks each, and around half of their pixels share a colour with no
-  neighbour at all. That is not something a character grid can be written to
-  produce by hand, and aiming at it gets you noise rather than shading — the
+  renders: 44 inks each, and 20–40% of their pixels match none of their eight
+  neighbours. That is not something a character grid can be written to produce
+  by hand, and aiming at it gets you noise rather than shading — the
   craft rules above are what this medium actually expresses. What these files
   are good for is the shape of a `steps` timeline, where `mirror` goes, and how
   a sequence block is assembled.

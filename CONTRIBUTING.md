@@ -25,7 +25,8 @@ fine. To test a hook-path change without publishing, pipe a payload straight
 into the dev script:
 
 ```bash
-printf '{"session_id":"test","prompt":"hi"}' | bash scripts/state.sh running
+printf '{"session_id":"test","prompt":"hi"}' \
+  | CLAUDE_CONFIG_DIR="$(mktemp -d)" bash scripts/state.sh running
 ```
 
 **A green assertion is not evidence.** This repo has shipped assertions that
@@ -36,7 +37,7 @@ Every harness takes a `PERCHLING_*` override for this, and
 `tools/run-mutation-gate.sh` runs the whole argument as one command.
 
 **A release is one line.** `.claude-plugin/plugin.json`'s version is the only
-thing that reaches an install. There are no tags, and this repo *is* the
+thing that reaches an install. Tags play no part, and this repo *is* the
 marketplace, so the version landing on `main` is the publish.
 
 ## Working on it
@@ -78,6 +79,6 @@ you changed the manifest format.
 You do not need to touch Swift. A pet is a single JSON manifest, and
 `skills/draw-pet/SKILL.md` is the authoring reference and ships to whoever asks
 Claude to draw one; README's "Eyes that follow" covers the `eyes` block from the
-user's side. `perchling --validate` with no arguments prints the built-in's
-shape without writing anything to disk; start there rather than from
-`--export`, which is 460KB.
+user's side. `perchling --validate` with no arguments prints the active pet's
+shape — the built-in's when there is no `pet.json` — without writing anything
+to disk; start there rather than from `--export`, which is 460KB.
