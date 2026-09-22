@@ -14,8 +14,8 @@ not within hours, and the fix ships as a version bump in
 
 ## Supported versions
 
-The latest published version only. There are no maintenance branches and no
-tags: whatever `.claude-plugin/plugin.json` says on `main` is what
+The latest published version only. There are no maintenance branches, and tags
+play no part: whatever `.claude-plugin/plugin.json` says on `main` is what
 `claude plugin update` hands out, and older versions are never patched.
 
 ## What this plugin actually does on your machine

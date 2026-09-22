@@ -22,9 +22,9 @@ Verify without launching:
   to keep. The built-in's art has been a file since 1.14.)
   This exercises the real `draw()`, so what you see is what ships.
   `tools/moods-gif.swift` is a worked example of the same cut, and
-  `tools/social-card.swift` a second. Give the view no
-  window: `gaze()` returns neutral without one, whereas a view in a window aims
-  its pupils at wherever the mouse happens to be, which is how a render stops
+  `tools/social-card.swift` a second. Give the view no window: `gazeVector()`
+  returns neutral without one, whereas a view in a window aims its pupils at
+  wherever the mouse happens to be, which is how a render stops
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`
   `.none` — going through `NSImage.draw` blends every pixel with its neighbour
   and turns a handful of flat inks into a million. And when the PIXEL count of
@@ -39,8 +39,8 @@ Verify without launching:
   `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above
   the runtime-home block, so a harness for them has to cut there instead of
   at `let argv`: cutting at `let argv` still runs
-  that block at load time, which touches `~/.claude/perchling/` — the very
-  directory this file forbids writing to. `bash tools/run-session-harness.sh`
+  that block at load time, which touches `~/.claude/perchling/`, the live
+  install. `bash tools/run-session-harness.sh`
   already does exactly this — it cuts `pet.swift` before `// Runtime home:`,
   stubs the four globals a still-included type reaches for (`examplesRoot`,
   then `builtinLoaded`, `builtinText` and `builtinPet`, which moved below the
@@ -69,7 +69,7 @@ Verify without launching:
   by opening a pet window. Copies were found in 55 scratch directories from a
   single fan-out, two of them running. `cp` the real binary here and you have
   written a harness whose passing condition is littering the desktop.
-  `tools/run-launch-race.sh` compiles a five-line C stub for exactly this and is
+  `tools/run-launch-race.sh` compiles a nine-line C stub for exactly this and is
   the worked example: the stub must be something you BUILT, whose entire
   behaviour you can read.
 

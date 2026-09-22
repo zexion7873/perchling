@@ -14,7 +14,7 @@ needs you.**
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 
-No Electron. No WebSocket server. No log scraping. One native Swift binary,
+No Electron. No WebSocket server. One native Swift binary,
 driven straight off Claude Code hook events.
 
 </div>
@@ -156,7 +156,12 @@ live within a second. No rebuild, no restart, no image files.
   "name": "sprout",
   "scale": 2,
   "palette": { "b": "#61b56b", "o": "#244a2e", "k": "#1d3524" },
-  "moods": { "idle": ["..bbbb..", ".bobbob.", ".bbkkbb.", "..bbbb.."] }
+  "moods": {
+    "idle": [
+      "..bbbb..", ".bbbbbb.", "bbobbobb", "bbbbbbbb",
+      "bbbkkbbb", "bbbbbbbb", ".bbbbbb.", "..bbbb.."
+    ]
+  }
 }
 ```
 
@@ -229,7 +234,8 @@ a burst and a resting state have no direction of travel.
 > no `hover` frames, no hover reaction. And the two do not stack: a playing
 > sequence takes the body over, so **a mood you animate is a mood that stops
 > tracking the cursor and stops blinking**. `waiting` is the only mood that had
-> either, so it is the only one where the choice costs anything.
+> both, and `idle` the gaze alone (cursor within 150 pt), so those two are the
+> moods where the choice costs anything.
 >
 > The built-in spends that trade rather than dodging it: all eight sequences,
 > no `eyes` at all — every mood moves, and it never blinks.
@@ -274,7 +280,7 @@ flowchart LR
 
     Hooks -.->|"session start: pet.sh up"| Pet
     Hooks -->|"state.sh writes a mood"| Files
-    Files -->|"polled at 20 fps"| Fold
+    Files -->|"polled every 400 ms"| Fold
     Fold --> Pet
     Files -.->|"last file removed"| Exit
 ```

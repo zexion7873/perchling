@@ -174,9 +174,10 @@ alone cleans up, exactly once.
   session re-announces itself on its next hook after `enable`, and one too
   stale to do that is one the staleness window would have retired anyway.
 - **Whether the machine can build is a different question from whether the pet
-  can run, and four separate ways of conflating them are all silent.** Nothing
-  here has a harness, and every one of these was found by measurement after
-  looking correct.
+  can run, and four separate ways of conflating them are all silent.** Every
+  one of these was found by measurement after looking correct; the
+  toolchain probe still has no harness, and `run-build-gate.sh` pins the
+  log and the reason.
 
   `command -v swiftc` is not a capability check. `/usr/bin/swiftc` is an xcrun
   stub macOS ships whether or not a toolchain is installed — 118KB, root-owned,
@@ -229,7 +230,7 @@ alone cleans up, exactly once.
   `moodRank`/`moodTTL` tables and the mood-wording table. And a column anchor
   does not save it: swiftc right-aligns each excerpt's line number to the width
   of the WHOLE FILE, so in a four-digit source every quoted line from 1000 up
-  starts at column 0 too, and eight of those nine sit up there. (The line count
+  starts at column 0 too, and all nine sit up there. (The line count
   is deliberately not written down here — it moves with every change, and what
   the argument needs is only that the file is over a thousand lines.) What every excerpt line
   does carry is the ` | ` gutter, so the headline drops those and takes the
@@ -276,8 +277,8 @@ alone cleans up, exactly once.
   the only thing that stops the loop. The test reads "non-empty AND newer",
   never "newer" alone — the empty half is the interrupted-build wedge above.
 
-  `tools/run-build-gate.sh` pins the first, second and fourth of those, and
-  takes `PERCHLING_PET_SH` so it can be shown to FAIL: against the pre-fix
+  `tools/run-build-gate.sh` pins all three of those, and takes
+  `PERCHLING_PET_SH` so it can be shown to FAIL: against the pre-fix
   script it goes red on `pet-survives-failed-build` and `no-rebuild-loop`.
   `empty-marker-does-not-wedge` pins the staged log from the other side — an
   empty marker newer than the source must not stop a rebuild — by reproducing

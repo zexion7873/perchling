@@ -144,8 +144,8 @@ and what the alternative lost to.
   Pets menu, with no error anywhere the user can see. Unknown top-level keys
   are ignored by every version. Found the hard way, in one afternoon, by a
   single misplaced key. Inside `sequences` the rule INVERTS: an unrecognised
-  sequence name is ignored rather than rejected, so a later perchling adding an
-  eighth sequence does not make its manifests unloadable here — `--validate`
+  sequence name is ignored rather than rejected, so a later perchling adding a
+  ninth sequence does not make its manifests unloadable here — `--validate`
   warns on stderr and the file still loads. That inversion is what let the five
   mood loops ship without a format break: a manifest declaring `sequences.idle`
   loads on 1.4.0 and simply does not animate. It is also the reason a mood's
@@ -182,11 +182,13 @@ and what the alternative lost to.
   twelve-file library, whole output and exit status, three runs each: identical.
 
   **Do not write that diff against fixtures that put the same defect in several
-  moods.** `loadCustomPet` walks `moods` as a Swift Dictionary, whose iteration
-  order is randomised per process, so whichever broken mood is visited first is
-  the one named — the OLD binary alone reported four different moods across
-  eight runs of one file. Put the defect in exactly one mood and the comparison
-  is deterministic.
+  moods.** `loadCustomPet` walks `moods` sorted by key, and the
+  `moods-walk-unordered` mutant in `tools/run-mutation-gate.sh` holds it there,
+  but a binary older than 1.17.0 walks it as an unsorted Swift Dictionary,
+  whose iteration order is randomised per process, so whichever broken mood is
+  visited first is the one named — the OLD binary alone reported four different
+  moods across eight runs of one file. Put the defect in exactly one mood and
+  the comparison is deterministic on both sides.
 - **CR and LF cannot be palette keys, and the guard sits at the palette.**
   They are the one pair where the parser's two width measures disagree: the
   byte fast path counts CR LF as two cells, while every grapheme walk — the
