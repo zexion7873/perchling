@@ -153,8 +153,7 @@ if [ ! -t 0 ]; then
     # Lines 3-5 of the previous write, read with builtins: the odometer needs
     # line 5 on EVERY rewrite, and the old pair of conditional sed forks would
     # have become three — one read block is cheaper than any single fork was.
-    # Values are read unconditionally, used under the same conditions as
-    # before. The -r test keeps the redirect off a missing file, because this
+    # The -r test keeps the redirect off a missing file, because this
     # script must never write to a hook's stderr.
     prev3=; prev4=; prev5=
     if [ -r "$d/sessions/$sid" ]; then
@@ -164,8 +163,7 @@ if [ ! -t 0 ]; then
     # An empty snippet must not erase the last one. Only a prompt and a reply
     # produce text; a tool batch produces none, and a session file is rewritten
     # whole on every hook, so writing the empty value would blank the bubble
-    # halfway through a turn. The global `say` never had this problem because it
-    # is only written when non-empty.
+    # halfway through a turn.
     [ -n "$snippet" ] || snippet="$prev3"
     # A waiting hook with no tool of its own keeps the last one: on a terminal
     # host one permission decision fires PermissionRequest and then
