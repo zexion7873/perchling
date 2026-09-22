@@ -99,40 +99,33 @@ if [ ! -t 0 ]; then
     '<task-notification>'*|'<system-reminder>'*|'<local-command-'*|'<command-name>'*|'<command-message>'*)
       snippet= ;;
   esac
-  # On Stop, the reply is better bubble material than an echo of the prompt the
-  # user already typed. Each content block is its own transcript record, so
-  # match the text-block signature — the final record is usually a tool_use or
-  # a thinking block, never the prose. The role filter matters too: tool
-  # results and image attachments are also text blocks, and a base64 payload in
-  # the bubble helps nobody. 64KB of tail covers it: the p95 record is a few KB
-  # and the reply is the last thing written.
+  # On Stop the reply is better bubble material than an echo of the prompt the
+  # user already typed, and on StopFailure the CLI's own error text ("API
+  # Error: 400 ...") is the autopsy. Measured on 2.1.273, both payloads carry
+  # it as the top-level last_assistant_message, so no transcript is read. A
+  # transcript tail goes blind whenever a record bigger than its window lands
+  # after the reply, and print mode writes a 140KB prompt_snapshot right there.
   #
-  # On StopFailure the same scrape is the autopsy: the CLI appends a
-  # <synthetic> assistant record carrying its own error text ("API Error:
-  # 400 ..."), and a snapshot taken INSIDE the hook (2026-08-31) shows the
-  # record already in the file when the hook fires — the transcript-lag
-  # warning in the docs does not bite here. The payload's top-level
-  # last_assistant_message says the same thing and lost only on being a
-  # second extraction mechanism: one scrape, two moods, one place to break.
+  # FIRST match, like the sid: background_tasks serialises after it, and an
+  # embedded object must not choose the caption. The closing quote is optional
+  # because dd's one read ends mid-reply on a long one — a 120KB reply arrives
+  # cut — and the 300-byte teaser never needs the end. ERE, not BRE: the body
+  # has to step over escaped quotes, and a plain [^"]* stops at the first one.
+  #
+  # The key is absent when the final message has no text (thinking only, or
+  # empty), and neither payload carries a top-level "prompt" — so the snippet
+  # the prompt sed found above is a session cron's, and must be dropped before
+  # the carry below can keep the last caption instead.
   if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
-    tp=$(printf '%s' "$payload" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-    if [ -n "$tp" ] && [ -r "$tp" ]; then
-      # Drop the leading line only when the tail actually cut one in half. On a
-      # transcript smaller than the window the tail IS the whole file, and
-      # discarding line one throws away the only reply of a session's first turn.
-      if [ "$(wc -c < "$tp" 2>/dev/null || echo 0)" -gt 65536 ]; then
-        chunk=$(tail -c 65536 "$tp" 2>/dev/null | tail -n +2)
-      else
-        chunk=$(cat "$tp" 2>/dev/null)
-      fi
-      # ERE, not BRE: the body has to accept escaped quotes, and a plain
-      # [^"]* stops at the first one — turning a sentence into one word.
-      reply=$(printf '%s\n' "$chunk" \
-        | grep '"role":"assistant"' | grep '"type":"text","text":"' | tail -1 \
-        | sed -nE 's/.*"type":"text","text":"(([^"\]|\\.)*)".*/\1/p' \
-        | head -c 300 | sed 's/\\*$//' 2>/dev/null)
-      [ -n "$reply" ] && snippet="$reply"
-    fi
+    snippet=
+    case "$payload" in
+      *'"last_assistant_message"'*)
+        reply=${payload#*'"last_assistant_message"'}
+        reply=$(printf '%s' "$reply" \
+          | sed -nE '1s/^[[:space:]]*:[[:space:]]*"(([^"\]|\\.)*).*/\1/p' \
+          | head -c 300 | sed 's/\\*$//' 2>/dev/null)
+        [ -n "$reply" ] && snippet="$reply" ;;
+    esac
   fi
   if [ -n "$snippet" ]; then
     printf '%s' "$snippet" > "$d/.say.$$" 2>/dev/null && mv -f "$d/.say.$$" "$d/say" 2>/dev/null

@@ -155,31 +155,25 @@ h=$(fire tool-hot running '{"session_id":"abc-123","cwd":"/x","tool_name":"Bash"
   && ok "a running hook never records one" \
   || no "a running hook never records one" "got '$(sed -n 4p "$h/perchling/sessions/abc-123")'"
 
-# --- the transcript scrape: done gets the reply, error gets the autopsy ---
-# One fixture serves both moods, because it is the same branch. The reply
-# record's shape is captured from a real transcript, not invented: role and
-# the text-block signature on one line, with a tool_use record AFTER it so
-# the tail-1-of-text-lines rule is what the assertion exercises. The error
-# fixture's last assistant record is the CLI's own <synthetic> one, which a
-# hook-time snapshot (2026-08-31) shows is already written when StopFailure
-# fires.
-tscript="$W/transcript.jsonl"
-cat > "$tscript" <<'EOT'
-{"type":"user","message":{"role":"user","content":"hi"}}
-{"parentUuid":"a1","type":"assistant","message":{"model":"claude-x","role":"assistant","content":[{"type":"text","text":"the reply itself"}]}}
-{"parentUuid":"a2","type":"assistant","message":{"model":"claude-x","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash"}]}}
+# --- the reply: done gets it, error gets the autopsy, both from the payload ---
+# Key order is captured from real 2.1.273 Stop and StopFailure payloads, not
+# invented: last_assistant_message sits after stop_hook_active (or error) and
+# before background_tasks. Every fixture's transcript_path points at a decoy
+# whose reply differs, so a caption can only have come from the payload.
+decoy="$W/decoy.jsonl"
+cat > "$decoy" <<'EOT'
+{"parentUuid":"a1","type":"assistant","message":{"model":"claude-x","role":"assistant","content":[{"type":"text","text":"DECOY from the transcript"}]}}
 EOT
-h=$(fire scrape-done done "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"transcript_path\":\"$tscript\"}")
+stop() { # stop <last_assistant_message body, JSON-escaped> [background_tasks body]
+  printf '{"session_id":"abc-123","transcript_path":"%s","cwd":"/x","prompt_id":"p1","permission_mode":"default","effort":{"level":"high"},"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"%s","background_tasks":[%s],"session_crons":[]}' \
+    "$decoy" "$1" "${2:-}"
+}
+h=$(fire reply-done done "$(stop 'the reply itself')")
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "the reply itself" ] \
   && ok "done: the reply is the caption" \
   || no "done: the reply is the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
 
-escript="$W/transcript-error.jsonl"
-cat > "$escript" <<'EOT'
-{"type":"user","message":{"role":"user","content":"hi"}}
-{"parentUuid":"a1","type":"assistant","message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error: 400 forced failure"}]}}
-EOT
-h=$(fire scrape-error error "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"transcript_path\":\"$escript\"}")
+h=$(fire reply-error error "{\"session_id\":\"abc-123\",\"transcript_path\":\"$decoy\",\"cwd\":\"/x\",\"prompt_id\":\"p1\",\"effort\":{\"level\":\"high\"},\"hook_event_name\":\"StopFailure\",\"error\":\"unknown\",\"last_assistant_message\":\"API Error: 400 forced failure\"}")
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "API Error: 400 forced failure" ] \
   && ok "error: the autopsy is the caption" \
   || no "error: the autopsy is the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
@@ -187,15 +181,43 @@ h=$(fire scrape-error error "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"transc
   && ok "error: the bubble gets it too" \
   || no "error: the bubble gets it too" "say: '$(cat "$h/perchling/say" 2>/dev/null)'"
 
-# The other moods must NOT scrape: a running hook offering a transcript keeps
-# the prompt as its caption. Guards the condition against widening — every
-# tool batch carries transcript_path, and scraping on the hot path would both
-# pay the file read per batch and caption the bubble with a STALE reply while
-# the turn is still going.
-h=$(fire scrape-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"prompt\":\"typed this\",\"transcript_path\":\"$tscript\"}")
+# The caption keeps JSON's escapes — the reader decodes them — so the
+# expected value carries the backslashes too.
+h=$(fire reply-quote done "$(stop 'He said \"hi\" twice')")
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 'He said \"hi\" twice' ] \
+  && ok "an escaped quote does not end it" \
+  || no "an escaped quote does not end it" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+
+# dd's one read ends mid-reply on a long one: no closing quote, no brace.
+h=$(fire reply-cut done '{"session_id":"abc-123","cwd":"/x","hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"a reply the read cut off mid-')
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "a reply the read cut off mid-" ] \
+  && ok "a reply cut mid-string still speaks" \
+  || no "a reply cut mid-string still speaks" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+
+# The position rule, as for the sid: an embedded object serialises after the
+# CLI's own key, so the first match is the session's and a later one is not.
+h=$(fire reply-nested done "$(stop "the session's own" '{"id":"t1","last_assistant_message":"a background task'"'"'s"}')")
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "the session's own" ] \
+  && ok "the first reply key wins" \
+  || no "the first reply key wins" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+
+# The other moods must NOT take a reply: a running hook offering one keeps the
+# prompt as its caption. Guards the condition against widening — a reply
+# captioned mid-turn is the PREVIOUS turn's, stale while this one is going.
+h=$(fire reply-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"prompt\":\"typed this\",\"last_assistant_message\":\"the last turn's reply\"}")
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "typed this" ] \
-  && ok "running never scrapes" \
-  || no "running never scrapes" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+  && ok "running never takes the reply" \
+  || no "running never takes the reply" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+
+# The reply key is absent when the turn's final message has no text, and a
+# Stop payload's only "prompt" is a session cron's: the caption keeps the last
+# one rather than quoting the cron. Shape captured from a real 2.1.273 Stop.
+h=$(fire reply-absent running '{"session_id":"abc-123","cwd":"/x","prompt":"typed this"}')
+printf '%s' "{\"session_id\":\"abc-123\",\"transcript_path\":\"$decoy\",\"cwd\":\"/x\",\"prompt_id\":\"p1\",\"permission_mode\":\"default\",\"effort\":{\"level\":\"high\"},\"hook_event_name\":\"Stop\",\"stop_hook_active\":false,\"background_tasks\":[],\"session_crons\":[{\"id\":\"c1\",\"schedule\":\"*/5 * * * *\",\"recurring\":true,\"prompt\":\"check the deploy\"}]}" \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" done >/dev/null 2>&1
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "typed this" ] \
+  && ok "a turn with no reply keeps the caption" \
+  || no "a turn with no reply keeps the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
 
 # --- the odometer: line 5 counts HUMAN prompts and nothing else ---
 # A turn is a typed prompt: only UserPromptSubmit carries "prompt", and the
