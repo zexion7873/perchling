@@ -193,11 +193,38 @@ gate odometer-counts-machinery scripts/state.sh PERCHLING_STATE_SH tools/run-sta
 
 # The autopsy arm forgotten: StopFailure still flips the mood, but the bubble
 # keeps whatever it last said while the CLI's own error text sits unread in
-# the transcript's <synthetic> record — the pet frowns and refuses to say why,
-# with every other state line green.
+# the payload — the pet frowns and refuses to say why, with every other state
+# line green.
 gate error-autopsy-forgotten scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then' \
   '  if [ "${1:-}" = done ]; then'
+
+# The BRE-shaped body: every reply that quotes anything shrinks to the words
+# before its first quote mark.
+gate reply-stops-at-escaped-quote scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*).*/\\1/p' \\" \
+  "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"([^\"]*).*/\\1/p' \\"
+
+# Demanding the closing quote reads as tidying the regex, and silences every
+# reply long enough that dd's one read ends inside it.
+gate reply-needs-closing-quote scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*).*/\\1/p' \\" \
+  "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*)\".*/\\1/p' \\"
+
+# The reset reads as redundant: a Stop payload carries no top-level "prompt".
+# It carries a session cron's, and without the reset a turn whose final
+# message has no text puts the cron's prompt in the bubble.
+gate done-quotes-a-cron scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
+    snippet=' \
+  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
+    :'
+
+# One extra # takes the LAST key, and the caption goes to whatever embedded
+# object serialised after the CLI's own — the sid's ghost-row bug, in the bubble.
+gate reply-takes-last-match scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "        reply=\${payload#*'\"last_assistant_message\"'}" \
+  "        reply=\${payload##*'\"last_assistant_message\"'}"
 
 # A refresh that never runs is the pre-record behaviour restored for every
 # pet: picked copies frozen at pick time while the shipped art moves on —

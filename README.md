@@ -14,7 +14,7 @@ needs you.**
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 
-No Electron. No WebSocket server. One native Swift binary,
+No Electron. No WebSocket server. No log scraping. One native Swift binary,
 driven straight off Claude Code hook events.
 
 </div>
