@@ -86,9 +86,10 @@ func canvasSize(_ w: Int, _ h: Int, _ scale: CGFloat) -> NSSize {
 enum Mood: String {
     case idle, running, waiting, done, error
 
-    // The session file's first line is the mood; an optional second line is
-    // that session's cwd, which the tray shows and the fold ignores. Reading
-    // line one keeps every file written before the label existed valid.
+    // The session file's first line is the mood; state.sh writes four more —
+    // cwd, caption, blocked tool, turn count — which the tray reads and the
+    // fold ignores. Reading line one alone keeps the one- and two-line files
+    // pet.sh writes valid.
     static func parse(_ s: String) -> Mood {
         // .first, not [0] — split on an empty file returns an empty array, and
         // an empty session file is what a failed write leaves behind.
@@ -428,7 +429,7 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
     }
     var frames: [Mood: [[NSColor?]]] = [:]
     var dims = (w: 0, h: 0)
-    // Sorted for the same reason `sequences` is sorted 85 lines below: a Swift
+    // Sorted for the same reason `sequences` is sorted below: a Swift
     // Dictionary randomises its iteration order per process, so an unsorted walk
     // makes a manifest with more than one defect name a DIFFERENT mood on every
     // run — measured at four across eight runs of one file. Harmless to a user
@@ -568,8 +569,8 @@ func loadCustomPet(_ data: Data) throws -> CustomPet {
                 steps.append((frame: f, ms: stepMs, ticks: ticks))
                 schedule.append(contentsOf: Array(repeating: f, count: ticks))
             }
-            // A leftover key from before timelines. Loud once, not fatal: the
-            // timing it asks for is already fully described by `steps`.
+            // Loud once, not fatal: the timing it asks for is already fully
+            // described by `steps`.
             if obj["ms"] != nil { legacyMsKeys.append(name) }
             var mirror = false
             if let mr = obj["mirror"] {
@@ -846,8 +847,6 @@ final class PetView: NSView {
     // reaction a manifest can have without shipping a pose for it — the Codex
     // pets spend two atlas rows on running-left/running-right to get this.
     var lean: CGFloat = 0
-    // Set once per draw so `fill` can shear without every call site — the base,
-    // the eyes, the tear, the sparkle and the custom blit — passing it along.
     private var drawLean = 0
 
     override var isFlipped: Bool { true }
@@ -859,11 +858,6 @@ final class PetView: NSView {
     // `tick` parked below the deadline forever and the pose stuck for the life
     // of the process. Both ends have to check.
 
-    // Hovering the BUILT-IN pet startles it. The startle swaps the eye shape,
-    // and a manifest has one frame per mood with no second frame to cut to, so
-    // a custom pet cannot have the reaction at all. The tracking area is still
-    // built for it — it is rebuilt on resize anyway, because installing a
-    // custom pet changes the window's bounds.
     private var tracking: NSTrackingArea?
 
     override func updateTrackingAreas() {
@@ -876,9 +870,6 @@ final class PetView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        // A pet reacts to hover only if it shipped the frames for one. The
-        // built-in used to swap in a drawn startle pose instead; that pose was
-        // drawing code, and it left with the rest of it.
         if motionOK, activePet.sequences[.hover] != nil { hoverSeqStart = tick }
     }
 
@@ -888,9 +879,8 @@ final class PetView: NSView {
     // Sixteen sectors, which is the resolution their own atlas devotes two
     // whole rows to. The three-value version this replaced could not tell a
     // cursor above from one above-and-left, so half the screen produced the
-    // same two poses. The vector is a direction only — callers scale it, and
-    // they scale x and y differently because the glass is wider than it is
-    // tall and the eyes have about twice the sideways headroom.
+    // same two poses. The vector is a direction only — callers scale both
+    // axes by the eyes' declared `range`.
     private func gazeVector() -> (CGFloat, CGFloat) {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return (0, 0) }
         guard let w = window else { return (0, 0) }
@@ -917,8 +907,7 @@ final class PetView: NSView {
     // The top of the sprite lags the direction of travel and the feet stay
     // planted, because the feet are what it is being dragged BY — a uniform
     // offset would read as the window sliding rather than the creature
-    // resisting. Rects spanning several rows take their top row's shear; the
-    // tallest of them is three rows, so the error never reaches a pixel.
+    // resisting.
     private func leanShift(_ y: Int) -> Int {
         guard drawLean != 0 else { return 0 }
         let h = CGFloat(activePet.height)
@@ -926,7 +915,7 @@ final class PetView: NSView {
     }
 
     // Every blit goes through here, so the side margin and the drag shear are
-    // applied in one place rather than at each call site.
+    // applied in one place.
     private func fill(_ color: NSColor, _ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, _ off: Int) {
         color.setFill()
         let r = NSRect(x: CGFloat(x0 + xpad + leanShift(y0)) * scale,
@@ -966,9 +955,6 @@ final class PetView: NSView {
 
     private var lastPose: Pose?
 
-    // The repaint decision reads the value the paint reads. Nothing here
-    // re-derives an input, so the two cannot come to different conclusions
-    // about what the next frame would contain.
     func repaintIfChanged() {
         let p = pose()
         guard p != lastPose else { return }
@@ -1018,8 +1004,6 @@ final class PetView: NSView {
                 eyeDY = Int((g.1 * CGFloat(e.range)).rounded())
             }
         }
-        // The hop outranks the mood's resting bob, and now fires on a tap in
-        // any mood rather than only on the switch into done.
         if motionOK && tick < hopUntil { off = ((tick / 3) % 2 == 0) ? 2 : 0 }
 
         // Drag outranks hover: the cursor sitting on a pet you are already
@@ -1057,7 +1041,6 @@ final class PetView: NSView {
                 }
             }
             if seq == nil, hoverSeqStart >= 0, let s = pet.sequences[.hover] {
-                // In TICKS, not frames — the schedule is the clock now.
                 let i = tick - hoverSeqStart
                 // A burst has no direction of travel, so it never flips. It
                 // may run more than once: the index wraps, the deadline does
@@ -1238,9 +1221,7 @@ final class PetView: NSView {
     override func mouseUp(with event: NSEvent) {
         if !dragged {
             // React first so the poke registers even though focus is about to
-            // leave for the home app. A pet that drew its own reaction plays
-            // that; every other pet — the built-in included — keeps the
-            // procedural two-cell hop, so nothing that works today changes.
+            // leave for the home app.
             if motionOK {
                 if activePet.sequences[.tap] != nil { tapSeqStart = tick } else { hopUntil = tick + 12 }
             }
@@ -2105,7 +2086,7 @@ final class ChipView: NSVisualEffectView {
         // light chevron disappears — every theme's ink assumes a dark panel.
         appearance = NSAppearance(named: .darkAqua)
         // A disc, matching the drawn stroke — a square of frost behind a round
-        // button is the same bug the bubble's tail mask exists to avoid.
+        // button is the same bug the bubble's mask exists to avoid.
         maskImage = NSImage(size: NSSize(width: CHIP, height: CHIP), flipped: true) { _ in
             NSColor.black.setFill()
             NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: CHIP - 4, height: CHIP - 4)).fill()
@@ -2179,10 +2160,9 @@ final class BubbleView: NSVisualEffectView {
             // reads as borrowed system UI parked beside the creature rather
             // than as part of it.
             //
-            // One transparency layer, composited once. Filling each piece at
-            // alpha instead stacks the tail's overlap with the body into a
-            // darker seam — an artifact that does not exist while the fills are
-            // opaque. Text stays outside it: a translucent glyph is unreadable
+            // One transparency layer, composited once, around a single fill:
+            // `bodyPath()` is one rounded rect, so no second piece overlaps
+            // it. Text stays outside it: a translucent glyph is unreadable
             // at 11pt.
             let gc = NSGraphicsContext.current!.cgContext
             gc.setAlpha(CHROME_TINT)
@@ -2231,10 +2211,9 @@ final class BubbleView: NSVisualEffectView {
     }
 
     // Vibrancy has no notion of a shape: unmasked, the whole rect frosts over,
-    // rounded corners included, and the bubble becomes a slab. Fixed now that
-    // the tail is gone — the mask used to be rebuilt every time the tail
-    // chased the pet's midline. Drawn flipped to match the panel, because
-    // NSImage's origin is bottom-left and every coordinate here is top-down.
+    // rounded corners included, and the bubble becomes a slab. Drawn flipped
+    // to match the panel, because NSImage's origin is bottom-left and every
+    // coordinate here is top-down.
     private static let mask = NSImage(size: NSSize(width: BUB_W, height: BUB_H), flipped: true) { _ in
         NSColor.black.setFill()
         BubbleView.bodyPath().fill()
@@ -2267,9 +2246,7 @@ final class BubbleView: NSVisualEffectView {
 //
 // Bubble and chip share one horizontal band above the pet and never overlap:
 // they are separate windows, and two frosted panels crossing would double the
-// tint exactly where they meet. That is also why the chip no longer perches on
-// the pet's shoulder — with the bubble brought down to meet the art there is
-// no shoulder left to perch on.
+// tint exactly where they meet.
 struct ChromeLayout {
     let bubble: NSPoint
     let chip: NSPoint
@@ -2918,13 +2895,8 @@ final class Controller: NSObject, NSWindowDelegate {
 // enforces holds for the shipped pet too, and `--export` can hand the text back
 // verbatim instead of reconstructing it from pixels.
 //
-// The consequence to know before reading `PetView`: `custom` is now never nil.
-// There is no second art path left, so the behaviours that used to key off
-// `custom == nil` — the hover startle, error's tear, done's sparkle, idle's
-// doze-and-peek, cursor gaze and the blink — are gone rather than dormant.
-// They come back as declared `sequences`, not as branches.
 // What is embedded is the LAST RESORT, not the pet. The husky's manifest is
-// 449KB of row strings and it ships as examples/<PERCHLING_BUILTIN>.json, which
+// 460KB of row strings and it ships as examples/<PERCHLING_BUILTIN>.json, which
 // pet.sh copies to builtin.json in the runtime home beside the binary — by
 // CONTENT, not on the mtime check it uses to decide a rebuild. Keeping it out
 // of the binary is why that binary is under half a megabyte; keeping it in the
@@ -3144,9 +3116,6 @@ if argv.count >= 2 {
                 let name = k.rawValue.padding(toLength: 7, withPad: " ", startingAt: 0)
                 return "  \(name) \(s.frames.count) frames, \(s.steps.count) steps\(runs)  "
                     + "\(timing)  (\(s.totalTicks) ticks, \(secs) \(shape))"
-                    // Only where it does something. Saying it on a kind the
-                    // warning below calls ignored is one line contradicting
-                    // the next.
                     + (s.mirror && k == .drag ? ", mirrors when dragged left" : "")
             }
             // Inks USED, not palette keys: an unused key says nothing, and the

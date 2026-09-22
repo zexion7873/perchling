@@ -12,11 +12,8 @@ set -u
 ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 SRC="$(cd "$(dirname "$0")" && pwd)/pet.swift"
 EXAMPLES="$(cd "$(dirname "$0")/.." && pwd)/examples"
-# The built-in's art is a file now, not 449KB compiled into the binary, and
-# WHICH shipped pet it is comes from a name rather than a path — so changing the
-# default creature is this one line, and no file moves. The menu follows on its
-# own: petChoices hides whichever shipped pet matches builtinPet.name, so the
-# new built-in leaves the list and the old one joins it.
+# The menu follows on its own: petChoices hides whichever shipped pet matches
+# builtinPet.name, so the new built-in leaves the list and the old one joins it.
 BUILTIN_PET="${PERCHLING_BUILTIN:-husky}"
 BUILTIN_SRC="$EXAMPLES/$BUILTIN_PET.json"
 # Copied into the runtime home rather than read from the plugin directory, so an
