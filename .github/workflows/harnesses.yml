@@ -21,6 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Branch protection requires release-gate, harnesses and mutation-gate BY NAME:
+  # rename one and every PR waits forever on a check that never reports.
   release-gate:
     # Deliberately NOT in the macOS harness loop. It needs no Swift toolchain,
     # and a manifest check that dies alongside the toolchain is a manifest
