@@ -3,10 +3,9 @@
 # it is the only thing that reaches an install. Nothing in CI had ever parsed
 # that file: thirty-four releases shipped it unchecked, so a stray comma would
 # have taken the marketplace down for every user with a green tick beside it.
-# This repo IS the marketplace, so the version landing on main IS the publish;
-# there is no staging where a bad manifest could be caught later, and like every
-# other job in harnesses.yml this one reports AFTER a direct push. Running it by
-# hand before pushing a release is the only pre-publish check there is.
+# This repo IS the marketplace, so the version landing on main IS the publish.
+# Branch protection admits a commit to main only through a PR with this job
+# green, so a bad manifest reds the release PR instead of the marketplace.
 #
 # Shell and python3 only — no Swift, nothing compiled, nothing launched. python3
 # rather than jq because it is what the rest of tools/ already depends on.

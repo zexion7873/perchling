@@ -166,8 +166,9 @@ inferred. A dev machine's Swift has never been evidence about CI's, and bumping
 means changing the path AND the assertion, in BOTH jobs.
 
 This repo IS the marketplace: the version line in `.claude-plugin/plugin.json`
-is the publish, with no staging where a stray comma gets caught later. Run
-`bash tools/run-release-checks.sh` by hand before pushing one.
+is the publish. Branch protection, admins included, lets `main` take it only
+through a PR whose `release-gate`, `harnesses` and `mutation-gate` are green, so
+a stray comma reds the release PR before it reaches anyone.
 
 ## The built-in's art
 
