@@ -2,9 +2,10 @@
 # perchling control script: build, session refcounting, launch, teardown.
 # Runtime home (binary, state, session refcounts) lives outside the plugin
 # directory because the plugin path changes on every update.
-# Must stay LF (.gitattributes pins it): a CRLF checkout, which is what Git
-# for Windows makes by default, dies at `set -u<CR>` below with exit 2 before
-# the platform gate in cmd_up runs, so every SessionStart and SessionEnd
+# Must stay LF (.gitattributes pins it): in a CRLF checkout, which is what Git
+# for Windows makes by default, `set -u<CR>` below is merely an invalid option,
+# but the first function definition is a syntax error and the script exits 2
+# before the platform gate in cmd_up runs, so every SessionStart and SessionEnd
 # surfaces a hook error instead of the promised silence. state.sh carries the
 # same invariant with worse consequences.
 set -u

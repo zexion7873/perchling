@@ -306,8 +306,9 @@ alone cleans up, exactly once.
   that.** Git for Windows installs with `core.autocrlf=true`, the marketplace
   clone honours it, and bash treats the CR as part of the token: a CRLF
   `state.sh` fails at `exit 0<CR>` on its platform gate under Git Bash (and at
-  `case "$payload" in<CR>` on a Mac, measured on bash 3.2), a CRLF `pet.sh` at
-  `set -u<CR>` — both exit 2 before any platform-aware line runs. Exit 2 is the
+  `case "$payload" in<CR>` on a Mac, measured on bash 3.2), and a CRLF `pet.sh`
+  shrugs off `set -u<CR>` as an invalid option and dies at its first function
+  definition — both exit 2 before any platform-aware line runs. Exit 2 is the
   one status a hook must never return by accident: on `UserPromptSubmit` it
   blocks and erases the prompt, so the README's "silently inactive on every
   other platform" was, on Windows, "eats every prompt". The dying `state.sh`
