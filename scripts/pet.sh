@@ -86,7 +86,7 @@ session_owner() {
   ps -Ao pid=,ppid= | awk -v p=$$ '{pp[$1]=$2} END {while (pp[p] && pp[p] != 1) p = pp[p]; print p}'
 }
 
-macos() { [ "$(uname)" = Darwin ]; }
+macos() { [[ $OSTYPE == darwin* ]]; }
 # Run the compiler rather than locating it: /usr/bin/swiftc is a stub macOS
 # ships whether or not a toolchain is installed, so `command -v` succeeds on
 # exactly the machine this guard exists to reject. The probe costs an exec, so
@@ -483,6 +483,18 @@ cmd_wake() {
   echo "perchling waking — 'pet.sh status' says whether it came up"
   running || cmd_up manual
 }
+
+# `up` and `down` are the hooks, which must stay silent on every platform. The
+# rest are a person asking, and without this each answers off macOS for a pet
+# that cannot exist: `disable` writes its flag and says so, `build` leaves a
+# failure log.
+if ! macos; then
+  case "${1:-status}" in
+    build|stop|disable|enable|wake|status)
+      echo "perchling runs only on macOS" >&2
+      exit 1 ;;
+  esac
+fi
 
 case "${1:-status}" in
   build)   cmd_build ;;

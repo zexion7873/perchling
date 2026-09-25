@@ -118,6 +118,25 @@ gate prune-never-retires scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.
   '  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null' \
   '  :'
 
+# The platform gate opened: every prompt on Windows or Linux writes a runtime
+# home for a pet that cannot exist there, and nothing errors.
+gate hook-gate-open scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '[[ $OSTYPE == darwin* ]] || exit 0' \
+  '[[ $OSTYPE == * ]] || exit 0'
+
+# The same gate on SessionStart: cmd_up past it creates the sessions directory
+# and tries a build that can only fail.
+gate up-gate-open scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+  '  macos || exit 0
+  [ -e "$ROOT/disabled" ] && exit 0' \
+  '  [ -e "$ROOT/disabled" ] && exit 0'
+
+# The fence gone: off macOS the six commands a person types answer for a pet
+# that does not exist, `disable` writing its flag and saying so.
+gate fence-missing scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+  'if ! macos; then' \
+  'if false; then'
+
 # cmd_up refuses on the same flag cmd_enable is there to clear, so an enable
 # that stops clearing it prints its line, exits 0, and starts nothing — the
 # exact "enable does nothing" report, with no error anywhere.

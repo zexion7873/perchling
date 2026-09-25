@@ -14,18 +14,24 @@
 #   * neither may claim an outcome it cannot see. cmd_up backgrounds the launch
 #     and exits, so a leaked fresh lock stops the pet coming up with nobody the
 #     wiser; the wording is what was fixed, and nothing pinned it.
+# Off macOS the same commands, plus status, stop and build, must say there is
+# no pet here and write nothing, and the hook's `up` must stay silent.
 #
-# Nothing here can open a window. CLAUDE_CONFIG_DIR points at a scratch home
-# whose binary is a compiled C stub — compiled rather than a shebang script
-# because `pgrep -x -f "$BIN"` correctly refuses to match a script's
-# `/bin/bash <path>` argv, and long-lived because a stub that exits is never
-# visible to running(). It is deliberately NOT a copy of the real binary: that
-# copy is an executable which stays alive by opening a pet on the desktop.
+# Nothing here can open a window. Cases that need a live pet point
+# CLAUDE_CONFIG_DIR at a scratch home whose binary is a compiled C stub —
+# compiled rather than a shebang script because `pgrep -x -f "$BIN"` correctly
+# refuses to match a script's `/bin/bash <path>` argv, and long-lived because a
+# stub that exits is never visible to running(). It is deliberately NOT a copy
+# of the real binary: that copy is an executable which stays alive by opening a
+# pet on the desktop.
 #
 # The script under test is COPIED beside a dummy pet.swift, so $SRC is a file
-# this harness owns. Pointed at the checkout in place, cmd_up's rebuild gate
-# compares against a pet.swift somebody may be editing, and a save landing
-# mid-run turns an assertion into a 30-second `swiftc -O`.
+# this harness owns, and every case runs the copy. Pointed at the checkout in
+# place, cmd_up's rebuild gate compares against a pet.swift somebody may be
+# editing, and a save landing mid-run turns an assertion into a 30-second
+# `swiftc -O`. The stubless cases — a fresh install, and off macOS — depend on
+# it outright: with no binary the gate tries a build, which beside the checkout
+# compiles the real pet.swift and launches it, and here launches nothing.
 #
 # Takes PERCHLING_PET_SH so it can be pointed at a mutant carrying exactly the
 # defect each line is named after and shown to FAIL. That is the only reason to
@@ -71,6 +77,11 @@ int main(void) {
 }
 C
 cc -O0 -o "$W/stub" "$W/stub.c" 2>/dev/null || { echo "cannot compile the stub" >&2; exit 1; }
+# The off-macOS cases stand in for Git Bash with OSTYPE=msys, which works only
+# because bash keeps an OSTYPE it inherits. A bash that resets it would run
+# every one of them as a Mac and report the fence missing.
+OSTYPE=msys bash -c '[[ $OSTYPE == msys ]]' \
+  || { echo "this bash resets an inherited OSTYPE; cannot stand in for Windows" >&2; exit 1; }
 
 # Each case gets its own config dir: these commands exist to leave files
 # behind, so a shared one would let an earlier case answer a later assertion.
@@ -283,6 +294,31 @@ for pair in disable:disabled wake:wake; do
     && ok "$cold means it on a fresh install" \
     || no "$cold means it on a fresh install" "no runtime home, no flag, and it said yes"
 done
+
+# --- off macOS ---------------------------------------------------------------
+# Six commands a person types. Without the fence each answers for a pet that
+# cannot exist here — `disable` writes its flag and says so. Run against the
+# copy beside the dummy pet.swift: were the OSTYPE fake ever ignored, `enable`
+# would reach cmd_up as a Mac and compile whatever sits beside the script.
+for cmd in status stop disable enable wake build; do
+  h="$W/off-$cmd"; mkdir -p "$h"
+  OSTYPE=msys CLAUDE_CONFIG_DIR="$h" bash "$PET" "$cmd" > "$W/off-$cmd.out" 2> "$W/off-$cmd.err"
+  rc=$?
+  [ "$rc" -eq 1 ] && [ ! -s "$W/off-$cmd.out" ] && grep -q 'only on macOS' "$W/off-$cmd.err" \
+    && [ -z "$(ls -A "$h")" ] \
+    && ok "$cmd off macOS says so, writes nothing" \
+    || no "$cmd off macOS says so, writes nothing" "exit $rc, out='$(head -1 "$W/off-$cmd.out")', home: $(ls -A "$h" | tr '\n' ' ')"
+done
+# The hook's half: SessionStart runs `up` on every platform the plugin installs
+# on. Anything it prints on stdout lands in Claude's context at every session
+# start, and a nonzero exit is a hook error the user sees. A here-string, not a
+# pipe: `up` exits before reading, and a writer losing that race makes rc 141.
+h="$W/off-up"; mkdir -p "$h"
+OSTYPE=msys CLAUDE_CONFIG_DIR="$h" bash "$PET" up <<< '{"session_id":"abc-123"}' > "$W/off-up.out" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && [ ! -s "$W/off-up.out" ] && [ -z "$(ls -A "$h")" ] \
+  && ok "up off macOS is silent and writes nothing" \
+  || no "up off macOS is silent and writes nothing" "exit $rc, said '$(head -1 "$W/off-up.out")', home: $(ls -A "$h" | tr '\n' ' ')"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -310,8 +310,8 @@ alone cleans up, exactly once.
   shrugs off `set -u<CR>` as an invalid option and dies at its first function
   definition — both exit 2 before any platform-aware line runs. Exit 2 is the
   one status a hook must never return by accident: on `UserPromptSubmit` it
-  blocks and erases the prompt, so the README's "silently inactive on every
-  other platform" was, on Windows, "eats every prompt". The dying `state.sh`
+  blocks and erases the prompt, so a CRLF install on Windows does not go quiet
+  — it eats every prompt. The dying `state.sh`
   also runs a few lines first and leaves a directory literally named
   `perchling<CR><CR>` under the config dir. `* text=auto eol=lf` pins every text
   file, and the two hook scripts carry the note at their top. An attribute added
@@ -319,3 +319,19 @@ alone cleans up, exactly once.
   only the files the pulled commits touch — so an install cloned before the
   attribute keeps CRLF in every untouched file until it is removed and re-added,
   and any future fix to line endings must touch the scripts it means to repair.
+- **Off macOS the hooks stay silent and a person gets told.** `up` and `down`
+  are what the hooks run, so they exit 0 without a word everywhere the plugin
+  installs. `status`, `stop`, `disable`, `enable`, `wake` and `build` are
+  someone asking. Without the fence, `disable` writes its flag and says so,
+  `enable` announces a start that `cmd_up` then skips, `stop` reports stopping
+  a pet that never existed, and `build` refuses but leaves a runtime home and a
+  failure log. The dispatch refuses all six with one stderr line and exit 1,
+  before anything is written. Both gates test `$OSTYPE` rather than `uname`: a
+  builtin costs `state.sh` no fork on every prompt, and bash keeps an `OSTYPE`
+  it inherits from the environment (measured on 3.2), which is how
+  `run-toggle-checks.sh` and `run-state-checks.sh` stand in for Windows with
+  `OSTYPE=msys` — each dies as infra if its bash will not take the fake. A fake
+  `uname` on `PATH` did the same job and lost on the fork. Nothing tells an
+  off-macOS user at session start that the plugin is inert: the one channel
+  that would reach them without reading as a hook error, a `SessionStart`
+  `systemMessage`, has never been observed on a Windows host.
