@@ -4,10 +4,10 @@
 // hidden --gif flag — puts dev tooling on a CLI whose dispatch is already
 // load-bearing.
 //
-// GIF is an indexed format and the pet is ten flat colours, so the encode is
-// lossless rather than merely acceptable. Every frame comes from PetView.draw()
-// through cacheDisplay, which is what makes this a picture of the pet that
-// ships instead of a second drawing of it.
+// GIF is an indexed format and the pet is flat colours well inside its
+// 256-entry palette, so the encode is lossless rather than merely acceptable.
+// Every frame comes from PetView.draw() through cacheDisplay, which is what
+// makes this a picture of the pet that ships instead of a second drawing of it.
 
 let FRAMES = 54       // Arbitrary, and unavoidably so. Its original reason was
                       // "one full tear cycle", and the tear died with the
@@ -116,9 +116,10 @@ func subBlocks(_ data: [UInt8]) -> [UInt8] {
 func u16(_ v: Int) -> [UInt8] { [UInt8(v & 0xff), UInt8((v >> 8) & 0xff)] }
 
 // Index 0 is transparent so the hero adapts to whatever background a README is
-// rendered on; the inks follow it in Ink's own order. The table's bit depth is
-// derived from what the render actually produced — a hardcoded size is exactly
-// the kind of value that survives an ink-count change and ships a torn file.
+// rendered on; the inks follow it in the order the render first produced them.
+// The table's bit depth is derived from what the render actually produced — a
+// hardcoded size is exactly the kind of value that survives an ink-count change
+// and ships a torn file.
 func buildGIF(frames: [[UInt8]], width: Int, height: Int, table: [NSColor]) -> Data {
     var bits = 2
     while (1 << bits) < table.count + 1 { bits += 1 }
