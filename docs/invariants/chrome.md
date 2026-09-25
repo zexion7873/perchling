@@ -71,8 +71,8 @@ and what the alternative lost to.
   structural rather than lucky: `artTopInset` reads `activePet.inkTop`, which
   is one stored value on `CustomPet`.
 
-  **The biggest lift any shipped pet takes is 15 rows, and it is the pet
-  celebrating.** `--validate examples/sea-lion.json` prints `inkTop: 6 (moods
+  **Sea-lion's lift is 15 rows, and it is the pet celebrating.**
+  `--validate examples/sea-lion.json` prints `inkTop: 6 (moods
   alone: 21 — sequences reach higher, chrome moves up 15 rows)`. Three sequence
   frames tie at row 6: `done.2` is a spray plume — near-black outline over `a`
   #cde8ef and `e` #93edf4 — unbroken from row 6 into the head as one
