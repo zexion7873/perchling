@@ -55,7 +55,10 @@ no(){ printf '  FAIL %-34s %s\n' "$1" "${2:-}"; fail=$((fail+1)); }
 mkdir -p "$W/scripts"
 cp "$PET_SH" "$W/scripts/pet.sh" || exit 1
 PET="$W/scripts/pet.sh"
-printf 'let x = 1\n' > "$W/scripts/pet.swift"
+# Deliberately not Swift. A case with no stub reaches cmd_up's rebuild gate,
+# and a dummy that compiled would be launched: measured, a launch the EXIT trap
+# overtook sat at _dyld_start with its binary deleted and outlived the harness.
+printf 'not swift\n' > "$W/scripts/pet.swift"
 cat > "$W/stub.c" <<'C'
 #include <stdio.h>
 #include <stdlib.h>
@@ -269,11 +272,13 @@ grep -q '^usage:' "$h/err.txt" \
 # stderr and nothing was written: the next session start launched a pet the user
 # had just disabled. cmd_up is the only other thing that creates $ROOT, and its
 # first line is `macos || exit 0`, so "the home does not exist yet" is the
-# ordinary state before a Mac session has started, not a corner.
+# ordinary state before a Mac session has started, not a corner. The home has
+# no stub, so `wake` reaches the rebuild gate: run the copy, whose dummy cannot
+# compile. Beside the checkout that build is the real pet.swift, and it launches.
 for pair in disable:disabled wake:wake; do
   cold=${pair%%:*}; flag=${pair#*:}
   h="$W/cold-$cold"; mkdir -p "$h"
-  CLAUDE_CONFIG_DIR="$h" bash "$PET_SH" "$cold" >/dev/null 2>&1
+  CLAUDE_CONFIG_DIR="$h" bash "$PET" "$cold" >/dev/null 2>&1
   [ -e "$h/perchling/$flag" ] \
     && ok "$cold means it on a fresh install" \
     || no "$cold means it on a fresh install" "no runtime home, no flag, and it said yes"
