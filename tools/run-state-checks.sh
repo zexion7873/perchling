@@ -16,6 +16,10 @@ trap 'rm -rf "$W"' EXIT
 pass=0; fail=0
 ok(){ printf '  ok   %-30s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
 no(){ printf '  FAIL %-30s %s\n' "$1" "${2:-}"; fail=$((fail+1)); }
+# The off-macOS case stands in for other platforms by setting OSTYPE, which
+# works only because bash keeps an OSTYPE it inherits.
+OSTYPE=msys bash -c '[[ $OSTYPE == msys ]]' \
+  || { echo "this bash resets an inherited OSTYPE; cannot stand in for Windows" >&2; exit 1; }
 
 # Each case gets its own config dir: state.sh's whole job is to leave files
 # behind, so a shared one would let an earlier case answer a later assertion.
@@ -256,6 +260,22 @@ printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"again"}' \
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
   && ok "a corrupt count restarts at one" \
   || no "a corrupt count restarts at one" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+
+# --- off macOS ---
+# Every prompt and tool batch fires this on whatever platform the plugin was
+# installed on, so doing nothing means exit 0, no output and no file. Two
+# platforms, so a gate that singles one out cannot pass.
+for os in msys linux-gnu; do
+  home="$W/off-$os"; mkdir -p "$home"
+  # A here-string, not a pipe: the gate exits before reading stdin, and under
+  # pipefail a writer that loses that race dies of SIGPIPE and turns rc into 141.
+  OSTYPE=$os CLAUDE_CONFIG_DIR="$home" bash "$STATE_SH" running \
+    <<< '{"session_id":"abc-123","cwd":"/x","prompt":"hi"}' > "$W/off-$os.out" 2>&1
+  rc=$?
+  [ "$rc" -eq 0 ] && [ ! -s "$W/off-$os.out" ] && [ -z "$(ls -A "$home")" ] \
+    && ok "off macOS ($os) a hook does nothing" \
+    || no "off macOS ($os) a hook does nothing" "exit $rc, home: $(ls -A "$home" | tr '\n' ' ')"
+done
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

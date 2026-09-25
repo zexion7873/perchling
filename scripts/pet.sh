@@ -2,9 +2,10 @@
 # perchling control script: build, session refcounting, launch, teardown.
 # Runtime home (binary, state, session refcounts) lives outside the plugin
 # directory because the plugin path changes on every update.
-# Must stay LF (.gitattributes pins it): a CRLF checkout, which is what Git
-# for Windows makes by default, dies at `set -u<CR>` below with exit 2 before
-# the platform gate in cmd_up runs, so every SessionStart and SessionEnd
+# Must stay LF (.gitattributes pins it): in a CRLF checkout, which is what Git
+# for Windows makes by default, `set -u<CR>` below is merely an invalid option,
+# but the first function definition is a syntax error and the script exits 2
+# before the platform gate in cmd_up runs, so every SessionStart and SessionEnd
 # surfaces a hook error instead of the promised silence. state.sh carries the
 # same invariant with worse consequences.
 set -u
@@ -85,7 +86,7 @@ session_owner() {
   ps -Ao pid=,ppid= | awk -v p=$$ '{pp[$1]=$2} END {while (pp[p] && pp[p] != 1) p = pp[p]; print p}'
 }
 
-macos() { [ "$(uname)" = Darwin ]; }
+macos() { [[ $OSTYPE == darwin* ]]; }
 # Run the compiler rather than locating it: /usr/bin/swiftc is a stub macOS
 # ships whether or not a toolchain is installed, so `command -v` succeeds on
 # exactly the machine this guard exists to reject. The probe costs an exec, so
@@ -482,6 +483,18 @@ cmd_wake() {
   echo "perchling waking — 'pet.sh status' says whether it came up"
   running || cmd_up manual
 }
+
+# `up` and `down` are the hooks, which must stay silent on every platform. The
+# rest are a person asking, and without this each answers off macOS for a pet
+# that cannot exist: `disable` writes its flag and says so, `build` leaves a
+# failure log.
+if ! macos; then
+  case "${1:-status}" in
+    build|stop|disable|enable|wake|status)
+      echo "perchling runs only on macOS" >&2
+      exit 1 ;;
+  esac
+fi
 
 case "${1:-status}" in
   build)   cmd_build ;;

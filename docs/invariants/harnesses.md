@@ -81,8 +81,12 @@ Verify without launching:
   reasoning that a scratch home is a sandbox: it compiled the checkout into that
   home and opened a real pet window from it. A scratch home is not a sandbox
   until the stub is already in it with a newer mtime than `pet.swift`.
-  `tools/run-toggle-checks.sh` plants the stub, and copies `pet.sh` beside a
-  dummy `pet.swift` it owns, before it runs a single case.
+  `tools/run-toggle-checks.sh` copies `pet.sh` beside a dummy `pet.swift` it
+  owns and runs every case against that copy; the cases that need a live pet
+  also get the stub, and the stubless ones — a fresh install, and off macOS —
+  reach a dummy that does not compile, so they launch nothing. Pointed at the
+  checkout's `pet.sh`, its fresh-install case compiled and launched a real pet
+  on every clean run, left for the EXIT trap's `pkill` to catch.
 - **Pixel art** — rasterize a manifest to PNG yourself and look at it. Grid
   dimensions passing validation says nothing about whether the creature reads.
 - **Mood changes** — poll `sessions/<sid>`, never `state`. `state.sh`

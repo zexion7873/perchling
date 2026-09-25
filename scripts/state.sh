@@ -7,7 +7,7 @@
 # before any platform-aware line runs. On UserPromptSubmit exit 2 is a
 # blocking error that erases the prompt, so a CRLF checkout does not go quiet
 # on the wrong platform — it eats every prompt.
-[ "$(uname)" = Darwin ] || exit 0
+[[ $OSTYPE == darwin* ]] || exit 0
 d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 # `disable` has to reach the hot path or it only half means it. `cmd_up` has
 # always honoured this flag, so a disabled install launched no pet — but every

@@ -55,7 +55,12 @@ seconds on first launch, and again after every plugin update.
 > `PermissionRequest`, was accepted as far back as 2.1.109; older than that is
 > unmeasured. If the pet never appears and `pet.sh status` looks healthy, update
 > the CLI before filing a bug.
-> On every other platform the plugin stays silently inactive rather than erroring.
+> Everywhere else the hooks exit without doing anything, and `pet.sh status`,
+> `build`, `stop`, `disable`, `enable` and `wake` answer that perchling runs only
+> on macOS. On Windows even that is unverified: nobody has measured whether a
+> Windows host hands the hooks a usable plugin path, and if it does, an install
+> older than 1.21.2 has Windows line endings in its scripts, which fail every
+> prompt until the plugin is updated.
 
 ---
 
