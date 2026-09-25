@@ -17,12 +17,12 @@ end in `cmd_up`, which will compile your checkout and launch it. Verify with
 techniques are in [docs/invariants/harnesses.md](docs/invariants/harnesses.md).
 
 **Hooks do not run your checkout.** `hooks/hooks.json` resolves
-`${CLAUDE_PLUGIN_ROOT}` to the *installed marketplace clone*, so editing
-`scripts/pet.sh`, `scripts/state.sh` or `hooks/hooks.json` here changes nothing
-until the commit is published and the user updates. The symptom is a new hook
-feature that is silently inert while running the same script by hand works
-fine. To test a hook-path change without publishing, pipe a payload straight
-into the dev script:
+`${CLAUDE_PLUGIN_ROOT}` to the *installed plugin copy* under `plugins/cache/`,
+so editing `scripts/pet.sh`, `scripts/state.sh` or `hooks/hooks.json` here
+changes nothing until the commit is published and the user updates. The
+symptom is a new hook feature that is silently inert while running the same
+script by hand works fine. To test a hook-path change without publishing, pipe
+a payload straight into the dev script:
 
 ```bash
 printf '{"session_id":"test","prompt":"hi"}' \

@@ -21,13 +21,15 @@ nineteen days.
   is no art-only install. The two paths also differ in how they revert. The
   binary is gated on mtime, so a dev `pet.sh build` IS what the next hook-driven
   session launches, until something newer replaces it. The art is gated on
-  CONTENT, so the marketplace clone's next `cmd_up` silently puts the published
+  CONTENT, so the installed plugin's next `cmd_up` silently puts the published
   art back. To install a checkout's art without launching anything:
   `cp examples/$PERCHLING_BUILTIN.json ~/.claude/perchling/builtin.json`.
 - **`scripts/pet.sh`, `scripts/state.sh`, `hooks/hooks.json`** — hooks resolve
-  `${CLAUDE_PLUGIN_ROOT}` to the **installed marketplace clone**, never this
-  checkout. Editing them here changes nothing until the commit is pushed and
-  the user runs `claude plugin marketplace update perchling` followed by
+  `${CLAUDE_PLUGIN_ROOT}` to the **installed plugin copy** under
+  `plugins/cache/`, keyed by the `plugin.json` version, never this checkout.
+  Editing them here changes nothing until a release carrying the change
+  reaches `main` and the user runs
+  `claude plugin marketplace update perchling` followed by
   `claude plugin update perchling@perchling` (the bare plugin name is rejected).
 
 Symptom of confusing the two: a new hook feature is silently inert while
@@ -151,7 +153,7 @@ exactly the defect it names and shown to FAIL. That is the only reason to
 believe any of them, and the escape test described beside them is what makes a
 red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs that argument as one command: fifty-five
+`tools/run-mutation-gate.sh` runs that argument as one command: fifty-six
 mutants generated from HEAD — never a committed copy, which drifts silently —
 each asserted to red the harness it is named after. A new harness assertion
 needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's

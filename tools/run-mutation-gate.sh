@@ -383,6 +383,13 @@ gate dangling-petjson-masked scripts/pet.swift PERCHLING_PET_SWIFT tools/run-man
   '(try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil' \
   '!FileManager.default.fileExists(atPath: installed.path)'
 
+# The art check globs examples/ with no override, so the one grid a mutant can
+# reach is the placeholder embedded in pet.swift: one eye pixel reopened inside
+# its outline is a hole the desktop shows through.
+gate art-hole-unnoticed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-art-checks.sh \
+  '"bbbkwkbbbbkwkbbb",' \
+  '"bbbk.kbbbbkwkbbb",'
+
 # --- the expensive one, last -------------------------------------------------
 # launch-race is ~34s; every cheap case above has already reported by the time
 # this starts. The mutant is the UNESCAPED pattern, not the missing -x: a raw
