@@ -139,11 +139,7 @@ parents=$(cd "$ROOT" && git rev-parse HEAD^@ 2>/dev/null)
 
 prev_version=
 for p in $parents; do
-  # Releases through 1.21.6 kept the manifest at the repo root; a parent that
-  # predates the move is read from there. The fallback goes once no parent of
-  # HEAD can be that old.
-  blob=$(cd "$ROOT" && { git show "$p:plugin/.claude-plugin/plugin.json" 2>/dev/null \
-                         || git show "$p:.claude-plugin/plugin.json" 2>/dev/null; }) \
+  blob=$(cd "$ROOT" && git show "$p:plugin/.claude-plugin/plugin.json" 2>/dev/null) \
     || die "cannot read plugin/.claude-plugin/plugin.json at $p: $(cd "$ROOT" && git show "$p:plugin/.claude-plugin/plugin.json" 2>&1 >/dev/null | tail -1)"
   pv=$(printf '%s' "$blob" | python3 -c 'import io, json, sys
 print(json.load(io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8")).get("version", ""))' 2>/dev/null) \
