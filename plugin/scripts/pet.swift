@@ -1740,7 +1740,7 @@ func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String],
 //
 // `labels` is `sessionLabels(rows)` from that same poll, not recomputed in
 // here: the label table and the row list are assigned together in one
-// `pollMoods` pass so the tray can never be naming a session the face has
+// `pollMoods` sweep, so the tray can never be naming a session the face has
 // already moved past.
 //
 // `display` is passed rather than taken from the head because it can come from
