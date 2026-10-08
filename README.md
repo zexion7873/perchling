@@ -146,10 +146,12 @@ system Reduce Motion setting throughout.
 
 ## 🎨 Custom pets
 
-Don't like the creature? Ask Claude for a different one:
+Don't like the creature? Ask Claude for a different one — any of these works:
 
 ```text
 draw me a cat pet
+make my pet a dragon
+換寵物，畫一隻水獺
 ```
 
 The bundled `draw-pet` skill has Claude design a **`pet.json`** — a palette
