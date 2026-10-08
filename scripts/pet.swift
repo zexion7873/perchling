@@ -1450,7 +1450,6 @@ struct SessionRow {
     let mood: Mood      // effective: already decayed to idle past its own TTL
     let say: String?    // line 3: this session's caption; nil on the shorter forms
     let name: String?   // the host CLI's own name for it; nil when it has none
-    let title: String?  // the desktop app's title for it; nil when it has none
     let stamp: Date     // the file's mtime: when this session last wrote a hook
     let tool: String?   // line 4: what a waiting session is blocked on; nil otherwise
     let turns: Int?     // line 5: prompts this session has answered; nil below one
@@ -1461,7 +1460,7 @@ struct SessionRow {
 // about who is live or what they are doing. `alive` is injected because a
 // harness has no pids to point at.
 func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
-                  names: [String: String], titles: [String: String]) -> [SessionRow] {
+                  names: [String: String]) -> [SessionRow] {
     let fm = FileManager.default
     let cutoff = now.addingTimeInterval(-3600)
     let items = (try? fm.contentsOfDirectory(at: dir,
@@ -1505,7 +1504,6 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
                               mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
                               say: say.isEmpty ? nil : say,
                               name: names[sid],
-                              title: titles[sid],
                               stamp: stamp,
                               tool: tool.isEmpty ? nil : tool,
                               turns: turns))
@@ -1515,11 +1513,7 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
 
 // A caption is lifted verbatim out of the hook payload's JSON by a `sed` that
 // captures the string body, so it arrives still escaped: a two-line prompt is
-// the literal characters backslash and n. BOTH captions come through here —
-// the per-session one and the global fallback — because `bubbleText` prefers
-// `top.say` and only falls back to the global, so cleaning the fallback alone
-// left the escapes on screen in every ordinary case and hid them wherever
-// anyone would have thought to look.
+// the literal characters backslash and n.
 //
 // One pass rather than a chain of replacements. A chain is order-dependent and
 // gets `\\n` wrong in both orders: a user who typed a backslash before an n
@@ -1607,157 +1601,14 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
     return out
 }
 
-// One parsed desktop record. Cached because a real one is ~279KB — almost all
-// of it an MCP config block — and re-parsing every record on a 0.4s poll would
-// put over a megabyte a second of JSON through the main thread.
-struct TitleEntry {
-    let stamp: Date
-    // nil when the record parsed but carried no usable title. A session whose
-    // title has not been written yet is a normal state — the desktop app
-    // writes a session's record when it starts and fills in the title later,
-    // once auto-titling has something to summarise — so a title-less record
-    // is not a rare edge case, it is every new session for as long as it
-    // takes the app to name it. Not caching that answer means re-parsing the
-    // full 279KB on every poll, unchanged, until the title lands: exactly the
-    // cost this cache exists to eliminate.
-    let hit: (sid: String, title: String)?
-}
-
-// Both halves of what survives across polls. The parse cache keys on a record's
-// path; the listing cache keys on the directory that holds them, because the
-// enumeration is its own cost and a separate question from the parse. Measured
-// on this machine 2026-08-14: 3 real records against 351 `deleted_` tombstones,
-// so a poll that skipped every parse still walked 355 directory entries.
-struct TitleCache {
-    var files: [String: TitleEntry] = [:]
-    var dirs: [String: DirListing] = [:]
-}
-
-// The `local_*.json` paths a directory held, and the directory mtime they were
-// read at. A directory's mtime moves when an entry is added, removed or
-// renamed and does NOT move when an existing file's contents are rewritten —
-// measured on APFS, and true of an atomic `write(to:atomically:)` as well as an
-// in-place one. So this may memoise WHICH files exist and must never memoise
-// what is in them: the per-file stamp check below is what catches a rename,
-// and `tools/run-session-harness.sh`'s "a rewritten record is re-read" is what
-// catches anyone who forgets that.
-struct DirListing {
-    let stamp: Date
-    let urls: [URL]
-}
-
-// Incremented once per directory actually enumerated. Nothing in the app reads
-// it; `tools/session-harness.swift` does, because the listing cache is a pure
-// performance change and no assertion over the RESULT can tell whether it is
-// working. Without this, deleting the cache leaves every test green.
-var titleDirScans = 0
-
-// The desktop app's own session records, which carry the title the user sees in
-// the sidebar. A second foreign file, and a second one perchling only reads:
-// the CLI registry beside it names the same session differently — `derived`
-// there, user- or LLM-written here — and this one is what the human is looking
-// at, so it wins.
+// A session's identity, most specific first: the name the CLI keeps for it,
+// then the project directory, then its raw id — deliberately unfriendly,
+// because a session with neither is a real state and a made-up name would
+// hide it.
 //
-// The join key is the record's `cliSessionId`, which holds the CLI session id
-// that names perchling's own sessions/<sid> file.
-//
-// `titleSource` is deliberately not read, for the same reason `nameSource` is
-// not: `user` and `auto` titles are both what the sidebar shows.
-//
-// Records sit two account-scoped directories below `dir`, so that level is
-// globbed rather than hardcoded. Enumeration asks for NO resource keys and
-// filters by name first: the records share a directory with hundreds of
-// `deleted_` tombstones, and asking for keys up front turns one readdir into a
-// stat per tombstone.
-func desktopTitles(_ dir: URL, cache: inout TitleCache) -> [String: String] {
-    let fm = FileManager.default
-    // nil is "could not read", which is NOT the same answer as an empty
-    // directory — see `records`, where conflating the two used to stick.
-    func scan(_ u: URL) -> [URL]? {
-        titleDirScans += 1
-        return try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil,
-                                           options: [.skipsHiddenFiles])
-    }
-    func kids(_ u: URL) -> [URL] { scan(u) ?? [] }
-    // The records' own directory is the only one worth memoising: `dir` and the
-    // account level below it hold one entry each, while this one holds hundreds
-    // of tombstones. Asking its mtime is one stat against that whole walk.
-    func records(_ org: URL) -> [URL] {
-        let stamp = (try? org.resourceValues(forKeys: [.contentModificationDateKey]))?
-            .contentModificationDate ?? .distantPast
-        if let listed = cache.dirs[org.path], listed.stamp == stamp { return listed.urls }
-        // A read that FAILED must not be cached. Storing `[]` against the
-        // current mtime would answer "this directory has no records" until that
-        // mtime happened to move — and rewriting a file does not move it, so one
-        // unreadable poll would drop every desktop title until a record was
-        // created or deleted, or the process restarted. Enumerating is the only
-        // step that can fail here, so leaving the cache untouched means the next
-        // poll simply tries again.
-        guard let entries = scan(org) else { return cache.dirs[org.path]?.urls ?? [] }
-        let urls = entries.filter { $0.lastPathComponent.hasPrefix("local_")
-                                    && $0.pathExtension == "json" }
-        cache.dirs[org.path] = DirListing(stamp: stamp, urls: urls)
-        return urls
-    }
-    var out: [String: String] = [:]
-    // Two records can claim the same cliSessionId — a stale directory left
-    // behind by an account switch, say — and without a tie-break the winner
-    // would be whichever one contentsOfDirectory happened to enumerate last.
-    // mtime alone breaks the tie, the same rule registryNames follows for a
-    // duplicate sessionId.
-    var stamps: [String: Date] = [:]
-    var seen: Set<String> = []
-    for acct in kids(dir) {
-        for org in kids(acct) {
-            for url in records(org) {
-                let key = url.path
-                let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                seen.insert(key)
-                if let entry = cache.files[key], entry.stamp == stamp {
-                    if let hit = entry.hit {
-                        if let prev = stamps[hit.sid], prev > stamp { continue }
-                        stamps[hit.sid] = stamp
-                        out[hit.sid] = hit.title
-                    }
-                    continue
-                }
-                guard let data = try? Data(contentsOf: url),
-                      let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                      let sid = obj["cliSessionId"] as? String,
-                      let raw = obj["title"] as? String else {
-                    cache.files[key] = TitleEntry(stamp: stamp, hit: nil)
-                    continue
-                }
-                let title = cleanName(raw)
-                guard !title.isEmpty else {
-                    cache.files[key] = TitleEntry(stamp: stamp, hit: nil)
-                    continue
-                }
-                cache.files[key] = TitleEntry(stamp: stamp, hit: (sid: sid, title: title))
-                if let prev = stamps[sid], prev > stamp { continue }
-                stamps[sid] = stamp
-                out[sid] = title
-            }
-        }
-    }
-    // A record the app deleted must not keep answering from memory. The listing
-    // cache needs no prune: a removal moves the directory's mtime, so its entry
-    // is replaced on the very next poll rather than going stale.
-    cache.files = cache.files.filter { seen.contains($0.key) }
-    return out
-}
-
-// A session's identity, most specific first: the title the desktop app shows
-// for it, then the name the CLI keeps for it, then the project directory, then
-// its raw id — deliberately unfriendly, because a session with none of the
-// three is a real state and a made-up name would hide it.
-//
-// The title outranks the name rather than backstopping it because every
-// interactive session is given a `derived` registry name, so a name always
-// answers and a title placed below it could never be reached.
+// The desktop app's own session records are deliberately not read: they hold
+// conversation summaries, which the plugin directory policy forbids querying.
 func sessionName(_ r: SessionRow) -> String {
-    if let t = r.title, !t.isEmpty { return t }
     if let n = r.name, !n.isEmpty { return n }
     // isDirectory:true is a lie the path is never asked to prove — it skips a
     // filesystem stat that would otherwise run on every poll-loop comparator
@@ -1897,14 +1748,14 @@ func sessionTitle(_ label: String, _ mood: Mood, _ status: [Mood: String],
 //
 // Composition of the name and the status is NOT done here. It needs measured
 // widths to decide what to truncate, and fonts belong to the view.
-func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
+func bubbleText(_ rows: [SessionRow], _ display: Mood,
                 _ wording: [Mood: String],
                 _ labels: [String: String],
                 now: Date) -> (name: String?, status: String, prompt: String) {
     guard let top = rows.first else {
         // The global state file has no row and no mtime here, so a puppeteered
         // `waiting` shows no age — the fold's documented blind spot, unchanged.
-        return (nil, wording[display] ?? "", globalSay)
+        return (nil, wording[display] ?? "", "")
     }
     let status = bubbleStatus(wording[top.mood] ?? "", top, now: now)
     // `labels` and `rows` both come from the same `pollMoods` pass (see the
@@ -1912,7 +1763,7 @@ func bubbleText(_ rows: [SessionRow], _ display: Mood, _ globalSay: String,
     // correct-value fallback, not a guard against a case that can happen.
     return (rows.count > 1 ? labels[top.sid] ?? sessionName(top) : nil,
             status,
-            top.say ?? globalSay)
+            top.say ?? "")
 }
 
 // The fold that decides the face. It lives out here rather than inside
@@ -2382,17 +2233,7 @@ final class Controller: NSObject, NSWindowDelegate {
     // The host CLI's session registry. Not under `root`: it belongs to the CLI,
     // and PERCHLING_HOME may point at a directory that has no registry in it.
     let registryURL: URL
-    // The desktop app's session records. Resolved from the user's home rather
-    // than from `root`, for the same reason the registry is.
-    let titlesURL: URL
-    // Survives across polls on purpose: see TitleEntry.
-    var titleCache = TitleCache()
-    let sayURL: URL
     let petURL: URL
-    var lastSayStamp: Date?
-    // The global say is only a fallback now, for a new binary running against an
-    // installed state.sh that does not write line 3 yet.
-    var globalSay = ""
     var lastPetStamp: Date?
     var emptySince: Date?
     var homeApp: NSRunningApplication?
@@ -2416,7 +2257,7 @@ final class Controller: NSObject, NSWindowDelegate {
     // and a row from the next can disagree about which session is which.
     var sessionLabelsBySid: [String: String] = [:]
 
-    init(root: URL, registry: URL, titles: URL) {
+    init(root: URL, registry: URL) {
         // Before the chrome views exist, so their first draw is already in the
         // saved theme. An unknown saved name (a theme renamed or removed) falls
         // back to the default rather than failing: the choice is cosmetic and
@@ -2427,11 +2268,9 @@ final class Controller: NSObject, NSWindowDelegate {
         }
         self.root = root
         registryURL = registry
-        titlesURL = titles
         stateURL = root.appendingPathComponent("state")
         sessionsURL = root.appendingPathComponent("sessions")
         ownersURL = root.appendingPathComponent("owners")
-        sayURL = root.appendingPathComponent("say")
         petURL = root.appendingPathComponent("pet.json")
         // Before anything can link over it. A no-op on every install that has
         // already been through it once. A rescue that cannot finish is not
@@ -2734,15 +2573,6 @@ final class Controller: NSObject, NSWindowDelegate {
         repositionBubble()
     }
 
-    func pollSay() {
-        let fm = FileManager.default
-        guard let attrs = try? fm.attributesOfItem(atPath: sayURL.path),
-              let stamp = attrs[.modificationDate] as? Date, stamp != lastSayStamp else { return }
-        lastSayStamp = stamp
-        let data = (try? Data(contentsOf: sayURL)) ?? Data()
-        globalSay = cleanCaption(String(decoding: data, as: UTF8.self))
-    }
-
     // Inputs: every live session file (mood as content) plus the plain state
     // file (manual override / single-session fast path). Each input decays to
     // idle past its mood's TTL; the highest-priority survivor is DISPLAYED.
@@ -2761,8 +2591,7 @@ final class Controller: NSObject, NSWindowDelegate {
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
         let live = liveSessions(sessionsURL, now: now, alive: ownerAlive,
-                                names: registryNames(registryURL, alive: alive),
-                                titles: desktopTitles(titlesURL, cache: &titleCache))
+                                names: registryNames(registryURL, alive: alive))
         sessionRows = menuRows(live)
         sessionLabelsBySid = sessionLabels(sessionRows)
 
@@ -2860,13 +2689,10 @@ final class Controller: NSObject, NSWindowDelegate {
                 wasLooking = looking
                 applyChrome()
                 pollPet()
-                pollSay()
-                // A prompt snippet from hours ago is noise, not context.
-                if let s = lastSayStamp, Date().timeIntervalSince(s) > 3600 { globalSay = "" }
-                // One place decides all three, after both inputs have been
-                // refreshed: a caption taken from one poll and a name from the
-                // next would name the wrong session for a tick.
-                let t = bubbleText(sessionRows, view.mood, globalSay, moodStatus,
+                // One place decides all three, from one poll's rows: a caption
+                // taken from one poll and a name from the next would name the
+                // wrong session for a tick.
+                let t = bubbleText(sessionRows, view.mood, moodStatus,
                                    sessionLabelsBySid, now: Date())
                 bubbleView.name = t.name
                 bubbleView.status = t.status
@@ -3029,11 +2855,6 @@ let configDir = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
 let root = env["PERCHLING_HOME"].map { URL(fileURLWithPath: $0) }
     ?? configDir.appendingPathComponent("perchling")
 let registryURL = configDir.appendingPathComponent("sessions")
-// The desktop app's session records, which carry the title the user sees in the
-// sidebar. Not under the CLI's config directory — it is a different program's
-// state — so this is the one path taken from the home directory directly.
-let titlesURL = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/Application Support/Claude/claude-code-sessions")
 try? FileManager.default.createDirectory(at: root.appendingPathComponent("sessions"),
                                          withIntermediateDirectories: true)
 
@@ -3185,6 +3006,6 @@ if argv.count >= 2 {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let controller = Controller(root: root, registry: registryURL, titles: titlesURL)
+let controller = Controller(root: root, registry: registryURL)
 controller.run()
 app.run()

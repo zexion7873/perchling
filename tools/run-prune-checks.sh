@@ -1,6 +1,6 @@
 #!/bin/bash
-# cmd_up's housekeeping: what it removes from sessions/ and owners/, and what
-# it must not. Separate from run-launch-race.sh (which is about launching
+# cmd_up's housekeeping: what it removes from sessions/, owners/ and the
+# runtime home, and what it must not. Separate from run-launch-race.sh (which is about launching
 # exactly once), run-build-gate.sh (about a failed build) and
 # run-library-refresh.sh (about the shipped-art refresh) because they are four
 # unrelated properties of the same function and a single file would make a
@@ -44,6 +44,10 @@ printf 'done\n/x\nalso old' > "$S/stale-orphan"
 printf 'running\n/x\nfresh' > "$S/fresh"
 printf '%s' 99999 > "$O/fresh"
 touch -t 202608190100 "$S/stale-owned" "$S/stale-orphan" "$O/stale-owned"
+printf 'a prompt an older release kept' > "$W/cfg/perchling/say"
+printf 'running\n/x\na killed hook left this' > "$W/cfg/perchling/.sess.111"
+printf 'running\n/x\na write in flight' > "$W/cfg/perchling/.sess.222"
+touch -t 202608190100 "$W/cfg/perchling/.sess.111"
 
 "$W/cfg/perchling/bin/perchling" & stub=$!
 sleep 0.2
@@ -73,6 +77,15 @@ sleep 0.4
 [ -e "$O/fresh" ] \
   && ok "a live session keeps its owner" \
   || no "a live session keeps its owner"
+[ ! -e "$W/cfg/perchling/say" ] \
+  && ok "a retired say file is removed" \
+  || no "a retired say file is removed" "still there"
+[ ! -e "$W/cfg/perchling/.sess.111" ] \
+  && ok "an orphaned session temp is removed" \
+  || no "an orphaned session temp is removed" "still there"
+[ -e "$W/cfg/perchling/.sess.222" ] \
+  && ok "a fresh session temp survives" \
+  || no "a fresh session temp survives" "cmd_up raced a live write"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

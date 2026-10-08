@@ -86,9 +86,17 @@ and what the alternative lost to.
   three forward when it has nothing new to say**: only a prompt and a `done`
   reply produce text, a tool batch produces none, and a session file is
   rewritten whole on every hook — so writing the empty value would blank the
-  bubble halfway through a turn. The global `say` never had that problem
-  because it is only written when non-empty, which is exactly why the session
-  file has to re-read its own line 3 first. Line four has the same carry rule
+  bubble halfway through a turn. **Line three is the only copy of a caption,
+  and it is owner-only.** It quotes the user's prompt or Claude's reply, so
+  `state.sh` runs under `umask 077` and writes no global caption beside it:
+  a caption is gone when its session file is, at `SessionEnd` or the
+  staleness prune. `cmd_up` deletes the `say` file releases through 1.21.4
+  left behind, which held the last caption with nothing ever removing it,
+  and any `.sess.*` temp older than an hour — a hook killed between its write
+  and its `mv` leaves one, caption included (a six-day-old one was found on a
+  live install). The age keeps it off a write in flight. All three are
+  pinned in `run-state-checks.sh` and `run-prune-checks.sh`, each with its
+  mutant. Line four has the same carry rule
   with a mood gate on it: a `waiting` hook with no `tool_name` of its own
   keeps the last one — a terminal host answers one permission decision with
   `PermissionRequest` and then `Notification`, and the second write must not
@@ -142,13 +150,13 @@ and what the alternative lost to.
   for the 30s-empty-grace liveness check, but never touches a mood — it is
   not the second reader this bullet forbids, and adding one that reads a mood
   would be.
-- **The session registry is one of two foreign files perchling reads, and by
-  itself it is not where a tray row's name comes from.**
-  `<config>/sessions/<pid>.json` carries a session's id and the CLI's own name
-  for it — usually derived from the cwd rather than typed by a human (measured
-  on this machine: `perchling-de`, `nameSource: derived`) — one layer in the
-  title → name → project directory → sid-prefix chain, not the top of it. It
-  is undocumented, so
+- **The session registry is the one foreign file perchling reads, and the top
+  of a tray row's name.** `<config>/sessions/<pid>.json` carries a session's id
+  and the CLI's own name for it — the name → project directory → sid-prefix
+  chain starts here. In the desktop app that name IS the sidebar title:
+  measured 2026-10-08, all nine live sessions present in both stores carried
+  byte-identical strings. Unmeasured: how long a rename takes to reach the
+  registry, and whether older CLIs sync it at all. It is undocumented, so
   `registryNames` treats every failure as a missing entry: a moved format, an
   older CLI and a background job that never had a name are indistinguishable
   from outside and all three are correctly answered by falling back. **A name's
@@ -163,59 +171,19 @@ and what the alternative lost to.
   (`abcdef01 · abcdef01`) knowingly leaves both unsuffixed instead. That
   guarantee is why the suffix is computed over the MENU rows and applied only
   on collision — and why it joins with a middle dot, since the em dash is
-  already spent joining a label to its status. **There is a second foreign
-  file, and perchling only ever reads it too:** the desktop app's own session
-  records, at
-  `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_<uuid>.json`,
-  joined to a `sessions/<sid>` file by their `cliSessionId`. The title in that
-  record is what a tray row's name actually comes from when the session has
-  one, and it outranks the registry name on purpose — every interactive
-  session is given a `derived` registry name, so a name always answers, and a
-  title ranked below it could never win; the two stores disagree about the
-  same session by design, not by drift. A real record is ~279KB, almost all of
-  it an MCP config block, and there is no index over the directory, so
-  `desktopTitles` caches by modification time rather than reparsing on every
-  poll — parsing every record on a 0.4s poll would put over a megabyte a
-  second of JSON through the main thread. A bounded prefix read was rejected
-  in its place: the JSON's key order is not guaranteed, so `title` might sit
-  past whatever prefix was read, and the failure mode would be a title
-  silently vanishing rather than falling back to the registry name.
-  Enumeration asks for no resource keys and filters by filename first,
-  because these records share a directory with hundreds of `deleted_`
-  tombstones — asking for keys up front would turn one `readdir` into a
-  `stat` per tombstone. `titleSource` is deliberately not read, for the same
-  reason `nameSource` is not.
+  already spent joining a label to its status.
 
-  **The enumeration is cached separately from the parse, and the two answer
-  different questions.** Skipping every parse still walked the whole directory:
-  351 tombstones against 3 real records, measured 2026-08-14, and growing on
-  its own — 292 two days earlier. `TitleCache.dirs` memoises the records'
-  directory listing against that directory's own mtime, which took a warm poll
-  from 1167.4 µs to 80.8 µs.
-
-  **Do not collapse the two into one gate.** A directory's mtime moves when an
-  entry is added, removed or renamed and does NOT move when an existing file's
-  contents are rewritten — measured on APFS, and true of
-  `write(to:atomically:)` as well as an in-place write. A single dir-mtime gate
-  therefore serves a renamed session's old title until some unrelated record is
-  created or deleted. The listing cache may memoise WHICH files exist and never
-  what is in them; the per-file stamp check stays. `tools/session-harness.swift`
-  pins both halves, and each assertion was proven to fail alone under the
-  mutation it exists for. The listing half needed `titleDirScans`, a counter
-  nothing in the app reads — a pure performance change has no observable result,
-  so without it deleting the cache leaves every assertion green.
-
-  The listing cache needs no prune, unlike the parse cache: a removal moves the
-  directory's mtime, so a stale listing is replaced on the next poll rather than
-  answering forever.
-- **A caption arrives still JSON-escaped, and BOTH captions are cleaned in one
-  place.** `state.sh` captures the string body with a `sed`, so a two-line
-  prompt reaches the file as the literal characters backslash and n.
-  `cleanCaption` is the only unescaper and `liveSessions` and `pollSay` both
-  call it. Putting it in `pollSay` alone was the shape of the bug worth
-  remembering: `bubbleText` prefers `top.say` and only falls back to the global
-  `say`, so the cleaned path was the one nobody normally sees and the escapes
-  were on screen in every ordinary case. It is ONE PASS rather than a chain of
+  **The desktop app's own session records are deliberately not read.** They
+  sit under `~/Library/Application Support/Claude/claude-code-sessions` and
+  carry the sidebar title, but each one is parsed whole to reach it, and the
+  same file holds `postTurnSummary` — the plugin directory policy forbids
+  querying conversation summaries. Reading them bought a title the registry
+  above already carries. Opt-in lost too: the reader would still ship for a
+  reviewer to find, behind a setting nobody would turn on.
+- **A caption arrives still JSON-escaped.** `state.sh` captures the string
+  body with a `sed`, so a two-line prompt reaches the file as the literal
+  characters backslash and n. `cleanCaption` is the only unescaper, and
+  `liveSessions` calls it on line three. It is ONE PASS rather than a chain of
   `replacingOccurrences`, because a chain gets `\\n` wrong in either order — a
   user who typed a backslash before an n loses the backslash or gains a
   space — and an escape it does not recognise (`\uXXXX`, which that `sed`
@@ -224,10 +192,10 @@ and what the alternative lost to.
   fail alone.
 - **The bubble quotes the session the face is reporting.** `menuRows()` already
   sorts most-attention-worthy first, so `sessionRows.first` IS that session, and
-  `bubbleText()` takes its line three and its name. Before this the caption came
-  from the global `say`, which every session overwrites unconditionally, so with
-  several sessions open the face and the caption could describe different ones
-  with nothing on screen saying so. The name is shown only when more than one
+  `bubbleText()` takes its line three and its name. A top session with no
+  caption of its own shows none: borrowing the next row's would put the face
+  and the caption on different sessions with nothing on screen saying so —
+  pinned in `tools/session-harness.swift`, with a mutant. The name is shown only when more than one
   session is live — with one there is nothing to tell it apart from, so it
   stays hidden whatever `sessionName` would have returned for it. The composed
   status line budgets the NAME by measured width, never a

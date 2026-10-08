@@ -13,6 +13,7 @@ STATE_SH="${PERCHLING_STATE_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/state.
 
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
+umask 022
 pass=0; fail=0
 ok(){ printf '  ok   %-30s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
 no(){ printf '  FAIL %-30s %s\n' "$1" "${2:-}"; fail=$((fail+1)); }
@@ -43,6 +44,10 @@ h=$(fire benign running '{"session_id":"abc-123","cwd":"/Users/x/proj","prompt":
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "hello there" ] \
   && ok "line 3 is the caption" \
   || no "line 3 is the caption"
+# The harness pins its own umask to 022 above, so only state.sh's can pass this.
+[ "$(stat -f %Lp "$h/perchling/sessions/abc-123" 2>/dev/null)" = 600 ] \
+  && ok "a session file is owner-only" \
+  || no "a session file is owner-only" "mode $(stat -f %Lp "$h/perchling/sessions/abc-123" 2>/dev/null)"
 
 # --- the injection the shape check exists for ---
 # The id is a FILENAME, and ../../../ from <cfg>/perchling/sessions lands one
@@ -181,9 +186,9 @@ h=$(fire reply-error error "{\"session_id\":\"abc-123\",\"transcript_path\":\"$d
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "API Error: 400 forced failure" ] \
   && ok "error: the autopsy is the caption" \
   || no "error: the autopsy is the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
-[ "$(cat "$h/perchling/say" 2>/dev/null)" = "API Error: 400 forced failure" ] \
-  && ok "error: the bubble gets it too" \
-  || no "error: the bubble gets it too" "say: '$(cat "$h/perchling/say" 2>/dev/null)'"
+[ ! -e "$h/perchling/say" ] \
+  && ok "no caption outlives its session" \
+  || no "no caption outlives its session" "say: '$(cat "$h/perchling/say")'"
 
 # The caption keeps JSON's escapes — the reader decodes them — so the
 # expected value carries the backslashes too.

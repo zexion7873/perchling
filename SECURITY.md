@@ -31,19 +31,18 @@ puts three things on your disk:
   binary, the session refcounts, and the active pet manifest.
 
 It makes no network requests and opens no ports. The hook payload arrives on
-stdin and no path it names is opened. Outside the runtime home it reads two
-things, both locally written and neither ever sent anywhere: the CLI's own
-session records under `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`, and — for
-the titles shown in the menu — the desktop app's session records under
-`~/Library/Application Support/Claude/claude-code-sessions`. Both registries
-are written by another program, so content arriving from them is parsed as
-untrusted input and only ever reaches a menu label.
+stdin and no path it names is opened. Outside the runtime home it reads one
+thing, locally written and never sent anywhere: the CLI's own session records
+under `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`. That registry is written by
+another program, so content arriving from it is parsed as untrusted input and
+only ever reaches a menu label. What it keeps, and for how long, is in
+[PRIVACY.md](PRIVACY.md).
 
 ### In scope
 
 - Anything in a hook script that lets payload content escape its quoting — the
   session id becomes a filename, and a traversal in it was a real bug once.
-- Anything in the two session registries above that escapes being a menu
+- Anything in the session registry above that escapes being a menu
   label — a name that reaches a shell, a path, or a file operation.
 - Anything that writes outside the runtime home, or that follows a link out of
   it.
