@@ -23,6 +23,8 @@ d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 # next hook. A session too stale to do that is one the staleness window would
 # have retired anyway.
 [ -e "$d/disabled" ] && exit 0
+# Owner-only: line 3 of a session file quotes the user's prompt or Claude's reply.
+umask 077
 [ -d "$d" ] || mkdir -p "$d"
 printf '%s' "${1:-idle}" > "$d/.state.$$" 2>/dev/null && mv -f "$d/.state.$$" "$d/state" 2>/dev/null
 if [ ! -t 0 ]; then
@@ -126,9 +128,6 @@ if [ ! -t 0 ]; then
           | head -c 300 | sed 's/\\*$//' 2>/dev/null)
         [ -n "$reply" ] && snippet="$reply" ;;
     esac
-  fi
-  if [ -n "$snippet" ]; then
-    printf '%s' "$snippet" > "$d/.say.$$" 2>/dev/null && mv -f "$d/.say.$$" "$d/say" 2>/dev/null
   fi
   # Written LAST, because line 3 is the caption and the caption is not known
   # until the `done` branch above has had its chance to replace the prompt with

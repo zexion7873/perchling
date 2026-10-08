@@ -118,6 +118,31 @@ gate prune-never-retires scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.
   '  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null' \
   '  :'
 
+# An upgraded install keeps the last prompt or reply an older release left in
+# `say`, forever, after the privacy policy says it is gone.
+gate retired-say-kept scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  '  rm -f "$ROOT/say"' \
+  '  :'
+
+# A hook killed mid-write keeps its caption on disk in a temp nothing reads,
+# for good.
+gate orphan-temp-kept scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  "  find \"\$ROOT\" -maxdepth 1 -type f -name '.sess.*' -mmin +60 -exec rm -f {} + 2>/dev/null" \
+  '  :'
+
+# The umask reads as noise in a hot path: every session file goes back to
+# world-readable, carrying a quote of the user's prompt.
+gate session-file-world-readable scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  'umask 077' \
+  ':'
+
+# A global caption written back "for the fallback": it outlives every session
+# and is never deleted.
+gate caption-outlives-session scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '  # Written LAST, because line 3 is the caption' \
+  '  [ -n "$snippet" ] && printf '"'%s'"' "$snippet" > "$d/say"
+  # Written LAST, because line 3 is the caption'
+
 # The platform gate opened: every prompt on Windows or Linux writes a runtime
 # home for a pet that cannot exist there, and nothing errors.
 gate hook-gate-open scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
@@ -361,6 +386,12 @@ gate skid-edge-keeps-speed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-sessi
 gate bubble-budget-unreserved scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '        if advances(withTool) + advances(" · 59m") <= STATUS_BUDGET { s = withTool }' \
   '        if advances(withTool) <= STATUS_BUDGET { s = withTool }'
+
+# A captionless top session borrowing the next row's caption: the face reports
+# one session while the bubble quotes another, with nothing saying so.
+gate caption-borrowed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '            top.say ?? "")' \
+  '            top.say ?? rows.lazy.compactMap { $0.say }.first ?? "")'
 
 gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   'flipped: s.mirror && dragFacingLeft)' \

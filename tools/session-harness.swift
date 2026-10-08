@@ -38,9 +38,9 @@ let words: [Mood: String] = [.idle: "idle", .running: "running",
                              .waiting: "waiting", .done: "done", .error: "error"]
 
 func row(_ sid: String, _ mood: Mood, cwd: String? = nil,
-         say: String? = nil, name: String? = nil, title: String? = nil,
+         say: String? = nil, name: String? = nil,
          stamp: Date = Date(), tool: String? = nil, turns: Int? = nil) -> SessionRow {
-    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name, title: title,
+    SessionRow(sid: sid, cwd: cwd, mood: mood, say: say, name: name,
                stamp: stamp, tool: tool, turns: turns)
 }
 
@@ -60,8 +60,7 @@ do {
     writeFile(dir, "s1", "running\n/Users/x/Project/perchling\nhello")
     writeFile(dir, "s2", "idle")
     writeFile(dir, "s3", "waiting\n/p/x\n\nBash")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"],
-                            titles: ["s1": "titled"])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"])
         .sorted { $0.sid < $1.sid }
     check("liveSessions reads every file", rows.count, 3)
     check("liveSessions reads line 2", rows[0].cwd, "/Users/x/Project/perchling")
@@ -69,21 +68,19 @@ do {
     check("the one-line form stays valid", rows[1].cwd, nil)
     check("a registry name reaches the row", rows[0].name, "named")
     check("a session absent from the registry has no name", rows[1].name, nil)
-    check("a desktop title reaches the row", rows[0].title, "titled")
-    check("a session with no desktop record has no title", rows[1].title, nil)
     check("liveSessions reads line 4", rows[2].tool, "Bash")
     check("an empty caption above a tool still maps to nil", rows[2].say, nil)
     check("the three-line form has no tool", rows[0].tool, nil)
     check("the four-line form has no odometer", rows[2].turns, nil)
     check("a dead owner drops the row",
-          liveSessions(dir, now: Date(), alive: { _ in false }, names: [:], titles: [:]).count, 0)
+          liveSessions(dir, now: Date(), alive: { _ in false }, names: [:]).count, 0)
     // The stamp IS the file's mtime, pinned by setting one and reading it back
     // through the row — the age suffix upstream is only as honest as this.
     let blocked = Date(timeIntervalSinceReferenceDate:
                        (Date().timeIntervalSinceReferenceDate - 720).rounded())
     try! FileManager.default.setAttributes([.modificationDate: blocked],
                                            ofItemAtPath: dir.appendingPathComponent("s1").path)
-    let stamped = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    let stamped = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
         .first { $0.sid == "s1" }
     check("the row carries the file's own mtime", stamped?.stamp, blocked)
 }
@@ -96,7 +93,7 @@ do {
     writeFile(dir, "t2", "running\n/p/x\nhello\n\n12abc")
     writeFile(dir, "t3", "running\n/p/x\nhello\n\n0")
     writeFile(dir, "t4", "running\n/p/x\nhello\n\n+5")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
         .sorted { $0.sid < $1.sid }
     check("liveSessions reads line 5", rows[0].turns, 7)
     check("a non-digit odometer degrades to none", rows[1].turns, nil)
@@ -131,13 +128,19 @@ do {
                         row("s2", .idle, cwd: "/p/alpha")])
     let t0 = Date()
     check("one session needs no name",
-          bubbleText(one, .running, "", words, sessionLabels(one), now: t0).name, nil)
+          bubbleText(one, .running, words, sessionLabels(one), now: t0).name, nil)
     check("two sessions name the top one with its resolved label",
-          bubbleText(two, .running, "", words, sessionLabels(two), now: t0).name, "alpha · s1")
+          bubbleText(two, .running, words, sessionLabels(two), now: t0).name, "alpha · s1")
     check("the caption is the top session's own line",
-          bubbleText(two, .running, "global", words, sessionLabels(two), now: t0).prompt, "hi")
-    check("no rows falls back to the global say",
-          bubbleText([], .done, "global", words, [:], now: t0).prompt, "global")
+          bubbleText(two, .running, words, sessionLabels(two), now: t0).prompt, "hi")
+    // The face reports the waiting session, so its empty caption must not be
+    // filled from the running session below it.
+    let mute = menuRows([row("s1", .running, cwd: "/p/alpha", say: "hi"),
+                         row("s2", .waiting, cwd: "/p/beta")])
+    check("a top session with no caption borrows none",
+          bubbleText(mute, .waiting, words, sessionLabels(mute), now: t0).prompt, "")
+    check("no rows has no caption",
+          bubbleText([], .done, words, [:], now: t0).prompt, "")
 }
 
 // MARK: - waitAge
@@ -159,14 +162,14 @@ do {
           sessionTitle("alpha", .waiting, words), "alpha — waiting")
     let stale = [row("s1", .waiting, say: "hi", stamp: blocked)]
     check("the bubble status of an ignored wait carries the age",
-          bubbleText(stale, .waiting, "", words, sessionLabels(stale), now: t0).status,
+          bubbleText(stale, .waiting, words, sessionLabels(stale), now: t0).status,
           "waiting · 12m")
     let fresh = [row("s1", .waiting, say: "hi", stamp: t0)]
     check("a fresh wait shows the bare status",
-          bubbleText(fresh, .waiting, "", words, sessionLabels(fresh), now: t0).status,
+          bubbleText(fresh, .waiting, words, sessionLabels(fresh), now: t0).status,
           "waiting")
     check("a puppeteered waiting with no row behind it has no age",
-          bubbleText([], .waiting, "", words, [:], now: t0).status, "waiting")
+          bubbleText([], .waiting, words, [:], now: t0).status, "waiting")
 }
 
 // MARK: - waitSuffix and the bubble's status budget
@@ -346,201 +349,9 @@ do {
     check("the separator is not an em dash", labels["s1"]!.contains("—"), false)
 }
 
-// MARK: - desktopTitles
+// MARK: - the three-layer chain
 
-func titleFile(_ dir: URL, _ leaf: String, _ cliSid: String?, _ title: String?,
-               bulkKB: Int = 0) {
-    let sidKey = cliSid.map { "\"cliSessionId\":\"\($0)\"," } ?? ""
-    let titleKey = title.map { ",\"title\":\"\($0)\"" } ?? ""
-    let bulk = bulkKB > 0
-        ? ",\"remoteMcpServersConfig\":\"\(String(repeating: "x", count: bulkKB * 1024))\""
-        : ""
-    writeFile(dir, leaf,
-              "{\"sessionId\":\"local_x\",\(sidKey)\"cwd\":\"/p/x\"\(titleKey)\(bulk)}")
-}
-
-do {
-    // The records sit two account-scoped directories down; the level must be
-    // globbed, never hardcoded.
-    let root = tempDir("titles")
-    let nested = root.appendingPathComponent("acct").appendingPathComponent("org")
-    try! FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
-    titleFile(nested, "local_1.json", "s1", "my session")
-    titleFile(nested, "local_2.json", "s2", nil)              // no title
-    titleFile(nested, "local_3.json", "s3", "")               // empty title
-    titleFile(nested, "local_4.json", nil, "orphan")          // no join key
-    titleFile(nested, "local_5.json", "s5", "line\\nbreak")   // control character
-    writeFile(nested, "local_6.json", "{not json")
-    // Documents the real directory shape but proves nothing on its own: no
-    // .json extension, so pathExtension == "json" already excludes it before
-    // hasPrefix("local_") is ever asked — removing that prefix filter leaves
-    // this fixture, and the harness, green.
-    writeFile(nested, "deleted_7", "{\"cliSessionId\":\"s7\",\"title\":\"tombstone\"}")
-    // The fixture that actually exercises hasPrefix("local_"): a sibling
-    // .json that isn't a session record. scheduled-tasks.json really sits in
-    // this directory (87 bytes) — pathExtension alone would let it through.
-    writeFile(nested, "scheduled-tasks.json", "{\"cliSessionId\":\"s9\",\"title\":\"not a session\"}")
-    writeFile(nested, "notes.txt", "ignored")
-
-    // A second account directory, with its own org level and its own record.
-    // With only one directory at each level under `nested`, an implementation
-    // that took kids(dir).first / kids(acct).first instead of looping every
-    // entry would still satisfy every assertion above — this is the one
-    // fixture that actually exercises "globbed, never hardcoded".
-    let nested2 = root.appendingPathComponent("acct2").appendingPathComponent("org2")
-    try! FileManager.default.createDirectory(at: nested2, withIntermediateDirectories: true)
-    titleFile(nested2, "local_8.json", "s8", "second acct")
-
-    var cache = TitleCache()
-    let m = desktopTitles(root, cache: &cache)
-    check("a titled session is read", m["s1"], "my session")
-    check("a record with no title has no entry", m["s2"], nil)
-    check("an empty title is absent", m["s3"], nil)
-    check("a record with no cliSessionId is skipped", m.values.contains("orphan"), false)
-    check("control characters are stripped from a title", m["s5"], "linebreak")
-    check("a deleted_ tombstone is not a record", m["s7"], nil)
-    check("a sibling .json that is not a record is skipped", m["s9"], nil)
-    check("a second account directory is found, not just the first", m["s8"], "second acct")
-    // Of the seven local_*.json fixtures (six under acct/org, one under
-    // acct2/org2), only s1, s5 and s8 clear both bars (a parseable
-    // cliSessionId and a non-empty cleaned title) — s2 has no title key, s3's
-    // title cleans to empty, s4 has no join key, s6 isn't valid JSON. The
-    // checks above already pin every other key to absent, so 3 is the only
-    // count consistent with them.
-    check("only local_*.json records are read", m.count, 3)
-
-    // The cache exists because a real record is ~279KB. Same mtime must not
-    // re-parse, and a changed file must not be served stale — and a record
-    // with no usable title must not either: the desktop app writes a
-    // session's record before it has a title, so a title-less record is the
-    // normal state of every new session for a while, not a rare failure.
-    // Every examined local_*.json file gets exactly one cache entry whether
-    // it yielded a title or not: 7 files in, 7 entries out (3 hits, 4
-    // misses) — a count of 3 here would mean misses are silently dropped
-    // and re-parsed on every poll forever, the exact bug this cache exists
-    // to prevent.
-    check("the cache holds one entry per examined record, hit or miss", cache.files.count, 7)
-    let again = desktopTitles(root, cache: &cache)
-    check("a second call is stable", again["s1"], "my session")
-
-    // The listing cache is a pure performance change: no assertion over the
-    // RESULT can tell whether it is working, which is why `titleDirScans`
-    // exists. Two calls with nothing touched must enumerate the records'
-    // directory once, not twice. Proven able to fail by deleting the memo in
-    // `records()`, which takes this from 2 to 4.
-    //
-    // 5 scans on the first call: `root`, its two account directories, and both
-    // org directories. The second call re-walks only the three levels above the
-    // records, because both org listings are memoised — hence 3, not 5.
-    titleDirScans = 0
-    _ = desktopTitles(root, cache: &cache)
-    let firstScans = titleDirScans
-    _ = desktopTitles(root, cache: &cache)
-    check("an unchanged records directory is not re-enumerated",
-          titleDirScans - firstScans, 3)
-
-    titleFile(nested, "local_1.json", "s1", "renamed")
-    // A rewrite leaves the directory's mtime alone — measured on APFS, and true
-    // of `write(to:atomically:)` as well — so this is exactly the assertion a
-    // listing cache that also memoised CONTENTS would fail.
-    check("a rewritten record is re-read", desktopTitles(root, cache: &cache)["s1"], "renamed")
-
-    // local_1.json IS cached at this point (the rename above put it there
-    // under "renamed"), so deleting it is the fixture that exercises the
-    // prune path — unlike local_2.json, which was never cached before the
-    // negative-caching fix and would have let a broken prune pass by
-    // coincidence.
-    try! FileManager.default.removeItem(at: nested.appendingPathComponent("local_1.json"))
-    let afterPrune = desktopTitles(root, cache: &cache)
-    check("the cache is pruned when a record goes away", cache.files.count, 6)
-    // The count could look right while a stale entry still answers queries —
-    // that's the failure the prune exists to prevent, so assert the map
-    // directly, not just its size.
-    check("a pruned record no longer answers", afterPrune["s1"], nil)
-}
-
-do {
-    // A directory that cannot be READ is not a directory with no records, and
-    // the listing cache must not conflate them. It used to: `[]` was stored
-    // against the current mtime, and because rewriting a file does not move a
-    // directory's mtime, that entry answered "no records" until one was created
-    // or deleted — so a single unreadable poll dropped every desktop title for
-    // the rest of the process's life.
-    //
-    // Proven able to fail: against the version that cached the failure, the
-    // recovery check below comes back nil.
-    let root = tempDir("titles-unreadable")
-    let org = root.appendingPathComponent("acct").appendingPathComponent("org")
-    try! FileManager.default.createDirectory(at: org, withIntermediateDirectories: true)
-    titleFile(org, "local_1.json", "s1", "my session")
-
-    try? FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: org.path)
-    var cache = TitleCache()
-    let blind = desktopTitles(root, cache: &cache)["s1"]
-    // Running as root ignores the mode bits, which would leave the rest of this
-    // block asserting nothing. Say so rather than reporting a colour.
-    if blind != nil {
-        print("SKIP unreadable-directory checks — mode bits did not bite (root?)")
-    } else {
-        check("an unreadable records directory yields no title", blind, nil)
-        check("...and is not cached as an empty listing", cache.dirs.isEmpty, true)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: org.path)
-        check("...so the next poll recovers once it is readable again",
-              desktopTitles(root, cache: &cache)["s1"], "my session")
-    }
-    try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: org.path)
-}
-
-do {
-    // Two records under different account directories claiming the same
-    // cliSessionId — the desktop analogue of registry-dup above. Which of
-    // acct1/acct2 contentsOfDirectory enumerates first is a name-hash order
-    // on this filesystem, not creation order (probed under registry-dup
-    // above), so a single arrangement of which account holds the older
-    // record can pass by coincidence of that order alone. Both permutations
-    // run, the same fix as registry-dup, so one of them necessarily
-    // enumerates the older record last whatever order this filesystem hands
-    // back. The sleep clears the mtime resolution hazard: two files written
-    // in the same instant can carry the same stamp.
-    let d1 = tempDir("titles-dup-a")
-    let a1 = d1.appendingPathComponent("acct1").appendingPathComponent("org")
-    let b1 = d1.appendingPathComponent("acct2").appendingPathComponent("org")
-    try! FileManager.default.createDirectory(at: a1, withIntermediateDirectories: true)
-    try! FileManager.default.createDirectory(at: b1, withIntermediateDirectories: true)
-    titleFile(a1, "local_older.json", "dup", "older")
-    Thread.sleep(forTimeInterval: 0.02)
-    titleFile(b1, "local_newer.json", "dup", "newer")
-    var cacheA = TitleCache()
-    check("titles dup A: the newer wins", desktopTitles(d1, cache: &cacheA)["dup"], "newer")
-
-    let d2 = tempDir("titles-dup-b")
-    let a2 = d2.appendingPathComponent("acct1").appendingPathComponent("org")
-    let b2 = d2.appendingPathComponent("acct2").appendingPathComponent("org")
-    try! FileManager.default.createDirectory(at: a2, withIntermediateDirectories: true)
-    try! FileManager.default.createDirectory(at: b2, withIntermediateDirectories: true)
-    titleFile(b2, "local_older.json", "dup", "older")
-    Thread.sleep(forTimeInterval: 0.02)
-    titleFile(a2, "local_newer.json", "dup", "newer")
-    var cacheB = TitleCache()
-    check("titles dup B: the newer wins", desktopTitles(d2, cache: &cacheB)["dup"], "newer")
-}
-
-var missingCache = TitleCache()
-check("a missing titles directory is an empty map",
-      desktopTitles(URL(fileURLWithPath: "/nonexistent/perchling-titles"),
-                    cache: &missingCache).count, 0)
-
-// MARK: - the four-layer chain
-
-check("a desktop title outranks a registry name",
-      sessionName(row("abcdef0123456789", .idle, cwd: "/p/perchling",
-                      name: "perchling-de", title: "the refactor")),
-      "the refactor")
-check("an empty title falls through to the registry name",
-      sessionName(row("abcdef0123456789", .idle, cwd: "/p/perchling",
-                      name: "perchling-de", title: "")),
-      "perchling-de")
-check("no title falls through to the registry name",
+check("a registry name outranks the project directory",
       sessionName(row("abcdef0123456789", .idle, cwd: "/p/perchling",
                       name: "perchling-de")),
       "perchling-de")
@@ -561,7 +372,7 @@ do {
     bytes.append(contentsOf: [0xE4, 0xB8])   // lead byte + one of two continuations
     try! Data(bytes).write(to: dir.appendingPathComponent("s1"))
     writeFile(dir, "s2", "waiting\n/Users/x/Project/perchling\nfine")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
     let s1 = rows.first { $0.sid == "s1" }
     check("a caption cut mid-codepoint keeps its mood", s1?.mood, .running)
     check("a caption cut mid-codepoint keeps its cwd", s1?.cwd, "/Users/x/Project/perchling")
@@ -589,7 +400,7 @@ check("a bare backslash at the end survives", cleanCaption(#"trailing \"#), #"tr
 do {
     let dir = tempDir("caption-escapes")
     writeFile(dir, "s1", #"running"# + "\n/Users/x/p\n" + #"fix the \"bug\"\nthen ship"#)
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:], titles: [:])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
     check("a session caption reaches the bubble unescaped",
           rows.first?.say, #"fix the "bug" then ship"#)
 }
@@ -746,7 +557,7 @@ do {
 // setting mtimes by hand, where sub-second landings answer differently per run.
 func agedRows(_ dir: URL, _ age: TimeInterval) -> [SessionRow] {
     liveSessions(dir, now: Date().addingTimeInterval(age), alive: { _ in true },
-                 names: [:], titles: [:])
+                 names: [:])
 }
 
 do {

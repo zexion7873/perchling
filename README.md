@@ -124,9 +124,9 @@ the disc stays, so a muted pet still keeps score.
 It shows the most attention-worthy state across all of them — **waiting >
 error > done > running** — so one chatty session can't drown out another that
 actually needs you. **Right-click to see which is which:** every live session
-gets a row named after the title shown in the app's sidebar, falling back to
-the CLI's own name for the session, then its project directory, plus what
-it's doing — the one that wants you first.
+gets a row named after the CLI's own name for the session — in the desktop
+app, the same title its sidebar shows — falling back to its project
+directory, plus what it's doing — the one that wants you first.
 
 ```
 perchling — waiting for you…

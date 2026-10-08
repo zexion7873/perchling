@@ -36,7 +36,7 @@ Verify without launching:
   downsamples it back; the card tool did, because its blit is 1:1.
 - **Session/tray logic** — `Mood.parse`, `liveSessions`, `foldMoods`,
   `menuRows`, `sessionName`, `sessionLabels`, `sessionTitle`, `bubbleText`,
-  `registryNames`, `cleanName`, `desktopTitles` and `TitleEntry` all sit above
+  `registryNames` and `cleanName` all sit above
   the runtime-home block, so a harness for them has to cut there instead of
   at `let argv`: cutting at `let argv` still runs
   that block at load time, which touches `~/.claude/perchling/`, the live

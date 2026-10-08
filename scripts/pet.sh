@@ -316,6 +316,12 @@ cmd_up() {
     [ -e "$f" ] || continue
     [ -e "$SESSIONS/${f##*/}" ] || rm -f "$f"
   done
+  # Releases through 1.21.4 kept the last prompt or reply in `say` and never
+  # removed it; nothing reads it now, so an upgraded install drops it here.
+  rm -f "$ROOT/say"
+  # A hook killed between state.sh's write and its mv leaves the temp behind,
+  # caption included, and nothing else removes it. The age keeps a live write.
+  find "$ROOT" -maxdepth 1 -type f -name '.sess.*' -mmin +60 -exec rm -f {} + 2>/dev/null
   # Staged through a temp name: the overlay reads this file once at launch, and
   # a launch landing mid-copy would fall back to the placeholder and look like a
   # broken install. Silent because a missing shipped file is survivable — the
