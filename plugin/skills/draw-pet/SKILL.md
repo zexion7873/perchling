@@ -269,11 +269,16 @@ like. Two sources, and which one you want depends on the question:
   a sequence block is assembled.
 
   Read them by that full path, not a bare relative one, since the skill runs
-  with the user's project as the working directory — and read a SLICE:
+  with the user's project as the working directory — and read a SLICE. Find
+  the lines first, then read a window of a few dozen lines around one:
 
   ```bash
-  python3 -c 'import json;d=json.load(open("'"$CLAUDE_PLUGIN_ROOT"'/examples/otter.json"));print(json.dumps({k:d[k] for k in ("name","scale")}));print(len(d["palette"]),"inks");print({k:v["steps"] for k,v in d["sequences"].items()})'
+  grep -n -E '"(name|scale|palette|steps|mirror|plays)"' "$CLAUDE_PLUGIN_ROOT/examples/otter.json"
   ```
+
+  `name` and `scale` open the file; each `"steps"` line opens one sequence's
+  timeline, so a window from there shows a whole sequence block without its
+  rows.
 
   The three land animals stand upright and are sized off their height (92–110
   wide); the three sea animals are long and horizontal, so all three hit the 128
