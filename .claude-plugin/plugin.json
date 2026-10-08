@@ -9,6 +9,7 @@
   },
   "homepage": "https://github.com/zexion7873/perchling",
   "repository": "https://github.com/zexion7873/perchling",
+  "icon": "./.claude-plugin/icon.png",
   "license": "MIT",
   "keywords": ["pet", "desktop-pet", "mascot", "status", "overlay", "macos"]
 }

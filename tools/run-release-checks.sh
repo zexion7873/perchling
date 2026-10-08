@@ -24,7 +24,7 @@
 # cascade where one broken fact reds four assertions looks identical to four
 # independent checks. So each pinned line was also ESCAPE-tested: amputate that
 # single assertion from a copy of this script under tools/, re-run the same
-# mutant, and require the copy to pass. Nine of the eleven lines are pinned that
+# mutant, and require the copy to pass. Ten of the twelve lines are pinned that
 # way; the two `parses as JSON` lines are deliberately not, for the reason given
 # beside them.
 #
@@ -190,6 +190,35 @@ n = min(len(a), len(b))
 i = next((k for k in range(n) if a[k] != b[k]), n)
 print("first differ at %d: %r vs %r" % (i, a[i:i+28], b[i:i+28]))' "$p_desc" "$m_desc")"
 fi
+
+# --- the directory listing's icon is there -----------------------------------
+# Claude Code never reads `icon`, so a renamed or deleted file breaks nothing
+# an install can see: the directory listing just loses its picture. Read from
+# the PNG's own IHDR bytes, not a decoder, so this runs on the Linux runner.
+# The 512-2048 square is the bound the directory portal reported, not one any
+# published doc states.
+icon=$(python3 - "$PLUGIN" "$ROOT" <<'PYI'
+import json, os, struct, sys
+try:
+    rel = json.load(open(sys.argv[1], encoding="utf-8")).get("icon")
+except ValueError:
+    print("plugin.json is not JSON"); sys.exit(1)
+if not isinstance(rel, str) or not rel:
+    print("plugin.json has no icon"); sys.exit(1)
+path = os.path.join(sys.argv[2], rel)
+try:
+    head = open(path, "rb").read(24)
+except OSError:
+    print("%s does not exist" % rel); sys.exit(1)
+if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+    print("%s is not a PNG" % rel); sys.exit(1)
+w, h = struct.unpack(">II", head[16:24])
+if w != h or not 512 <= w <= 2048:
+    print("%s is %dx%d, not a 512-2048 square" % (rel, w, h)); sys.exit(1)
+print("%s %dx%d" % (rel, w, h))
+PYI
+) && ok "the listing icon is a square PNG" "$icon" \
+  || no "the listing icon is a square PNG" "$icon"
 
 # --- the hook scripts are LF, and something says so -------------------------
 # Git for Windows checks out with core.autocrlf=true, the marketplace clone

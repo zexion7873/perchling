@@ -12,9 +12,9 @@
       the exact defect it names**. Which case, and what it printed:
 - [ ] I looked at a rendered frame. (Only art or drawing changes. Grid dimensions
       passing validation say nothing about whether the creature reads.)
-- [ ] `docs/moods.gif` and `docs/social-card.png` regenerated, and the README's
-      `width=` still matches the GIF's real pixel width. (Both go stale when the
-      built-in's art moves or `draw()` changes; only the card goes stale when
+- [ ] `docs/moods.gif`, `docs/social-card.png` and `.claude-plugin/icon.png`
+      regenerated, and the README's `width=` still matches the GIF's real pixel
+      width. (All three go stale when the built-in's art moves or `draw()` changes; only the card goes stale when
       plugin.json's description changes — the card renders it. The card is not
       live until re-uploaded at Settings → General → Social preview.)
 

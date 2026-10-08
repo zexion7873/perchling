@@ -505,6 +505,12 @@ gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh 
   'src="docs/moods.gif" width="600"' \
   'src="docs/moods.gif" width="640"'
 
+# The icon renamed or moved while plugin.json keeps the old path: nothing an
+# install can see breaks, and the directory listing quietly loses its picture.
+gate icon-path-dangles .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+  '"icon": "./.claude-plugin/icon.png"' \
+  '"icon": "./.claude-plugin/icon-renamed.png"'
+
 # The README's pet count and examples/ are one fact written twice, and the
 # sentence is the paragraph a reader consults to find out what they are
 # getting. Two cases because the assertion reads two numbers and either can
