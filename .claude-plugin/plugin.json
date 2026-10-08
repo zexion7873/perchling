@@ -2,7 +2,7 @@
   "name": "perchling",
   "displayName": "Perchling",
   "version": "1.21.5",
-  "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. Swift binary, zero dependencies, no Electron.",
+  "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. Swift binary, zero dependencies, no Electron. macOS only.",
   "author": {
     "name": "Kevin Lin",
     "url": "https://github.com/zexion7873"
@@ -11,5 +11,8 @@
   "repository": "https://github.com/zexion7873/perchling",
   "icon": "./.claude-plugin/icon.png",
   "license": "MIT",
+  "documentationUrl": "https://github.com/zexion7873/perchling#readme",
+  "supportUrl": "https://github.com/zexion7873/perchling/issues",
+  "privacyPolicyUrl": "https://github.com/zexion7873/perchling/blob/main/PRIVACY.md",
   "keywords": ["pet", "desktop-pet", "mascot", "status", "overlay", "macos"]
 }
