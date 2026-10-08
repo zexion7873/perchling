@@ -2,7 +2,7 @@
 
 # 🐣 Perchling
 
-[![harnesses](https://github.com/zexion7873/perchling/actions/workflows/harnesses.yml/badge.svg)](https://github.com/zexion7873/perchling/actions/workflows/harnesses.yml)
+[![CI: harnesses](https://github.com/zexion7873/perchling/actions/workflows/harnesses.yml/badge.svg)](https://github.com/zexion7873/perchling/actions/workflows/harnesses.yml)
 
 <img src="docs/moods.gif" width="600" alt="The perchling pet — a small husky in blue goggles — in its five moods: idle sitting calmly, running hunched over a laptop, waiting sat up and watching, done with its mouth open in a grin, and error with a red cross through each eye.">
 
@@ -11,8 +11,8 @@ Claude Code — so you can look away from the terminal and still know when it
 needs you.**
 
 [![License: MIT](https://img.shields.io/github/license/zexion7873/perchling?style=flat)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
-[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
+[![Platform: macOS only](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)](#-install)
+[![Dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen?style=flat)](#-how-it-works)
 
 No Electron. No WebSocket server. No log scraping. One native Swift binary,
 driven straight off Claude Code hook events.
