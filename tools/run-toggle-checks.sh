@@ -36,10 +36,10 @@
 # Takes PERCHLING_PET_SH so it can be pointed at a mutant carrying exactly the
 # defect each line is named after and shown to FAIL. That is the only reason to
 # believe any of them:
-#     git show <before>:scripts/pet.sh > /tmp/old.sh
+#     git show <before>:plugin/scripts/pet.sh > /tmp/old.sh
 #     PERCHLING_PET_SH=/tmp/old.sh bash tools/run-toggle-checks.sh
 set -uo pipefail
-PET_SH="${PERCHLING_PET_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/pet.sh}"
+PET_SH="${PERCHLING_PET_SH:-$(cd "$(dirname "$0")/.." && pwd)/plugin/scripts/pet.sh}"
 
 W=$(mktemp -d) || exit 1
 # Escaped the way pet.sh escapes $BIN, and for the same reason: pkill matches a

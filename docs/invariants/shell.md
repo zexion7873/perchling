@@ -85,7 +85,7 @@ alone cleans up, exactly once.
   classifier already allowed the call, so it cannot manufacture a false
   `waiting`, and a false one would self-heal anyway: nothing has to clear
   `waiting`, the next tool batch writes `running` on its own.
-- **Adding an event name to `hooks/hooks.json` is a compatibility decision, and
+- **Adding an event name to `plugin/hooks/hooks.json` is a compatibility decision, and
   how badly it bites depends on the CLI the user is running.** An unknown event
   key used to void EVERY hook in the file, not just its own entry — the pet
   never launched at all, no `SessionStart`, no error anywhere the user could
@@ -111,14 +111,13 @@ alone cleans up, exactly once.
   separate validators with opposite failure modes, and the permissive one is the
   easy one to reach for. The published docs describe the permissive behaviour
   for both, and are wrong about plugins. `bash tools/run-hooks-check.sh` is the
-  gate; it has to copy `plugin.json` and `hooks/` to a scratch directory first,
-  because `claude plugin validate` pointed at this repo finds
-  `.claude-plugin/marketplace.json` and validates that instead, never reaching
-  hooks.json. Before adding an event, establish how far back it is accepted by
-  running an old CLI's own `plugin validate` — the tarballs are on npm and that
-  subcommand needs no auth. `PermissionRequest` was cleared this way back to
-  2.1.109, over a hundred releases; 2.0.x demands auth before validating and was
-  not measured.
+  gate; it validates `plugin/`, never the repo, because `claude plugin
+  validate` pointed at the repo finds `.claude-plugin/marketplace.json` and
+  validates that instead, never reaching hooks.json. Before adding an event,
+  establish how far back it is accepted by running an old CLI's own `plugin
+  validate` — the tarballs are on npm and that subcommand needs no auth.
+  `PermissionRequest` was cleared this way back to 2.1.109, over a hundred
+  releases; 2.0.x demands auth before validating and was not measured.
 - **`pgrep -f "$BIN"` cannot answer "is the pet running", because the probes see
   each other.** `-f` matches any process whose whole argv CONTAINS the pattern,
   and a concurrent `pgrep -f "$BIN"` has that path in its own argv. Measured:

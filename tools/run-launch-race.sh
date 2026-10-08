@@ -34,11 +34,11 @@ cd "$(dirname "$0")/.."
 # FAIL. Green assertions prove nothing on their own — every one of them
 # would also pass against a `running()` that always returned false — so the
 # check that matters is:
-#     git show <before>:scripts/pet.sh > /tmp/old.sh
+#     git show <before>:plugin/scripts/pet.sh > /tmp/old.sh
 #     PERCHLING_PET_SH=/tmp/old.sh bash tools/run-launch-race.sh
 # which must fail. A copy outside the repo resolves $SRC to a pet.swift that
 # does not exist, so cmd_up skips its rebuild branch exactly as it does here.
-PET="${PERCHLING_PET_SH:-$PWD/scripts/pet.sh}"
+PET="${PERCHLING_PET_SH:-$PWD/plugin/scripts/pet.sh}"
 SCRATCH="$(mktemp -d)"
 trap 'pkill -x -f "$SCRATCH/.*/perchling" 2>/dev/null; rm -rf "$SCRATCH"' EXIT
 

@@ -13,7 +13,7 @@ and what the alternative lost to.
   library existed, for dotfiles setups, which is why the renderer needed no
   change. Two things follow. A shipped pet is copied into `pets/` before it is
   linked, because the plugin path carries a version number and is replaced
-  wholesale on update — a link into `examples/` dangles the moment the user
+  wholesale on update — a link into `plugin/examples/` dangles the moment the user
   runs `plugin update`. And `pet.json` arriving as a regular file is the
   pre-library state, not a corruption: it gets moved into `pets/`, never
   linked over, because it may be the only copy of a pet someone drew. That is
@@ -55,7 +55,7 @@ and what the alternative lost to.
   that is already current is never rewritten in place: `pollPet` reloads on
   mtime, so a needless staged rename repaints the pet on every session start.
   An orphaned record (pet deleted by hand) is pruned; a retired shipped pet
-  (source gone from `examples/`) keeps both files, because the copy may be
+  (source gone from `plugin/examples/`) keeps both files, because the copy may be
   the only one anywhere. `petChoices` scans `pets/` for `.json` files only,
   so `.shipped` never grows a menu row. Pinned in
   `tools/run-library-refresh.sh`, the adopt half in

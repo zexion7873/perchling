@@ -9,7 +9,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
-src="$repo/scripts/pet.swift"
+src="$repo/plugin/scripts/pet.swift"
 out="${1:-$repo/docs/social-card.png}"
 
 command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)" >&2; exit 1; }
@@ -33,5 +33,5 @@ cat "$here/social-card.swift" >> "$work/gen.swift"
 swiftc -O -o "$work/gen" "$work/gen.swift"
 # Render from this checkout's art, never from whatever the user has installed.
 mkdir -p "$work/home"
-cp "$repo/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
-PERCHLING_HOME="$work/home" "$work/gen" "$out" "$repo/.claude-plugin/plugin.json"
+cp "$repo/plugin/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
+PERCHLING_HOME="$work/home" "$work/gen" "$out" "$repo/plugin/.claude-plugin/plugin.json"

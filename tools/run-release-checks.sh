@@ -1,5 +1,5 @@
 #!/bin/bash
-# The release commit is ONE LINE — `.claude-plugin/plugin.json`'s version — and
+# The release commit is ONE LINE — `plugin/.claude-plugin/plugin.json`'s version — and
 # it is the only thing that reaches an install. Nothing in CI had ever parsed
 # that file: thirty-four releases shipped it unchecked, so a stray comma would
 # have taken the marketplace down for every user with a green tick beside it.
@@ -14,7 +14,7 @@
 # PERCHLING_MOODS_GIF / PERCHLING_HOOKS_JSON and the rest, so it can be pointed at a mutant carrying
 # exactly the defect each line is named after and shown to FAIL. That is the
 # only reason to believe any of them:
-#     sed 's/"version": "1\./"version": "0./' .claude-plugin/plugin.json > /tmp/back.json
+#     sed 's/"version": "1\./"version": "0./' plugin/.claude-plugin/plugin.json > /tmp/back.json
 #     PERCHLING_PLUGIN_JSON=/tmp/back.json bash tools/run-release-checks.sh
 # The recipe anchors on the version line's SHAPE, not on today's number: a
 # worked example that silently stops matching prints "11 passed, 0 failed" and
@@ -34,15 +34,15 @@
 # reported "10 mutants caught".
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-PLUGIN="${PERCHLING_PLUGIN_JSON:-$ROOT/.claude-plugin/plugin.json}"
+PLUGIN="${PERCHLING_PLUGIN_JSON:-$ROOT/plugin/.claude-plugin/plugin.json}"
 MARKET="${PERCHLING_MARKETPLACE_JSON:-$ROOT/.claude-plugin/marketplace.json}"
 ATTRS="${PERCHLING_GITATTRIBUTES:-$ROOT/.gitattributes}"
-PET_SH="${PERCHLING_PET_SH:-$ROOT/scripts/pet.sh}"
-STATE_SH="${PERCHLING_STATE_SH:-$ROOT/scripts/state.sh}"
+PET_SH="${PERCHLING_PET_SH:-$ROOT/plugin/scripts/pet.sh}"
+STATE_SH="${PERCHLING_STATE_SH:-$ROOT/plugin/scripts/state.sh}"
 README="${PERCHLING_README:-$ROOT/README.md}"
 GIF="${PERCHLING_MOODS_GIF:-$ROOT/docs/moods.gif}"
-HOOKS="${PERCHLING_HOOKS_JSON:-$ROOT/hooks/hooks.json}"
-EXAMPLES="${PERCHLING_EXAMPLES_DIR:-$ROOT/examples}"
+HOOKS="${PERCHLING_HOOKS_JSON:-$ROOT/plugin/hooks/hooks.json}"
+EXAMPLES="${PERCHLING_EXAMPLES_DIR:-$ROOT/plugin/examples}"
 
 pass=0; fail=0
 ok(){ printf '  ok   %-38s %s\n' "$1" "${2:-}"; pass=$((pass+1)); }
@@ -139,12 +139,16 @@ parents=$(cd "$ROOT" && git rev-parse HEAD^@ 2>/dev/null)
 
 prev_version=
 for p in $parents; do
-  blob=$(cd "$ROOT" && git show "$p:.claude-plugin/plugin.json" 2>/dev/null) \
-    || die "cannot read .claude-plugin/plugin.json at $p: $(cd "$ROOT" && git show "$p:.claude-plugin/plugin.json" 2>&1 >/dev/null | tail -1)"
+  # Releases through 1.21.6 kept the manifest at the repo root; a parent that
+  # predates the move is read from there. The fallback goes once no parent of
+  # HEAD can be that old.
+  blob=$(cd "$ROOT" && { git show "$p:plugin/.claude-plugin/plugin.json" 2>/dev/null \
+                         || git show "$p:.claude-plugin/plugin.json" 2>/dev/null; }) \
+    || die "cannot read plugin/.claude-plugin/plugin.json at $p: $(cd "$ROOT" && git show "$p:plugin/.claude-plugin/plugin.json" 2>&1 >/dev/null | tail -1)"
   pv=$(printf '%s' "$blob" | python3 -c 'import io, json, sys
 print(json.load(io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8")).get("version", ""))' 2>/dev/null) \
-    || die "the .claude-plugin/plugin.json at $p is not JSON — the baseline cannot be trusted"
-  [ -n "$pv" ] || die "the .claude-plugin/plugin.json at $p declares no version"
+    || die "the plugin.json at $p is not JSON — the baseline cannot be trusted"
+  [ -n "$pv" ] || die "the plugin.json at $p declares no version"
   semver "$pv" || die "the baseline version at $p is not X.Y.Z: '$pv'"
   if [ -z "$prev_version" ] || ! ver_ge "$prev_version" "$pv"; then prev_version=$pv; fi
 done
@@ -196,8 +200,11 @@ fi
 # an install can see: the directory listing just loses its picture. Read from
 # the PNG's own IHDR bytes, not a decoder, so this runs on the Linux runner.
 # The 512-2048 square is the bound the directory portal reported, not one any
-# published doc states.
-icon=$(python3 - "$PLUGIN" "$ROOT" <<'PYI'
+# published doc states. The path is plugin-root-relative, and it is resolved
+# against the REAL plugin directory rather than the manifest's own: a mutant
+# manifest lives in a scratch directory with no icon beside it, and resolving
+# there would red every manifest mutant for the wrong reason.
+icon=$(python3 - "$PLUGIN" "$ROOT/plugin" <<'PYI'
 import json, os, struct, sys
 try:
     rel = json.load(open(sys.argv[1], encoding="utf-8")).get("icon")
@@ -364,7 +371,7 @@ def number(word):
     # than a silent read of the tail.
     return int(word) if word.isdecimal() else WORDS.get(word.lower())
 
-LINK = "[`examples/`](examples/)"
+LINK = "[`plugin/examples/`](plugin/examples/)"
 paras = [p for p in re.split(r"\n[ \t]*\n", text) if LINK in p]
 if len(paras) != 1:
     print("the README has %d paragraphs carrying %s, expected exactly 1" % (len(paras), LINK))
@@ -387,7 +394,7 @@ if shipped == 0:
     sys.exit(1)
 
 # \s+ between every word: the README is hard-wrapped, so the line break moves.
-claimed_w = sole(r"([\w-]+)\s+ship\s+in\s+\[`examples/`\]", "<n> ship in [`examples/`]")
+claimed_w = sole(r"([\w-]+)\s+ship\s+in\s+\[`plugin/examples/`\]", "<n> ship in [`plugin/examples/`]")
 rows_w = sole(r"[Oo]nly\s+([\w-]+)\s+have\s+a\s+row", "Only <n> have a row")
 
 claimed, rows = number(claimed_w), number(rows_w)
@@ -416,9 +423,9 @@ fi
 
 # --- every file hooks.json names still exists --------------------------------
 # `hooks/hooks.json` reaches its scripts through `${CLAUDE_PLUGIN_ROOT}`, which
-# resolves to the plugin's install directory — a VERBATIM copy of this tree, no
-# `files` field and no `.claudeignore`, so a path that is right here is right
-# there. Which means the reverse holds too: rename or move one of these scripts
+# resolves to the plugin's install directory — a VERBATIM copy of `plugin/`, no
+# `files` field and no `.claudeignore`, so a path that is right under `plugin/`
+# is right there. Which means the reverse holds too: rename or move one of these scripts
 # and every hook in the plugin dies for every installed user, on their next
 # session, silently, with a green tick on the commit that did it.
 #
@@ -434,7 +441,7 @@ fi
 if [ ! -r "$HOOKS" ]; then
   no "hooks.json's scripts are all present" "no readable hooks.json at $HOOKS"
 else
-  detail=$(python3 - "$HOOKS" "$ROOT" <<'PYH'
+  detail=$(python3 - "$HOOKS" "$ROOT/plugin" <<'PYH'
 import json, re, sys
 
 hooks, root = sys.argv[1], sys.argv[2]

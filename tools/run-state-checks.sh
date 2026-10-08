@@ -6,10 +6,10 @@
 # Takes PERCHLING_STATE_SH so it can be pointed at a mutant carrying exactly
 # the defect each line is named after and shown to FAIL. That is the only
 # reason to believe any of them:
-#     git show <before>:scripts/state.sh > /tmp/old.sh
+#     git show <before>:plugin/scripts/state.sh > /tmp/old.sh
 #     PERCHLING_STATE_SH=/tmp/old.sh bash tools/run-state-checks.sh
 set -uo pipefail
-STATE_SH="${PERCHLING_STATE_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/state.sh}"
+STATE_SH="${PERCHLING_STATE_SH:-$(cd "$(dirname "$0")/.." && pwd)/plugin/scripts/state.sh}"
 
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT

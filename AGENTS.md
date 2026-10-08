@@ -11,20 +11,33 @@ and CI's in the workflow. This file is loaded into every session in the repo,
 and the last time that rule went unwritten it grew from 211 lines to 310 in
 nineteen days.
 
+## `plugin/` is what ships, and what gets reviewed
+
+The repo root is the marketplace; `plugin/` is the plugin. The marketplace
+lists it with `source: "./plugin"`, so only that tree reaches an install and
+only that tree goes through the plugin directory's review. Docs, tools, CI and
+the README images live outside it on purpose: the review holds a version when
+a shipped file names an image, reads a CI command that builds a path at run
+time as sending data off the machine, and warns on a root `CLAUDE.md`.
+`plugin/.claude-plugin/icon.png` is the one image that belongs inside, and
+nothing in the tree names it. `claude plugin validate .` stops at the
+marketplace manifest; `claude plugin validate --strict plugin` is the one that
+reads the plugin.
+
 ## Changes reach the running system by two different paths
 
-- **`scripts/pet.swift`** — `bash scripts/pet.sh build` recompiles
+- **`plugin/scripts/pet.swift`** — `bash plugin/scripts/pet.sh build` recompiles
   `~/.claude/perchling/bin/perchling` from *this* checkout. Live on next
   launch. Fast loop.
-- **the built-in's art** — `examples/$PERCHLING_BUILTIN.json`, copied into the
+- **the built-in's art** — `plugin/examples/$PERCHLING_BUILTIN.json`, copied into the
   runtime home by `cmd_up` and ONLY by `cmd_up`, which ends in a launch: there
   is no art-only install. The two paths also differ in how they revert. The
   binary is gated on mtime, so a dev `pet.sh build` IS what the next hook-driven
   session launches, until something newer replaces it. The art is gated on
   CONTENT, so the installed plugin's next `cmd_up` silently puts the published
   art back. To install a checkout's art without launching anything:
-  `cp examples/$PERCHLING_BUILTIN.json ~/.claude/perchling/builtin.json`.
-- **`scripts/pet.sh`, `scripts/state.sh`, `hooks/hooks.json`** — hooks resolve
+  `cp plugin/examples/$PERCHLING_BUILTIN.json ~/.claude/perchling/builtin.json`.
+- **`plugin/scripts/pet.sh`, `plugin/scripts/state.sh`, `plugin/hooks/hooks.json`** — hooks resolve
   `${CLAUDE_PLUGIN_ROOT}` to the **installed plugin copy** under
   `plugins/cache/`, keyed by the `plugin.json` version, never this checkout.
   Editing them here changes nothing until a release carrying the change
@@ -38,7 +51,7 @@ publishing, pipe a fake payload straight into the dev script:
 
 ```bash
 printf '{"session_id":"test","prompt":"hi"}' \
-  | CLAUDE_CONFIG_DIR="$(mktemp -d)" bash scripts/state.sh running
+  | CLAUDE_CONFIG_DIR="$(mktemp -d)" bash plugin/scripts/state.sh running
 ```
 
 `state.sh` resolves its home from `CLAUDE_CONFIG_DIR`, so without that override
@@ -108,7 +121,7 @@ file's rules, not a summary of it.
   menu click and deleting a pet with no other copy — weakening either reads in
   review like tidying.
 - **[shell.md](docs/invariants/shell.md)** — `pet.sh`, `state.sh`,
-  `hooks/hooks.json`, the launch lock. The rule: one event key the running CLI
+  `plugin/hooks/hooks.json`, the launch lock. The rule: one event key the running CLI
   does not recognise is silently fatal — to EVERY hook in the plugin on a CLI
   old enough, and to that entry alone on 2.1.258 — and a `--settings` probe
   proves nothing either way, because that validator ignores unknown keys; the
@@ -119,12 +132,12 @@ file's rules, not a summary of it.
 ## Commands
 
 ```bash
-bash scripts/pet.sh build     # recompile the binary from this checkout
-bash scripts/pet.sh status    # binary / process / state / session count
-bash scripts/pet.sh stop      # drop refcounts and kill the pet
+bash plugin/scripts/pet.sh build     # recompile the binary from this checkout
+bash plugin/scripts/pet.sh status    # binary / process / state / session count
+bash plugin/scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh   [OUT.gif]  # README hero; NO ARG OVERWRITES docs/moods.gif
 bash tools/make-social-card.sh [OUT.png]  # social preview; NO ARG OVERWRITES docs/social-card.png
-bash tools/make-icon.sh        [OUT.png]  # directory icon; NO ARG OVERWRITES .claude-plugin/icon.png
+bash tools/make-icon.sh        [OUT.png]  # directory icon; NO ARG OVERWRITES plugin/.claude-plugin/icon.png
 bash tools/run-session-harness.sh  # 156 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
@@ -138,7 +151,7 @@ bash tools/run-art-checks.sh       # no shipped pet has a hole the desktop shows
 bash tools/run-toggle-checks.sh    # disable / enable / wake, and the off-macOS fence
 bash tools/run-release-checks.sh   # manifests parse, version holds, icon, LF, hero width, pet count, hook paths
 bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
-~/.claude/perchling/bin/perchling --validate examples/otter.json
+~/.claude/perchling/bin/perchling --validate plugin/examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
 ```
 
@@ -168,24 +181,24 @@ CI compiles with a PINNED Xcode 16.4 / Swift 6.1.2, asserted rather than
 inferred. A dev machine's Swift has never been evidence about CI's, and bumping
 means changing the path AND the assertion, in BOTH jobs.
 
-This repo IS the marketplace: the version line in `.claude-plugin/plugin.json`
+This repo IS the marketplace: the version line in `plugin/.claude-plugin/plugin.json`
 is the publish. Branch protection, admins included, lets `main` take it only
 through a PR whose `release-gate`, `harnesses` and `mutation-gate` are green, so
 a stray comma reds the release PR before it reaches anyone.
 
 ## The built-in's art
 
-**It has no generator, and only one thing checks it.** `examples/husky.json` is
+**It has no generator, and only one thing checks it.** `plugin/examples/husky.json` is
 460KB of row strings quantised from raster art, so changing the built-in means
 replacing the whole file — there is no `build()` to re-run, and nothing that
 will notice if the DRAWING comes out wrong. 1.7–1.12 emitted the manifest from
 parametric geometry with a guard holding the two together; the generator only
 ever drew the hippo, so it went when the hippo did. If it is ever generated
 again, bind the guard to the shipped file and nothing else — a copy parked under
-`examples/` puts the check one indirection from what ships.
+`plugin/examples/` puts the check one indirection from what ships.
 
 `tools/run-art-checks.sh` is the one check that exists. It globs
-`examples/*.json`, so a seventh pet is covered the moment it lands, and it
+`plugin/examples/*.json`, so a seventh pet is covered the moment it lands, and it
 answers exactly one question — is any transparent pixel unreachable from the
 border — because that one is decidable without knowing what the art should look
 like. A featureless blob passes it. It is not a substitute for rendering a frame
@@ -193,10 +206,10 @@ and looking at it.
 
 Adding a pet that is NOT the built-in reds two files and stales several more.
 `run-release-checks.sh` pins `README.md`'s two prose counts to the size of
-`examples/`, and `run-mutation-gate.sh` quotes those same counts as anchors, so
+`plugin/examples/`, and `run-mutation-gate.sh` quotes those same counts as anchors, so
 both go red until the sentence is updated — the gate says "anchor not found",
 not "count wrong". Nothing pins the six pet names beside them, or the same
-counts repeated in `skills/draw-pet/SKILL.md`, `docs/invariants/manifest.md`,
+counts repeated in `plugin/skills/draw-pet/SKILL.md`, `docs/invariants/manifest.md`,
 `docs/invariants/chrome.md` and `run-manifest-checks.sh`. Each pet also carries
 its own fractional `scale` tuned so it lands near 90pt.
 
@@ -206,7 +219,7 @@ a manifest must match, are in
 
 Four artifacts go stale behind an art change, and they do not share a trigger.
 The built-in's art moving or `draw()` changing stales `docs/moods.gif`,
-`docs/social-card.png` AND `.claude-plugin/icon.png`; `plugin.json`'s
+`docs/social-card.png` AND `plugin/.claude-plugin/icon.png`; `plugin.json`'s
 description stales the card alone. Only one of the four fails loudly:
 `run-release-checks.sh` holds the README's `width=` to the GIF's real header,
 so a hero regenerated at a new size with the README left behind reds the gate

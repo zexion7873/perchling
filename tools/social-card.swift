@@ -31,11 +31,11 @@ let ACCENT  = NSColor(srgbRed: 0x37 / 255, green: 0xb3 / 255, blue: 0xe6 / 255, 
 
 let outURL = URL(fileURLWithPath: CommandLine.arguments.count > 1
                  ? CommandLine.arguments[1] : "docs/social-card.png")
-// The tagline is the plugin's description, read from .claude-plugin/plugin.json
+// The tagline is the plugin's description, read from plugin/.claude-plugin/plugin.json
 // — the copy the release gate holds byte-equal to marketplace.json's. GitHub's
 // own About field is a third copy that nothing checks.
 let pluginJSON = URL(fileURLWithPath: CommandLine.arguments.count > 2
-                     ? CommandLine.arguments[2] : ".claude-plugin/plugin.json")
+                     ? CommandLine.arguments[2] : "plugin/.claude-plugin/plugin.json")
 
 func die(_ msg: String) -> Never {
     FileHandle.standardError.write((msg + "\n").data(using: .utf8)!)

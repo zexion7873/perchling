@@ -8,7 +8,7 @@
 # and `-nt` then answered differently run to run: three runs, three verdicts,
 # none of them about the code.
 set -u
-PET_SH="${PERCHLING_PET_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/pet.sh}"
+PET_SH="${PERCHLING_PET_SH:-$(cd "$(dirname "$0")/.." && pwd)/plugin/scripts/pet.sh}"
 W=$(mktemp -d)
 stub=""
 # `wait` inside the same redirect as the kill, or bash announces `Terminated`

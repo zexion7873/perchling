@@ -10,7 +10,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
-src="$repo/scripts/pet.swift"
+src="$repo/plugin/scripts/pet.swift"
 out="${1:-$repo/docs/moods.gif}"
 
 command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)" >&2; exit 1; }
@@ -39,5 +39,5 @@ swiftc -O -o "$work/gen" "$work/gen.swift"
 # from this checkout. Point the runtime home at a scratch copy of this
 # checkout's art — which also keeps the generator from touching the live one.
 mkdir -p "$work/home"
-cp "$repo/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
+cp "$repo/plugin/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
 PERCHLING_HOME="$work/home" "$work/gen" "$out"

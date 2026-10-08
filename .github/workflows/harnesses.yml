@@ -90,10 +90,10 @@ jobs:
           set -euo pipefail
           W="$RUNNER_TEMP/verify"
           mkdir -p "$W/home"
-          cp "examples/${PERCHLING_BUILTIN:-husky}.json" "$W/home/builtin.json"
-          swiftc -O scripts/pet.swift -o "$W/perchling"
-          export PERCHLING_HOME="$W/home" PERCHLING_EXAMPLES="$PWD/examples"
-          for f in examples/*.json; do "$W/perchling" --validate "$f" > /dev/null; done
+          cp "plugin/examples/${PERCHLING_BUILTIN:-husky}.json" "$W/home/builtin.json"
+          swiftc -O plugin/scripts/pet.swift -o "$W/perchling"
+          export PERCHLING_HOME="$W/home" PERCHLING_EXAMPLES="$PWD/plugin/examples"
+          for f in plugin/examples/*.json; do "$W/perchling" --validate "$f" > /dev/null; done
       - name: export round-trips byte-identical
         # No size gate: the description's size claim was deleted rather than
         # guarded. The size is still printed so a surprise jump is visible in
@@ -102,8 +102,8 @@ jobs:
         run: |
           set -euo pipefail
           W="$RUNNER_TEMP/verify"
-          export PERCHLING_HOME="$W/home" PERCHLING_EXAMPLES="$PWD/examples"
-          "$W/perchling" --export | cmp - "examples/${PERCHLING_BUILTIN:-husky}.json"
+          export PERCHLING_HOME="$W/home" PERCHLING_EXAMPLES="$PWD/plugin/examples"
+          "$W/perchling" --export | cmp - "plugin/examples/${PERCHLING_BUILTIN:-husky}.json"
           echo "binary: $(stat -f%z "$W/perchling") bytes"
       - name: the README hero regenerates and round-trips
         # The tool decodes its own output back pixel-for-pixel and gates the
@@ -175,5 +175,11 @@ jobs:
           persist-credentials: false
       - name: install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
+      - name: the marketplace manifest validates
+        run: claude plugin validate .
+      - name: the plugin validates with warnings as errors
+        # `validate .` stops at the marketplace manifest and never descends
+        # into plugin/, so the plugin is validated on its own.
+        run: claude plugin validate --strict plugin
       - name: hooks.json declares no event this CLI rejects
         run: bash tools/run-hooks-check.sh

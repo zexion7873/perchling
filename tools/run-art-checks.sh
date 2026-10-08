@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs the shipped-art assertions in tools/art-harness.swift against this
-# checkout's pet.swift and every manifest in examples/.
+# checkout's pet.swift and every manifest in plugin/examples/.
 #
 # The cut point is the runtime-home block, the same one run-session-harness.sh
 # uses and for the same reason: `let argv` still leaves the block that resolves
@@ -21,7 +21,7 @@ repo="$(cd "$here/.." && pwd)"
 #     P
 #     PERCHLING_PET_SWIFT=/tmp/holed.swift bash tools/run-art-checks.sh
 # which must fail, and must name the grid it was punched into.
-src="${PERCHLING_PET_SWIFT:-$repo/scripts/pet.swift}"
+src="${PERCHLING_PET_SWIFT:-$repo/plugin/scripts/pet.swift}"
 
 command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)" >&2; exit 1; }
 
@@ -44,4 +44,4 @@ echo 'let builtinPet = builtinLoaded.pet' >> "$work/gen.swift"
 cat "$here/art-harness.swift" >> "$work/gen.swift"
 
 swiftc -o "$work/gen" "$work/gen.swift"
-"$work/gen" "$repo"/examples/*.json
+"$work/gen" "$repo"/plugin/examples/*.json

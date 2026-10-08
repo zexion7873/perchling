@@ -74,14 +74,14 @@ gate() { # gate <name> <src> <envvar> <harness> <old> <new>
 # These run in milliseconds and guard the one line that actually reaches an
 # install, so they report before anything compiles.
 
-gate manifest-unparseable .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+gate manifest-unparseable plugin/.claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
   '  "license": "MIT",' \
   '  "license": "MIT"'
 
 # The anchor is the version line's SHAPE, so it survives every 1.x release and
 # needs one edit at 2.0.0 — at which point mutate() reports "anchor not found"
 # and this case fails loudly rather than passing against a clean tree.
-gate version-goes-backwards .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+gate version-goes-backwards plugin/.claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
   '"version": "1.' \
   '"version": "0.'
 
@@ -104,101 +104,101 @@ gate name-drift .claude-plugin/marketplace.json PERCHLING_MARKETPLACE_JSON tools
 # reds the comparison instead. A leading zero is the shape that fails the regex
 # while still comparing forward (01.16.0 parses as [1,16,0] >= [1,15,1]), so
 # this is the only one of the five that discriminates that branch.
-gate version-not-semver .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+gate version-not-semver plugin/.claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
   '"version": "1.' \
   '"version": "01.'
 
 # --- shell layer (cheap, first) ----------------------------------------------
 
-gate sid-shape-unchecked scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate sid-shape-unchecked plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '  case "$sid" in '"''"'|*[!A-Za-z0-9_-]*) sid= ;; esac' \
   '  :'
 
-gate prune-never-retires scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+gate prune-never-retires plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
   '  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null' \
   '  :'
 
 # An upgraded install keeps the last prompt or reply an older release left in
 # `say`, forever, after the privacy policy says it is gone.
-gate retired-say-kept scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+gate retired-say-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
   '  rm -f "$ROOT/say"' \
   '  :'
 
 # A hook killed mid-write keeps its caption on disk in a temp nothing reads,
 # for good.
-gate orphan-temp-kept scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+gate orphan-temp-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
   "  find \"\$ROOT\" -maxdepth 1 -type f -name '.sess.*' -mmin +60 -exec rm -f {} + 2>/dev/null" \
   '  :'
 
 # The umask reads as noise in a hot path: every session file goes back to
 # world-readable, carrying a quote of the user's prompt.
-gate session-file-world-readable scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate session-file-world-readable plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   'umask 077' \
   ':'
 
 # A global caption written back "for the fallback": it outlives every session
 # and is never deleted.
-gate caption-outlives-session scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate caption-outlives-session plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '  # Written LAST, because line 3 is the caption' \
   '  [ -n "$snippet" ] && printf '"'%s'"' "$snippet" > "$d/say"
   # Written LAST, because line 3 is the caption'
 
 # The platform gate opened: every prompt on Windows or Linux writes a runtime
 # home for a pet that cannot exist there, and nothing errors.
-gate hook-gate-open scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate hook-gate-open plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '[[ $OSTYPE == darwin* ]] || exit 0' \
   '[[ $OSTYPE == * ]] || exit 0'
 
 # The same gate on SessionStart: cmd_up past it creates the sessions directory
 # and tries a build that can only fail.
-gate up-gate-open scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+gate up-gate-open plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
   '  macos || exit 0
   [ -e "$ROOT/disabled" ] && exit 0' \
   '  [ -e "$ROOT/disabled" ] && exit 0'
 
 # The fence gone: off macOS the six commands a person types answer for a pet
 # that does not exist, `disable` writing its flag and saying so.
-gate fence-missing scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+gate fence-missing plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
   'if ! macos; then' \
   'if false; then'
 
 # cmd_up refuses on the same flag cmd_enable is there to clear, so an enable
 # that stops clearing it prints its line, exits 0, and starts nothing — the
 # exact "enable does nothing" report, with no error anywhere.
-gate enable-honours-disabled scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+gate enable-honours-disabled plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
   '  rm -f "$ROOT/disabled"' \
   '  :'
 
 # The guard, not the block: `  if [ -e "$ROOT/disabled" ]; then` occurs once
 # (cmd_up spells its own test `[ -e "$ROOT/disabled" ] && exit 0`). Without it,
 # wake writes the marker and reports success on an install the user turned off.
-gate wake-ignores-disabled scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+gate wake-ignores-disabled plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
   '  if [ -e "$ROOT/disabled" ]; then' \
   '  if false; then'
 
 # The lie ac98cee removed, restored. cmd_up backgrounds the launch and exits, so
 # a leaked fresh lock stops the pet with nobody able to see it; the only thing
 # that can be right here is the wording, and nothing pinned it.
-gate wake-claims-success scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+gate wake-claims-success plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
   "  echo \"perchling waking — 'pet.sh status' says whether it came up\"" \
   '  echo "perchling awake"'
 
 # cmd_up is the only other thing that creates $ROOT and it starts with
 # `macos || exit 0`, so on a fresh install `disable` announced success while its
 # touch failed to stderr and the next session start launched the pet anyway.
-gate disable-needs-no-home scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
+gate disable-needs-no-home plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-toggle-checks.sh \
   '  mkdir -p "$ROOT"
   touch "$ROOT/disabled"' \
   '  touch "$ROOT/disabled"'
 
-gate rebuild-loop scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
+gate rebuild-loop plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && { [ ! -s "$BUILDLOG" ] || [ ! "$BUILDLOG" -nt "$SRC" ]; }; then' \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; }; then'
 
 # The other direction on the same line: a gate that honours an EMPTY log as a
 # recorded failure lets a compile killed midway (empty log newer than source)
 # block every future rebuild, silently.
-gate empty-log-blocks-rebuild scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
+gate empty-log-blocks-rebuild plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-build-gate.sh \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && { [ ! -s "$BUILDLOG" ] || [ ! "$BUILDLOG" -nt "$SRC" ]; }; then' \
   '  if { [ ! -x "$BIN" ] || [ "$SRC" -nt "$BIN" ]; } && [ ! "$BUILDLOG" -nt "$SRC" ]; then'
 
@@ -206,7 +206,7 @@ gate empty-log-blocks-rebuild scripts/pet.sh PERCHLING_PET_SH tools/run-build-ga
 # takes the refcount filename from the real session. The shape check cannot
 # see this — the ghost id is a perfectly shaped UUID — so only the routing
 # assertion catches it.
-gate sid-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate sid-misrouted plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "    *'\"session_id\"'*) sid=\${payload#*'\"session_id\"'}; sid=\${sid#*'\"'}; sid=\${sid%%'\"'*} ;;" \
   "    *'\"session_id\"'*) sid=\$(printf '%s' \"\$payload\" | sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -1) ;;"
 
@@ -214,7 +214,7 @@ gate sid-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh
 # tool_input wins over the CLI's own, and the bubble names a tool the payload
 # chose. Cosmetic where the sid was structural, but the same one-character
 # review slip (# to ##).
-gate tool-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate tool-misrouted plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "      *'\"tool_name\"'*) tool=\${payload#*'\"tool_name\"'}" \
   "      *'\"tool_name\"'*) tool=\${payload##*'\"tool_name\"'}"
 
@@ -222,7 +222,7 @@ gate tool-misrouted scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.s
 # PermissionRequest and then Notification, and the second write blanks the
 # detail the first just recorded — the feature works in every test that fires
 # one hook and fails on the host that fires two.
-gate tool-detail-blanked scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate tool-detail-blanked plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '    if [ "${1:-}" = waiting ] && [ -z "$tool" ]; then
       tool="$prev4"
     fi' \
@@ -231,7 +231,7 @@ gate tool-detail-blanked scripts/state.sh PERCHLING_STATE_SH tools/run-state-che
 # The odometer counts machinery: drop the snippet guard and every running
 # hook increments — tool batches, task notifications — so the tray reports a
 # session ridden ten times harder than its human ever asked.
-gate odometer-counts-machinery scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate odometer-counts-machinery plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '    [ "${1:-}" = running ] && [ -n "$snippet" ] && turn=1' \
   '    [ "${1:-}" = running ] && turn=1'
 
@@ -239,26 +239,26 @@ gate odometer-counts-machinery scripts/state.sh PERCHLING_STATE_SH tools/run-sta
 # keeps whatever it last said while the CLI's own error text sits unread in
 # the payload — the pet frowns and refuses to say why, with every other state
 # line green.
-gate error-autopsy-forgotten scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate error-autopsy-forgotten plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then' \
   '  if [ "${1:-}" = done ]; then'
 
 # The BRE-shaped body: every reply that quotes anything shrinks to the words
 # before its first quote mark.
-gate reply-stops-at-escaped-quote scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate reply-stops-at-escaped-quote plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*).*/\\1/p' \\" \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"([^\"]*).*/\\1/p' \\"
 
 # Demanding the closing quote reads as tidying the regex, and silences every
 # reply long enough that dd's one read ends inside it.
-gate reply-needs-closing-quote scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate reply-needs-closing-quote plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*).*/\\1/p' \\" \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*)\".*/\\1/p' \\"
 
 # The reset reads as redundant: a Stop payload carries no top-level "prompt".
 # It carries a session cron's, and without the reset a turn whose final
 # message has no text puts the cron's prompt in the bubble.
-gate done-quotes-a-cron scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate done-quotes-a-cron plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
     snippet=' \
   '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
@@ -266,14 +266,14 @@ gate done-quotes-a-cron scripts/state.sh PERCHLING_STATE_SH tools/run-state-chec
 
 # One extra # takes the LAST key, and the caption goes to whatever embedded
 # object serialised after the CLI's own — the sid's ghost-row bug, in the bubble.
-gate reply-takes-last-match scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+gate reply-takes-last-match plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "        reply=\${payload#*'\"last_assistant_message\"'}" \
   "        reply=\${payload##*'\"last_assistant_message\"'}"
 
 # A refresh that never runs is the pre-record behaviour restored for every
 # pet: picked copies frozen at pick time while the shipped art moves on —
 # the exact user report (#103) this loop exists to close.
-gate library-never-refreshed scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
+gate library-never-refreshed plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
   '    cp "$src" "$ROOT/.pet.$$" 2>/dev/null && mv -f "$ROOT/.pet.$$" "$lib" 2>/dev/null &&
       cp "$src" "$ROOT/.snap.$$" 2>/dev/null && mv -f "$ROOT/.snap.$$" "$snap" 2>/dev/null' \
   '    :'
@@ -281,27 +281,27 @@ gate library-never-refreshed scripts/pet.sh PERCHLING_PET_SH tools/run-library-r
 # The pristine guard is the one line between "refresh" and "clobber a
 # hand-tuned pet" — the loss the whole snapshot mechanism exists to prevent,
 # and removing it reads in review like simplifying a redundant cmp.
-gate library-clobbers-edits scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
+gate library-clobbers-edits plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
   '    cmp -s "$lib" "$snap" || continue' \
   '    :'
 
 # The heal arm is the kill-window insurance: without it a refresh killed
 # between its two writes leaves copy != snapshot, which reads as a user edit,
 # and that pet silently freezes forever.
-gate library-heal-removed scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
+gate library-heal-removed plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-library-refresh.sh \
   '      cmp -s "$src" "$snap" || { cp "$src" "$ROOT/.snap.$$" 2>/dev/null && mv -f "$ROOT/.snap.$$" "$snap" 2>/dev/null; }' \
   '      :'
 
 # --- swift layer -------------------------------------------------------------
 
-gate eyes-box-overflows scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate eyes-box-overflows plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   'b[0] <= dims.w - b[2], b[1] <= dims.h - b[3] else {' \
   'b[0] + b[2] <= dims.w, b[1] + b[3] <= dims.h else {'
 
 # Without the palette guard, the CR/LF fixture is not "accepted": it traps in
 # synthBlinkFrame (exit 133) — the byte fast path counted its row as 8 cells,
 # the grapheme walk builds 7, and the eye box indexes the 8th.
-gate crlf-palette-key scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate crlf-palette-key plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   '        guard ch != "\r", ch != "\n" else {
             throw PetError("palette keys must not be CR/LF line-break characters")
         }' \
@@ -311,7 +311,7 @@ gate crlf-palette-key scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-c
 # meeting) crosses the staleness cutoff beside a provably live owner, and the
 # pet self-terminates 30 seconds later with only SessionStart able to bring
 # it back.
-gate live-owner-ignored scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate live-owner-ignored plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '            owners.insert(pid)
             live = true
             continue' \
@@ -319,63 +319,63 @@ gate live-owner-ignored scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-
 
 # A clamp that never fires restores a saved origin onto a display that is no
 # longer there — menu, tap and drag all unreachable.
-gate stranded-restore-unclamped scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate stranded-restore-unclamped plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    guard !screens.contains(where: { $0.intersects(frame) }), let vf = home else { return nil }' \
   '    guard screens.isEmpty, let vf = home else { return nil }'
 
-gate blank-frame-collapses scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate blank-frame-collapses plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   'frames.compactMap { $0.firstIndex { $0.contains { $0 != nil } } }.min()' \
   'frames.map { $0.firstIndex { $0.contains { $0 != nil } } ?? 0 }.min()'
 
 # The scale bounds, dropped: 0.9 and 4.1 then load fine, and the failure the
 # range exists for — a pet scaled to nothing or to four screens — arrives with
 # no error anywhere, on a value the author probably fat-fingered.
-gate scale-range-unguarded scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate scale-range-unguarded plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   'guard let n = s as? Double, (1.0...4.0).contains(n) else {' \
   'guard let n = s as? Double else {'
 
 # The report regressed to the Int() cast: --validate calls 1.4 "@1x", which is
 # the one report an author has about their own scale, wrong by up to a third.
-gate scale-report-truncated scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate scale-report-truncated plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   '            let scaleText = pet.scale == pet.scale.rounded()
                 ? "\(Int(pet.scale))" : "\(pet.scale)"' \
   '            let scaleText = "\(Int(pet.scale))"'
 
-gate rescue-swallowed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate rescue-swallowed plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    try migrateLoosePet(root: root)' \
   '    try? migrateLoosePet(root: root)'
 
 # An adopt that stops recording the pick-time bytes leaves cmd_up's refresh
 # with no proof for any future pick — the machinery stays green while every
 # new pick quietly re-ships the frozen-at-pick-time bug.
-gate adopt-records-nothing scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate adopt-records-nothing plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '        try? fm.copyItem(at: src, to: snap)' \
   '        _ = snap'
 
-gate nudge-never-fires scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate nudge-never-fires plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    if wasLooking, nudged != display { return (true, display) }' \
   '    if false, nudged != display { return (true, display) }'
 
-gate state-leash-unclamped scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate state-leash-unclamped plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '        let ttl = min(moodTTL[s.mood] ?? 0, 300)' \
   '        let ttl = moodTTL[s.mood] ?? 0'
 
 # The patience meter quietly removed: waitAge answers nil forever and every
 # surface shows a bare "waiting for you…" — green everywhere except the one
 # assertion that asks for the number.
-gate wait-age-never-shows scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate wait-age-never-shows plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    return m >= 1 ? "\(m)m" : nil' \
   '    return nil'
 
 # Friction dropped from the skid: the launch speed never bleeds, so a flick
 # glides until the screen edge stops it — every release ends at a wall.
-gate skid-friction-dropped scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate skid-friction-dropped plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    var dx = v.dx * SKID_DECAY, dy = v.dy * SKID_DECAY' \
   '    var dx = v.dx, dy = v.dy'
 
 # The clamp keeps the axis speed it just cancelled: the pet pins itself
 # against the screen edge at full velocity instead of running the wall.
-gate skid-edge-keeps-speed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate skid-edge-keeps-speed plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    if cx != x { dx = 0; x = cx }' \
   '    if cx != x { x = cx }'
 
@@ -383,30 +383,30 @@ gate skid-edge-keeps-speed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-sessi
 # appears during the first minute and vanishes when the counter arrives —
 # a status that changes width by the clock, on the half of the line that
 # promises never to truncate.
-gate bubble-budget-unreserved scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate bubble-budget-unreserved plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '        if advances(withTool) + advances(" · 59m") <= STATUS_BUDGET { s = withTool }' \
   '        if advances(withTool) <= STATUS_BUDGET { s = withTool }'
 
 # A captionless top session borrowing the next row's caption: the face reports
 # one session while the bubble quotes another, with nothing saying so.
-gate caption-borrowed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+gate caption-borrowed plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '            top.say ?? "")' \
   '            top.say ?? rows.lazy.compactMap { $0.say }.first ?? "")'
 
-gate mirror-without-consent scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
+gate mirror-without-consent plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   'flipped: s.mirror && dragFacingLeft)' \
   'flipped: dragFacingLeft)'
 
 # The shear stacked back onto a mirrored drag: every shipped pet mirrors its
 # drag, so this mutant is the block that slides out of the face and swaps
 # sides with the drag direction — on every pet, silently.
-gate lean-stacks-on-mirrored-drag scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
+gate lean-stacks-on-mirrored-drag plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   '        if seq?.kind == .drag, activePet.sequences[.drag]?.mirror == true { ln = 0 }' \
   '        '
 
 # The carve-out widened to every drag: a direction-blind drag loses its only
 # direction signal, and only the unmirrored control can see that.
-gate lean-lost-on-unmirrored-drag scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
+gate lean-lost-on-unmirrored-drag plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   '        if seq?.kind == .drag, activePet.sequences[.drag]?.mirror == true { ln = 0 }' \
   '        if seq?.kind == .drag { ln = 0 }'
 
@@ -414,14 +414,14 @@ gate lean-lost-on-unmirrored-drag scripts/pet.swift PERCHLING_PET_SWIFT tools/ru
 # different one per process. The case asserts BOTH that eight runs agree and
 # that they name `done`, the alphabetically first — agreement alone would let a
 # lucky unsorted run pass.
-gate moods-walk-unordered scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate moods-walk-unordered plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   'for (key, rows) in moodsRaw.sorted(by: { $0.key < $1.key }) {' \
   'for (key, rows) in moodsRaw {'
 
 # No pet.json IS the built-in — removing the link is what `useBuiltIn` does — so
 # the old behaviour described a healthy install as broken and put the format's
 # only reference behind writing 460KB to disk first.
-gate no-petjson-reports-broken scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate no-petjson-reports-broken plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   '        let useBuiltinText = argv.count < 3
             && (try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil' \
   '        let useBuiltinText = false'
@@ -429,14 +429,14 @@ gate no-petjson-reports-broken scripts/pet.swift PERCHLING_PET_SWIFT tools/run-m
 # The other direction on the same line. `fileExists` FOLLOWS the link, so a
 # dangling pet.json reads as absent and gets answered with a cheerful OK about
 # the built-in — a broken install reported as healthy.
-gate dangling-petjson-masked scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+gate dangling-petjson-masked plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   '(try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil' \
   '!FileManager.default.fileExists(atPath: installed.path)'
 
 # The art check globs examples/ with no override, so the one grid a mutant can
 # reach is the placeholder embedded in pet.swift: one eye pixel reopened inside
 # its outline is a hole the desktop shows through.
-gate art-hole-unnoticed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-art-checks.sh \
+gate art-hole-unnoticed plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-art-checks.sh \
   '"bbbkwkbbbbkwkbbb",' \
   '"bbbk.kbbbbkwkbbb",'
 
@@ -450,7 +450,7 @@ gate art-hole-unnoticed scripts/pet.swift PERCHLING_PET_SWIFT tools/run-art-chec
 # this comment, none did. A gate case that fails only sometimes teaches people
 # to re-run the gate, which is worse than not having the case.
 
-gate binre-unescaped scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+gate binre-unescaped plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
   "BIN_RE=\$(printf '%s' \"\$BIN\" | sed 's/[][(){}.*+?^\$|\\\\]/\\\\&/g')" \
   'BIN_RE="$BIN"'
 
@@ -461,7 +461,7 @@ gate binre-unescaped scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
 # positive control (a stub genuinely live at $BIN must produce a HIT) can go
 # red here: the delegated running() works fine inside pet.sh itself, so every
 # launch scenario stays green against this mutant.
-gate running-delegated scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+gate running-delegated plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
   'running() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }' \
   'running() { __rn; }
 __rn() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }'
@@ -474,7 +474,7 @@ __rn() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }'
 # lock is absent, fresh, or empty, and an empty one `rmdir`s fine. The
 # replacement keeps the `2>/dev/null` because the line above ends in `&&` — the
 # mutant has to stay a valid right-hand side, not merely a different string.
-gate wedged-lock-never-cleared scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+gate wedged-lock-never-cleared plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
   '      { rmdir "$lock" 2>/dev/null || mv "$lock" "$ROOT/.launch.wedged.$$" 2>/dev/null; }' \
   '      rmdir "$lock" 2>/dev/null'
 
@@ -490,7 +490,7 @@ gate gitattributes-lf-pin-gone .gitattributes PERCHLING_GITATTRIBUTES tools/run-
 # a checkout older than the pin. One CR on the shebang is enough to make bash
 # read `#!/bin/bash\r` and is the smallest mutant that proves the byte check
 # runs; the pin assertion cannot see it, which is why these are two lines.
-gate hook-script-carries-cr scripts/state.sh PERCHLING_STATE_SH tools/run-release-checks.sh \
+gate hook-script-carries-cr plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-release-checks.sh \
   '#!/bin/bash' \
   $'#!/bin/bash\r'
 
@@ -507,7 +507,7 @@ gate readme-width-drifts README.md PERCHLING_README tools/run-release-checks.sh 
 
 # The icon renamed or moved while plugin.json keeps the old path: nothing an
 # install can see breaks, and the directory listing quietly loses its picture.
-gate icon-path-dangles .claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
+gate icon-path-dangles plugin/.claude-plugin/plugin.json PERCHLING_PLUGIN_JSON tools/run-release-checks.sh \
   '"icon": "./.claude-plugin/icon.png"' \
   '"icon": "./.claude-plugin/icon-renamed.png"'
 
@@ -538,7 +538,7 @@ gate readme-row-count-drifts README.md PERCHLING_README tools/run-release-checks
 # hooks.json with no file behind it. Only the first of eight state.sh references
 # is replaced and that is enough, because the check collects a SET of paths and
 # one unreachable member reds it.
-gate hook-path-renamed hooks/hooks.json PERCHLING_HOOKS_JSON tools/run-release-checks.sh \
+gate hook-path-renamed plugin/hooks/hooks.json PERCHLING_HOOKS_JSON tools/run-release-checks.sh \
   '/scripts/state.sh' \
   '/scripts/state-renamed.sh'
 

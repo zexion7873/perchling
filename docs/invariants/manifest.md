@@ -7,7 +7,7 @@ layer belong HERE, written the same way: what was measured, what it rules out,
 and what the alternative lost to.
 
 - **There is no drawing code, and as of 1.14 there is no embedded art either.**
-  The built-in is a pet in `examples/`, named by `PERCHLING_BUILTIN` and
+  The built-in is a pet in `plugin/examples/`, named by `PERCHLING_BUILTIN` and
   defaulting to `husky`, parsed through the same
   `loadCustomPet` a user's `pet.json` goes through, and `--export` hands the
   loaded TEXT straight back — so the export is an exact round-trip rather than a
@@ -41,7 +41,7 @@ and what the alternative lost to.
   What is still embedded is `PLACEHOLDER_MANIFEST`, 1.8KB, and it renders only
   when that file is missing or will not parse. Both mean a broken install rather
   than a choice, so it is deliberately plain — do not improve it into something
-  that looks chosen. Do not park a copy of the husky under `examples/` either: a
+  that looks chosen. Do not park a copy of the husky under `plugin/examples/` either: a
   copy can drift from the file the app renders, and nothing would see it. The whole
   programmatic engine that used to draw the robot — `Ink`, its palette,
   `buildBase`, `lathe`, `shade`, `cell`, `merge`, `rrect`, and the `eyeRects` /
@@ -160,9 +160,9 @@ and what the alternative lost to.
   segments grapheme clusters on every pixel, and a pet is tens of thousands of
   them: that walk alone was 140ms of a 220ms parse, against 3.7ms for the same
   walk over `row.utf8`. **Every aggregate in this bullet was measured against a
-  twelve-file `examples/`; six ship today**, so treat the totals as upper
+  twelve-file `plugin/examples/`; six ship today**, so treat the totals as upper
   bounds and the per-pet figures as the part that transfers. It matters
-  because `petChoices()` parses EVERY manifest in `examples/` and `pets/`
+  because `petChoices()` parses EVERY manifest in `plugin/examples/` and `pets/`
   synchronously on the main thread before the Pets menu can be drawn — 220ms of
   right-click latency that no user could mistake for anything but a hang. The
   whole parse is now 44ms. Three things about the shape of that fix.

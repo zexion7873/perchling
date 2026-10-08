@@ -13,9 +13,10 @@
 # CLIs say `Invalid key in record`, 2.1.258 says `unknown hook event`.
 # `claude plugin validate` runs the same schema the runtime does.
 #
-# It has to run against a copy: pointed at this repo it finds
+# Pointed at `plugin/`, never at the repo: `claude plugin validate .` finds
 # .claude-plugin/marketplace.json first and validates that instead, never
-# reaching hooks.json. The copy carries plugin.json and hooks/ and nothing else.
+# reaching hooks.json. The mutation half works on a copy carrying plugin.json
+# and hooks/ and nothing else, so the real file is never edited.
 #
 # The mutation half is what proves the check is live rather than silently
 # skipping — and it has now caught the validator's wording changing under it
@@ -33,14 +34,10 @@ SCRATCH="$(mktemp -d)" || exit 1
 [ -n "$SCRATCH" ] || exit 1
 trap 'rm -rf "$SCRATCH"' EXIT
 
-mkdir -p "$SCRATCH/plugin/.claude-plugin" || exit 1
-cp .claude-plugin/plugin.json "$SCRATCH/plugin/.claude-plugin/" || exit 1
-cp -R hooks "$SCRATCH/plugin/" || exit 1
-
 fail=0
 VERSION="$(claude --version)"
 
-claude plugin validate "$SCRATCH/plugin" > "$SCRATCH/real.log" 2>&1
+claude plugin validate plugin > "$SCRATCH/real.log" 2>&1
 if grep -qE 'Invalid key in record|unknown hook event' "$SCRATCH/real.log"; then
   echo "FAIL: hooks/hooks.json declares an event $VERSION does not know."
   echo "      That entry is dead here, and on a CLI old enough, so is every"
@@ -53,6 +50,9 @@ fi
 
 # Mutation: a key no CLI version can know must be rejected. Without this a
 # validator that quietly stopped running would leave the check above green.
+mkdir -p "$SCRATCH/plugin/.claude-plugin" || exit 1
+cp plugin/.claude-plugin/plugin.json "$SCRATCH/plugin/.claude-plugin/" || exit 1
+cp -R plugin/hooks "$SCRATCH/plugin/" || exit 1
 python3 - "$SCRATCH/plugin/hooks/hooks.json" <<'PY'
 import json, sys
 p = sys.argv[1]
