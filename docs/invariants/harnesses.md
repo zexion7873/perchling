@@ -22,7 +22,7 @@ Verify without launching:
   to keep. The built-in's art has been a file since 1.14.)
   This exercises the real `draw()`, so what you see is what ships.
   `tools/moods-gif.swift` is a worked example of the same cut, and
-  `tools/social-card.swift` a second. Give the view no window: `gazeVector()`
+  `tools/social-card.swift` and `tools/icon.swift` two more. Give the view no window: `gazeVector()`
   returns neutral without one, whereas a view in a window aims its pupils at
   wherever the mouse happens to be, which is how a render stops
   being reproducible. Blit the cached `CGImage` with `interpolationQuality`

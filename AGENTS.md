@@ -124,6 +124,7 @@ bash scripts/pet.sh status    # binary / process / state / session count
 bash scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh   [OUT.gif]  # README hero; NO ARG OVERWRITES docs/moods.gif
 bash tools/make-social-card.sh [OUT.png]  # social preview; NO ARG OVERWRITES docs/social-card.png
+bash tools/make-icon.sh        [OUT.png]  # directory icon; NO ARG OVERWRITES .claude-plugin/icon.png
 bash tools/run-session-harness.sh  # 156 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
@@ -135,7 +136,7 @@ bash tools/run-prune-checks.sh     # cmd_up retires stale refcounts and keeps li
 bash tools/run-library-refresh.sh  # a picked pet takes shipped updates only while provably untouched
 bash tools/run-art-checks.sh       # no shipped pet has a hole the desktop shows through
 bash tools/run-toggle-checks.sh    # disable / enable / wake, and the off-macOS fence
-bash tools/run-release-checks.sh   # manifests parse, version holds, LF, hero width, pet count, hook paths
+bash tools/run-release-checks.sh   # manifests parse, version holds, icon, LF, hero width, pet count, hook paths
 bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -153,7 +154,7 @@ exactly the defect it names and shown to FAIL. That is the only reason to
 believe any of them, and the escape test described beside them is what makes a
 red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs that argument as one command: sixty-four
+`tools/run-mutation-gate.sh` runs that argument as one command: sixty-five
 mutants generated from HEAD — never a committed copy, which drifts silently —
 each asserted to red the harness it is named after. A new harness assertion
 needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's
@@ -203,19 +204,24 @@ The format `--export` round-trips, and the exact serialisation anything writing
 a manifest must match, are in
 [docs/invariants/manifest.md](docs/invariants/manifest.md).
 
-Three artifacts go stale behind an art change, and they do not share a trigger.
-The built-in's art moving or `draw()` changing stales `docs/moods.gif` AND
-`docs/social-card.png`; `plugin.json`'s description stales the card alone.
-Only one of the three fails loudly: `run-release-checks.sh` holds the README's
-`width=` to the GIF's real header, so a hero regenerated at a new size with the
-README left behind reds the gate instead of resampling the pixel art into mush
-in every reader's browser. Nothing compares either image against a fresh render.
-Both tools decode their own output before exiting 0, so a green run means the
-file is right — but byte-reproducibility holds per MACHINE only (the GIF tool
-ships a measured ±1-per-channel tolerance), which is why CI refuses to `cmp` the
-committed file. The card tool promises nothing about the text beside the pet.
-And the card has one step nothing here does: GitHub takes the social preview
-only through Settings → General → Social preview, so a regenerated PNG is not
-live until someone uploads it there. That omission is detectable after the fact
-— the `og:image` GitHub serves IS the uploaded bytes — but never as a merge
-gate.
+Four artifacts go stale behind an art change, and they do not share a trigger.
+The built-in's art moving or `draw()` changing stales `docs/moods.gif`,
+`docs/social-card.png` AND `.claude-plugin/icon.png`; `plugin.json`'s
+description stales the card alone. Only one of the four fails loudly:
+`run-release-checks.sh` holds the README's `width=` to the GIF's real header,
+so a hero regenerated at a new size with the README left behind reds the gate
+instead of resampling the pixel art into mush in every reader's browser.
+Nothing compares any image against a fresh render. All three tools decode their
+own output before exiting 0, so a green run means the file is right — but
+byte-reproducibility holds per MACHINE only (the GIF tool ships a measured
+±1-per-channel tolerance), which is why CI refuses to `cmp` the committed file.
+The card tool promises nothing about the text beside the pet. And the card has
+one step nothing here does: GitHub takes the social preview only through
+Settings → General → Social preview, so a regenerated PNG is not live until
+someone uploads it there. That omission is detectable after the fact — the
+`og:image` GitHub serves IS the uploaded bytes — but never as a merge gate. The
+icon is the listing picture in Anthropic's plugin directory, named by
+`plugin.json`'s `icon`, which Claude Code itself never reads; the directory
+portal took it from a listing's first save, so add or replace it before that.
+CI does not run its tool: it binds the same `pet.swift` symbols the card's
+does.
