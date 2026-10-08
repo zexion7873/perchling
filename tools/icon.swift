@@ -1,4 +1,4 @@
-// Renders .claude-plugin/icon.png — the plugin directory's listing icon — from
+// Renders plugin/.claude-plugin/icon.png — the plugin directory's listing icon — from
 // the real draw(), appended to pet.swift's body by tools/make-icon.sh. Same
 // cut and same reason as social-card.swift: an icon drawn from anything but
 // PetView.draw() is a second drawing of the pet, and second drawings drift.
@@ -17,7 +17,7 @@ let TICK = 5
 let BG = NSColor(srgbRed: 0x1c / 255, green: 0x23 / 255, blue: 0x33 / 255, alpha: 1)
 
 let outURL = URL(fileURLWithPath: CommandLine.arguments.count > 1
-                 ? CommandLine.arguments[1] : ".claude-plugin/icon.png")
+                 ? CommandLine.arguments[1] : "plugin/.claude-plugin/icon.png")
 
 func die(_ msg: String) -> Never {
     FileHandle.standardError.write((msg + "\n").data(using: .utf8)!)

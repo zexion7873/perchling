@@ -10,12 +10,12 @@ Use [GitHub's private vulnerability reporting](https://github.com/zexion7873/per
 
 This is a one-person project. You will get a first response within a few days,
 not within hours, and the fix ships as a version bump in
-`.claude-plugin/plugin.json` — nothing else reaches an install.
+`plugin/.claude-plugin/plugin.json` — nothing else reaches an install.
 
 ## Supported versions
 
 The latest published version only. There are no maintenance branches, and tags
-play no part: whatever `.claude-plugin/plugin.json` says on `main` is what
+play no part: whatever `plugin/.claude-plugin/plugin.json` says on `main` is what
 `claude plugin update` hands out, and older versions are never patched.
 
 ## What this plugin actually does on your machine
@@ -23,9 +23,9 @@ play no part: whatever `.claude-plugin/plugin.json` says on `main` is what
 Worth knowing before you decide whether something is in scope. Installing it
 puts three things on your disk:
 
-- **Hook scripts** (`scripts/state.sh`, `scripts/pet.sh`) that Claude Code runs
+- **Hook scripts** (`plugin/scripts/state.sh`, `plugin/scripts/pet.sh`) that Claude Code runs
   on session and tool-use events, with the hook payload on stdin.
-- **A Swift binary** compiled on your machine from `scripts/pet.swift` and run
+- **A Swift binary** compiled on your machine from `plugin/scripts/pet.swift` and run
   as an accessory app. It draws an overlay window and reads a menu.
 - **A runtime home** at `${CLAUDE_CONFIG_DIR:-~/.claude}/perchling` holding the
   binary, the session refcounts, and the active pet manifest.

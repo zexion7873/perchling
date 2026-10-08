@@ -13,7 +13,7 @@
 # is deliberately NOT a copy of the real binary — that copy is an executable
 # that stays alive by opening a pet window on the user's desktop.
 set -uo pipefail
-PET_SH="${PERCHLING_PET_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/pet.sh}"
+PET_SH="${PERCHLING_PET_SH:-$(cd "$(dirname "$0")/.." && pwd)/plugin/scripts/pet.sh}"
 
 W=$(mktemp -d)
 stub=""

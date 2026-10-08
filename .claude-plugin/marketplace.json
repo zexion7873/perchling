@@ -3,10 +3,11 @@
   "owner": {
     "name": "Kevin Lin"
   },
+  "description": "Perchling: a tiny native desktop pet that reacts to Claude Code. macOS only.",
   "plugins": [
     {
       "name": "perchling",
-      "source": "./",
+      "source": "./plugin",
       "description": "A tiny native desktop pet that perches on your screen and reacts to Claude Code — running, waiting, done, error. Swift binary, zero dependencies, no Electron. macOS only."
     }
   ]

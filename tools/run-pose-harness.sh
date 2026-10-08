@@ -22,7 +22,7 @@ export PERCHLING_HOME="$SCRATCH/home"
 # coverage would otherwise depend on the machine's accessibility state — and
 # GitHub's runners ship with Reduce Motion ON, where every sequence assertion
 # would fail for a reason that has nothing to do with the rule under test.
-src="${PERCHLING_PET_SWIFT:-scripts/pet.swift}"
+src="${PERCHLING_PET_SWIFT:-plugin/scripts/pet.swift}"
 # The cut marker is guarded the way the sibling cut scripts guard theirs: an
 # awk pattern that no longer matches passes the WHOLE file through, both sed
 # guards below still land, the concatenation compiles — and running it

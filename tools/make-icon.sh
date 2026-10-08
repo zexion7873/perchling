@@ -1,5 +1,5 @@
 #!/bin/bash
-# Regenerate .claude-plugin/icon.png — the plugin directory's listing icon,
+# Regenerate plugin/.claude-plugin/icon.png — the plugin directory's listing icon,
 # named by plugin.json's `icon` — from this checkout's pet.swift. Same cut as
 # make-social-card.sh, for the same reason: the icon has to show the pet the
 # shipped draw() draws.
@@ -7,8 +7,8 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
-src="$repo/scripts/pet.swift"
-out="${1:-$repo/.claude-plugin/icon.png}"
+src="$repo/plugin/scripts/pet.swift"
+out="${1:-$repo/plugin/.claude-plugin/icon.png}"
 
 command -v swiftc >/dev/null || { echo "needs Xcode Command Line Tools (swiftc)" >&2; exit 1; }
 
@@ -30,5 +30,5 @@ cat "$here/icon.swift" >> "$work/gen.swift"
 swiftc -O -o "$work/gen" "$work/gen.swift"
 # Render from this checkout's art, never from whatever the user has installed.
 mkdir -p "$work/home"
-cp "$repo/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
+cp "$repo/plugin/examples/${PERCHLING_BUILTIN:-husky}.json" "$work/home/builtin.json"
 PERCHLING_HOME="$work/home" "$work/gen" "$out"

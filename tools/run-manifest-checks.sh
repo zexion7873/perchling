@@ -16,7 +16,7 @@ export PERCHLING_HOME="$SCRATCH/home"
 
 echo "compiling..."
 # Takes PERCHLING_PET_SWIFT so it can be pointed at a mutant and shown to FAIL.
-swiftc -O "${PERCHLING_PET_SWIFT:-scripts/pet.swift}" -o "$SCRATCH/perchling" || exit 1
+swiftc -O "${PERCHLING_PET_SWIFT:-plugin/scripts/pet.swift}" -o "$SCRATCH/perchling" || exit 1
 BIN="$SCRATCH/perchling"
 
 # One 8x8 pet, two poses. 8 is the smallest canvas the parser accepts.

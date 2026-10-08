@@ -175,7 +175,7 @@ live within a second. No rebuild, no restart, no image files.
 > retro look; a grid twice as wide at `"scale": 2` fills about the same corner
 > of your screen with four times the detail.
 
-The format lives in [`skills/draw-pet/SKILL.md`](skills/draw-pet/SKILL.md).
+The format lives in [`plugin/skills/draw-pet/SKILL.md`](plugin/skills/draw-pet/SKILL.md).
 
 ### 👁️ Eyes that follow
 
@@ -255,7 +255,7 @@ built-in. The examples that ship with the plugin are listed there too, and get
 copied into your library the first time you pick one. A copy you have not
 edited keeps up with plugin updates on its own; the moment you edit it, it is
 yours and updates never touch it again. Six ship in
-[`examples/`](examples/), all animals that animate every mood and every
+[`plugin/examples/`](plugin/examples/), all animals that animate every mood and every
 reaction — `husky`, `otter` and `chinchilla` on land, `whale`, `shark` and
 `sea-lion` in the water. Only five have a row: whichever is currently the
 built-in is the creature you already have.
