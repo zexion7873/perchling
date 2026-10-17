@@ -23,6 +23,15 @@
 > this repository is the marketplace people install from — and releases are cut
 > separately.
 
+## Merge danger
+
+<!-- Door: two-way if reverting this PR undoes it; one-way if it cannot be
+     walked back (data deleted or rewritten, something published). Blast
+     radius: who or what breaks if this is wrong. -->
+
+- **Door:**
+- **Blast radius:**
+
 ## Docs this makes stale
 
 <!-- Which docs does this change invalidate? "None" is a fine answer — say it
