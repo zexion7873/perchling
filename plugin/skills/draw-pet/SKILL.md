@@ -231,8 +231,8 @@ Rules the loader enforces:
 
 ## Worked examples
 
-**Do not read a file under `examples/` whole.** The six that ship are 460–603 KB
-and 3,900–4,700 lines each — one of them will not fit in your context, and the
+**Do not read a file under `examples/` whole.** Each one that ships is 460–603 KB
+and 3,900–4,700 lines — one of them will not fit in your context, and the
 one thing you would learn from the whole file is what a wall of row strings looks
 like. Two sources, and which one you want depends on the question:
 
@@ -253,12 +253,11 @@ like. Two sources, and which one you want depends on the question:
   hands back every row, and the only reason to print it is that you are about to
   edit those rows.
 
-- **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — `otter`, `chinchilla`, `whale`,
-  `shark`, `sea-lion`. Five animals on scale-1 grids with a fractional
-  `scale` bringing each to a ~90-point creature height, each declaring all
-  eight sequences off five frames apiece. The husky is one of them and is also the
-  built-in, which is why it has no row of its own — the built-in row already is
-  it.
+- **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — list the directory for what
+  ships. Animals on scale-1 grids with a fractional `scale` bringing each to a
+  ~90-point creature height, each declaring all eight sequences off five frames
+  apiece. One of them is also the built-in, which is why it has no row of its
+  own — the built-in row already is it.
 
   **Read them for FORMAT, never for art.** They were quantised from raster
   renders: 44 inks each, and 20–40% of their pixels match none of their eight
@@ -280,8 +279,8 @@ like. Two sources, and which one you want depends on the question:
   timeline, so a window from there shows a whole sequence block without its
   rows.
 
-  The three land animals stand upright and are sized off their height (92–110
-  wide); the three sea animals are long and horizontal, so all three hit the 128
+  The land animals stand upright and are sized off their height (92–110
+  wide); the sea animals are long and horizontal, so they hit the 128
   ceiling on width and come out shorter instead — which is what a pet looks like
   when the canvas budget binds on the other axis.
 

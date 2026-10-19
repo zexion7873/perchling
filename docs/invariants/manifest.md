@@ -160,7 +160,7 @@ and what the alternative lost to.
   segments grapheme clusters on every pixel, and a pet is tens of thousands of
   them: that walk alone was 140ms of a 220ms parse, against 3.7ms for the same
   walk over `row.utf8`. **Every aggregate in this bullet was measured against a
-  twelve-file `plugin/examples/`; six ship today**, so treat the totals as upper
+  twelve-file `plugin/examples/`, more than ship**, so treat the totals as upper
   bounds and the per-pet figures as the part that transfers. It matters
   because `petChoices()` parses EVERY manifest in `plugin/examples/` and `pets/`
   synchronously on the main thread before the Pets menu can be drawn — 220ms of

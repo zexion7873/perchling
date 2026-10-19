@@ -256,11 +256,10 @@ active — **right-click the pet and open Pets** to switch, or to go back to the
 built-in. The examples that ship with the plugin are listed there too, and get
 copied into your library the first time you pick one. A copy you have not
 edited keeps up with plugin updates on its own; the moment you edit it, it is
-yours and updates never touch it again. Six ship in
-[`plugin/examples/`](plugin/examples/), all animals that animate every mood and every
-reaction — `husky`, `otter` and `chinchilla` on land, `whale`, `shark` and
-`sea-lion` in the water. Only five have a row: whichever is currently the
-built-in is the creature you already have.
+yours and updates never touch it again. The ones in
+[`plugin/examples/`](plugin/examples/) are all animals that animate every mood
+and every reaction. The built-in has no row of its own: it is the creature you
+already have.
 
 Remix the default instead of starting from a blank grid. Writing it straight
 into the library puts it in the menu:

@@ -106,7 +106,7 @@ and what the alternative lost to.
   declare no `tap`, and `mouseUp` arms exactly one of the two.
 
   **No shipped pet is one of those, so `hopUntil` is live code that the repo's
-  own art never reaches.** Verified by parsing all six: chinchilla, husky,
+  own art never reaches.** Verified by parsing each one: chinchilla, husky,
   otter, sea-lion, shark and whale each declare `done, drag, error, hover,
   idle, running, tap, waiting`. Both arming sites are therefore unreachable
   here — the `else` at the `mouseUp` site needs no `tap`, and the arrival hop

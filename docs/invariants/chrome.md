@@ -85,7 +85,7 @@ and what the alternative lost to.
   so does deleting all 133 detached blobs in the manifest. Reaching 21 means
   flattening the spray and dropping the flipper, which is deleting the
   celebration, so the 15 rows are an accepted cost and the art stays. Nor is
-  sea-lion an outlier: on all six shipped pets a `done` frame sits at the top
+  sea-lion an outlier: on every pet measured a `done` frame sits at the top
   row, and at 1x the lifts are shark 18, whale 17, sea-lion 15, chinchilla 8,
   husky 1, otter 1. Re-measure this row rather than trusting it: it is a
   measurement with nothing checking it, and chinchilla's silently went 11 -> 8
