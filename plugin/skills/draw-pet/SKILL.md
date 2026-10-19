@@ -279,8 +279,8 @@ like. Two sources, and which one you want depends on the question:
   timeline, so a window from there shows a whole sequence block without its
   rows.
 
-  The three land animals stand upright and are sized off their height (92–110
-  wide); the three sea animals are long and horizontal, so all three hit the 128
+  The land animals stand upright and are sized off their height (92–110
+  wide); the sea animals are long and horizontal, so they hit the 128
   ceiling on width and come out shorter instead — which is what a pet looks like
   when the canvas budget binds on the other axis.
 
