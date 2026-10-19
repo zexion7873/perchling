@@ -149,7 +149,7 @@ bash tools/run-prune-checks.sh     # cmd_up retires stale refcounts and keeps li
 bash tools/run-library-refresh.sh  # a picked pet takes shipped updates only while provably untouched
 bash tools/run-art-checks.sh       # no shipped pet has a hole the desktop shows through
 bash tools/run-toggle-checks.sh    # disable / enable / wake, and the off-macOS fence
-bash tools/run-release-checks.sh   # manifests parse, version holds, icon, LF, hero width, pet count, hook paths
+bash tools/run-release-checks.sh   # manifests parse, version holds, icon, LF, hero width, hook paths
 bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate plugin/examples/otter.json
 ~/.claude/perchling/bin/perchling --export > /tmp/draft.json
@@ -167,7 +167,7 @@ exactly the defect it names and shown to FAIL. That is the only reason to
 believe any of them, and the escape test described beside them is what makes a
 red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs that argument as one command: sixty-five
+`tools/run-mutation-gate.sh` runs that argument as one command: sixty-three
 mutants generated from HEAD — never a committed copy, which drifts silently —
 each asserted to red the harness it is named after. A new harness assertion
 needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's
@@ -198,20 +198,16 @@ again, bind the guard to the shipped file and nothing else — a copy parked und
 `plugin/examples/` puts the check one indirection from what ships.
 
 `tools/run-art-checks.sh` is the one check that exists. It globs
-`plugin/examples/*.json`, so a seventh pet is covered the moment it lands, and it
+`plugin/examples/*.json`, so a new pet is covered the moment it lands, and it
 answers exactly one question — is any transparent pixel unreachable from the
 border — because that one is decidable without knowing what the art should look
 like. A featureless blob passes it. It is not a substitute for rendering a frame
 and looking at it.
 
-Adding a pet that is NOT the built-in reds two files and stales several more.
-`run-release-checks.sh` pins `README.md`'s two prose counts to the size of
-`plugin/examples/`, and `run-mutation-gate.sh` quotes those same counts as anchors, so
-both go red until the sentence is updated — the gate says "anchor not found",
-not "count wrong". Nothing pins the six pet names beside them, or the same
-counts repeated in `plugin/skills/draw-pet/SKILL.md`, `docs/invariants/manifest.md`,
-`docs/invariants/chrome.md` and `run-manifest-checks.sh`. Each pet also carries
-its own fractional `scale` tuned so it lands near 90pt.
+Adding a pet that is NOT the built-in is dropping one JSON into
+`plugin/examples/`: no prose names how many ship or which, so nothing goes
+stale, and a doc that needs the roster says to list the directory. Each pet
+carries its own fractional `scale` tuned so it lands near 90pt.
 
 The format `--export` round-trips, and the exact serialisation anything writing
 a manifest must match, are in
