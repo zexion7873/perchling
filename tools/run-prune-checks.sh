@@ -51,7 +51,9 @@ touch -t 202608190100 "$W/cfg/perchling/.sess.111"
 
 "$W/cfg/perchling/bin/perchling" & stub=$!
 sleep 0.2
-CLAUDE_CONFIG_DIR="$W/cfg" bash "$W/scripts/pet.sh" up newsession >/dev/null 2>&1
+# umask 022 is the common default; the session file written below must come
+# out owner-only whatever umask the hook inherited.
+( umask 022; CLAUDE_CONFIG_DIR="$W/cfg" bash "$W/scripts/pet.sh" up newsession >/dev/null 2>&1 )
 sleep 0.4
 
 [ ! -e "$S/stale-owned" ] \
@@ -74,6 +76,10 @@ sleep 0.4
 [ -e "$S/newsession" ] \
   && ok "the starting session is written" \
   || no "the starting session is written"
+mode=$(stat -f '%Lp' "$S/newsession" 2>/dev/null)
+[ "$mode" = 600 ] \
+  && ok "and is readable only by its owner" \
+  || no "and is readable only by its owner" "mode ${mode:-missing}"
 [ -e "$O/fresh" ] \
   && ok "a live session keeps its owner" \
   || no "a live session keeps its owner"

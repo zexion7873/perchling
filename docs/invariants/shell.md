@@ -318,6 +318,16 @@ alone cleans up, exactly once.
   only the files the pulled commits touch — so an install cloned before the
   attribute keeps CRLF in every untouched file until it is removed and re-added,
   and any future fix to line endings must touch the scripts it means to repair.
+- **Both writers of `sessions/<sid>` set `umask 077`, and only the second one
+  used to.** `pet.sh up` runs first at `SessionStart`: it creates the runtime
+  home, `sessions/` and `owners/`, writes the session file with the project
+  path, and launches the overlay, which creates directories of its own. Under
+  the hook's inherited umask (022 on a stock Mac) that left 755 directories and
+  a 644 session file until `state.sh` rewrote it, against `PRIVACY.md`'s
+  owner-only promise. `run-prune-checks.sh` runs `up` under `umask 022` and
+  asserts 600. `mkdir -p` never tightens a directory that already exists, so an
+  install created before the fix keeps 755 directories; only the files are
+  rewritten owner-only.
 - **Off macOS the hooks stay silent and a person gets told.** `up` and `down`
   are what the hooks run, so they exit 0 without a word everywhere the plugin
   installs. `status`, `stop`, `disable`, `enable`, `wake` and `build` are

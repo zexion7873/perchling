@@ -124,6 +124,12 @@ gate retired-say-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-che
   '  rm -f "$ROOT/say"' \
   '  :'
 
+# SessionStart writes the session file before state.sh ever runs, so without
+# this the project path sits world-readable under the hook's default umask.
+gate up-session-world-readable plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'umask 077' \
+  ':'
+
 # A hook killed mid-write keeps its caption on disk in a temp nothing reads,
 # for good.
 gate orphan-temp-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
