@@ -130,6 +130,10 @@ gate up-session-world-readable plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-
   'umask 077' \
   ':'
 
+gate up-home-left-open plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'chmod 700 "$ROOT" 2>/dev/null' \
+  ':'
+
 # A hook killed mid-write keeps its caption on disk in a temp nothing reads,
 # for good.
 gate orphan-temp-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \

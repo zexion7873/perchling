@@ -152,7 +152,7 @@ bash tools/run-toggle-checks.sh    # disable / enable / wake, and the off-macOS 
 bash tools/run-release-checks.sh   # manifests parse, version holds, icon, LF, hero width, hook paths
 bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate plugin/examples/otter.json
-~/.claude/perchling/bin/perchling --export > /tmp/draft.json
+~/.claude/perchling/bin/perchling --export > ~/.claude/perchling/draft.json
 ```
 
 Ten of the `run-*` scripts are layer harnesses; `run-hooks-check.sh`,
@@ -167,7 +167,7 @@ exactly the defect it names and shown to FAIL. That is the only reason to
 believe any of them, and the escape test described beside them is what makes a
 red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs that argument as one command: sixty-six
+`tools/run-mutation-gate.sh` runs that argument as one command: sixty-seven
 mutants generated from HEAD — never a committed copy, which drifts silently —
 each asserted to red the harness it is named after. A new harness assertion
 needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's

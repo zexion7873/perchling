@@ -326,8 +326,10 @@ alone cleans up, exactly once.
   a 644 session file until `state.sh` rewrote it, against `PRIVACY.md`'s
   owner-only promise. `run-prune-checks.sh` runs `up` under `umask 022` and
   asserts 600. `mkdir -p` never tightens a directory that already exists, so an
-  install created before the fix keeps 755 directories; only the files are
-  rewritten owner-only.
+  install created before the fix keeps 755 directories; `cmd_up` therefore
+  `chmod 700`s the runtime home on every start, which closes everything below
+  it without walking the tree. The same harness starts from a 755 home and
+  asserts 700.
 - **Off macOS the hooks stay silent and a person gets told.** `up` and `down`
   are what the hooks run, so they exit 0 without a word everywhere the plugin
   installs. `status`, `stop`, `disable`, `enable`, `wake` and `build` are
