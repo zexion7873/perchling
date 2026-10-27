@@ -203,3 +203,11 @@ and what the alternative lost to.
   `run-manifest-checks.sh` carries the trap fixture itself, and the mutation
   gate points that harness at a parser without the guard — where the fixture
   aborts instead of erroring.
+- **`--validate` writes manifest text to a terminal, so it strips control
+  characters first.** `JSONSerialization` decodes `\u001b` into a live ESC, and
+  manifests are meant to be shared, so an unfiltered `name` could retitle the
+  reader's window or rewrite the very report that is supposed to judge the
+  file. The `name` and unknown sequence keys go through `cleanName`, the menu's
+  own filter; a load error goes through `stripControls` alone, because
+  `cleanName`'s 64-character cap would cut the message that names the broken
+  row. Both paths are in `run-manifest-checks.sh`, each with a mutant.

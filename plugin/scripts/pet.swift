@@ -1549,8 +1549,11 @@ func cleanCaption(_ s: String) -> String {
 // concern — statusLine truncates by measured width and the menu truncates its
 // own titles — it is there so a pathological string is not moved every 0.4s.
 func cleanName(_ s: String) -> String {
-    let stripped = String(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
-    return String(stripped.trimmingCharacters(in: .whitespaces).prefix(64))
+    String(stripControls(s).trimmingCharacters(in: .whitespaces).prefix(64))
+}
+
+func stripControls(_ s: String) -> String {
+    String(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
 }
 
 // The host CLI's own session registry: one JSON file per live session, keyed by
@@ -2950,7 +2953,9 @@ if argv.count >= 2 {
             // an author has about their own scale, wrong by up to a third.
             let scaleText = pet.scale == pet.scale.rounded()
                 ? "\(Int(pet.scale))" : "\(pet.scale)"
-            print("OK: \(pet.name)\(source) \(pet.width)x\(pet.height) @\(scaleText)x "
+            // A shared manifest's strings reach the reader's terminal: a JSON
+            // \u001b decodes to a live ESC that can rewrite this very report.
+            print("OK: \(cleanName(pet.name))\(source) \(pet.width)x\(pet.height) @\(scaleText)x "
                 + "[\(moods)] \(inks) inks — \(eyes)")
             // One line per sequence: a timeline is six numbers where a single
             // duration was one, and the locomotion row on a real pet is eight.
@@ -2984,11 +2989,13 @@ if argv.count >= 2 {
             // cannot name a set of sequences the parser no longer agrees with.
             let known = SeqKind.allCases.map { $0.rawValue }.joined(separator: ", ")
             for k in pet.unknownSequenceKeys {
-                FileHandle.standardError.write(Data("warning: sequences.\(k) is not a recognised sequence (\(known)) — ignored\n".utf8))
+                FileHandle.standardError.write(Data("warning: sequences.\(cleanName(k)) is not a recognised sequence (\(known)) — ignored\n".utf8))
             }
             exit(0)
         } catch {
-            FileHandle.standardError.write(Data("invalid pet manifest: \(error)\n".utf8))
+            // Not cleanName: its 64-character cap would cut the message that
+            // names the broken row. PetError text quotes manifest keys and values.
+            FileHandle.standardError.write(Data("invalid pet manifest: \(stripControls("\(error)"))\n".utf8))
             exit(1)
         }
     default:
