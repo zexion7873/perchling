@@ -124,6 +124,12 @@ gate retired-say-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-che
   '  rm -f "$ROOT/say"' \
   '  :'
 
+# SessionStart writes the session file before state.sh ever runs, so without
+# this the project path sits world-readable under the hook's default umask.
+gate up-session-world-readable plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'umask 077' \
+  ':'
+
 # A hook killed mid-write keeps its caption on disk in a temp nothing reads,
 # for good.
 gate orphan-temp-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
@@ -432,6 +438,17 @@ gate no-petjson-reports-broken plugin/scripts/pet.swift PERCHLING_PET_SWIFT tool
 gate dangling-petjson-masked plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
   '(try? FileManager.default.attributesOfItem(atPath: installed.path)) == nil' \
   '!FileManager.default.fileExists(atPath: installed.path)'
+
+# A shared manifest's name and unknown keys go to the reader's terminal raw, so
+# an ESC in them can retitle the window or rewrite the report it sits in.
+gate validate-name-raw plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  'print("OK: \(cleanName(pet.name))' \
+  'print("OK: \(pet.name)'
+
+# Same terminal, the error path: PetError quotes the offending key verbatim.
+gate validate-error-raw plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  'invalid pet manifest: \(stripControls("\(error)"))' \
+  'invalid pet manifest: \(error)'
 
 # The art check globs examples/ with no override, so the one grid a mutant can
 # reach is the placeholder embedded in pet.swift: one eye pixel reopened inside

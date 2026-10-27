@@ -9,6 +9,9 @@
 # surfaces a hook error instead of the promised silence. state.sh carries the
 # same invariant with worse consequences.
 set -u
+# state.sh writes sessions/<sid> owner-only; this script writes the same file
+# first at SessionStart, creates the directories, and launches the overlay.
+umask 077
 
 ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 SRC="$(cd "$(dirname "$0")" && pwd)/pet.swift"

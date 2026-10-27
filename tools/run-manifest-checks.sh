@@ -138,6 +138,17 @@ check "unknown ascii glyph still rejected" 1 \
 check "short row still rejected" 1 \
   "$(petfile short '{ "a": "#FF0000" }' '["aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa","aaaaaaaa"]')" \
   'idle row 3' 'length 5 != 8'
+
+# A shared manifest's strings reach the reader's terminal, and JSON's \u001b
+# decodes to a live ESC. The name, an unknown sequence key and the text of a
+# load error each carry one here; none may reach the output as a control byte.
+ESC=$(printf '\033')
+printf '{ "name": "esc\\u001b]0;T\\u0007name", "palette": { "#": "#FFFFFF" }, "moods": { "idle": %s }, "sequences": { "z\\u001b[31m": {} } }\n' "$FLAT" > "$SCRATCH/esc-ok.json"
+check "manifest strings lose control bytes" 0 "$SCRATCH/esc-ok.json" \
+  "OK: esc]0;Tname" "sequences.z\[31m is not" "!$ESC"
+printf '{ "name": "e", "palette": { "#": "#FFFFFF" }, "moods": { "idle": %s, "q\\u001b[2K": %s } }\n' "$FLAT" "$FLAT" > "$SCRATCH/esc-bad.json"
+check "load errors lose control bytes" 1 "$SCRATCH/esc-bad.json" \
+  'unknown mood "q\[2K"' "!$ESC"
 # Both transparent glyphs are known to the byte table, not just ".".
 check "0 and . both transparent" 0 \
   "$(petfile clear '{ "a": "#FF0000" }' '["a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a.","a.0a.0a."]')" "8x8"
