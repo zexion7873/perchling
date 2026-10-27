@@ -152,7 +152,7 @@ bash tools/run-toggle-checks.sh    # disable / enable / wake, and the off-macOS 
 bash tools/run-release-checks.sh   # manifests parse, version holds, icon, LF, hero width, hook paths
 bash tools/run-mutation-gate.sh    # every harness goes red against the defect it is named after
 ~/.claude/perchling/bin/perchling --validate plugin/examples/otter.json
-~/.claude/perchling/bin/perchling --export > /tmp/draft.json
+~/.claude/perchling/bin/perchling --export > ~/.claude/perchling/draft.json
 ```
 
 Ten of the `run-*` scripts are layer harnesses; `run-hooks-check.sh`,
