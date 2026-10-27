@@ -261,6 +261,8 @@ cmd_up() {
   macos || exit 0
   [ -e "$ROOT/disabled" ] && exit 0
   mkdir -p "$SESSIONS"
+  # mkdir -p never tightens a home made before umask 077; 755 here exposes every file below.
+  chmod 700 "$ROOT" 2>/dev/null
   sid="${1:-}"
   cwd=""
   if [ -z "$sid" ]; then

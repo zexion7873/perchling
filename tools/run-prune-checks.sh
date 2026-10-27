@@ -51,6 +51,8 @@ touch -t 202608190100 "$W/cfg/perchling/.sess.111"
 
 "$W/cfg/perchling/bin/perchling" & stub=$!
 sleep 0.2
+# An install made before umask 077 has a 755 home that mkdir -p leaves alone.
+chmod 755 "$W/cfg/perchling"
 # umask 022 is the common default; the session file written below must come
 # out owner-only whatever umask the hook inherited.
 ( umask 022; CLAUDE_CONFIG_DIR="$W/cfg" bash "$W/scripts/pet.sh" up newsession >/dev/null 2>&1 )
@@ -80,6 +82,10 @@ mode=$(stat -f '%Lp' "$S/newsession" 2>/dev/null)
 [ "$mode" = 600 ] \
   && ok "and is readable only by its owner" \
   || no "and is readable only by its owner" "mode ${mode:-missing}"
+mode=$(stat -f '%Lp' "$W/cfg/perchling" 2>/dev/null)
+[ "$mode" = 700 ] \
+  && ok "an old 755 home is closed to others" \
+  || no "an old 755 home is closed to others" "mode ${mode:-missing}"
 [ -e "$O/fresh" ] \
   && ok "a live session keeps its owner" \
   || no "a live session keeps its owner"
