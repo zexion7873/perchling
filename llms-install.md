@@ -63,7 +63,7 @@ would first appear at the user's *next* session. Don't make them wait — launch
 it immediately:
 
 ```bash
-bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)" up manual
+bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/perchling/perchling" -mindepth 3 -maxdepth 3 -type f -path '*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)" up manual
 ```
 
 This builds (first run) and starts the pet right away; it perches at the
@@ -76,15 +76,19 @@ The control script lives inside the installed plugin, under a directory named
 for the version, so resolve it rather than hardcoding a path:
 
 ```bash
-pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)
+pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/perchling/perchling" -mindepth 3 -maxdepth 3 -type f -path '*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)
 ```
 
-Search `plugins/cache` and take the HIGHEST version, never `plugins` and
-`head -1`. Every version ever installed keeps its own directory, so a machine
-that has updated a few times offers many — `head -1` picks by filesystem order,
-and a plain `plugins` search also reaches the marketplace clone, which tracks
-the repo's main branch rather than what is installed. Building from that one
-compiles unreleased source into the user's binary.
+Search `plugins/cache/perchling/perchling` — this marketplace's copy of this
+plugin — and take the HIGHEST version, never `plugins` and `head -1`. Every
+version ever installed keeps its own directory, so a machine that has updated a
+few times offers many — `head -1` picks by filesystem order, and a plain
+`plugins` search also reaches the marketplace clone, which tracks the repo's
+main branch rather than what is installed. Building from that one compiles
+unreleased source into the user's binary. Searching all of `plugins/cache` is
+wrong too: `sort -V` compares whole paths, so another marketplace's plugin with
+`perchling` in its path sorts above this one by its marketplace name, and its
+`pet.sh` would compile its own source into the user's binary.
 
 Then, in that same shell, run the one the user asked for — not the whole
 block; `enable` and `wake` start a real pet.
