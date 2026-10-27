@@ -79,10 +79,10 @@ body:
     attributes:
       label: Output of pet.sh status
       description: |
-        Pasted as-is — it is one of the few things in a report that cannot be misremembered. Resolve the script out of `plugins/cache` and take the highest version; a `plugins` search also reaches the marketplace clone, which tracks `main` rather than what you have installed, and reports the wrong thing.
+        Pasted as-is — it is one of the few things in a report that cannot be misremembered. Resolve the script out of `plugins/cache/perchling/perchling` and take the highest version; a `plugins` search also reaches the marketplace clone, which tracks `main` rather than what you have installed, and a search of all of `plugins/cache` can pick another marketplace's plugin — either reports the wrong thing.
 
         ```bash
-        bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)" status
+        bash "$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/perchling/perchling" -mindepth 3 -maxdepth 3 -type f -path '*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)" status
         ```
       render: text
 

@@ -321,7 +321,7 @@ The control script lives inside the installed plugin, under a directory named
 for the version — so resolve the newest one rather than hardcoding a path:
 
 ```bash
-pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache" -type f -path '*perchling*/scripts/pet.sh' | sort -V | tail -1)
+pet=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/perchling/perchling" -mindepth 3 -maxdepth 3 -type f -path '*/scripts/pet.sh' 2>/dev/null | sort -V | tail -1)
 ```
 
 ```bash
