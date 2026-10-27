@@ -157,13 +157,20 @@ Rules the loader enforces:
 
 ## Workflow
 
+Write the draft to `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/draft.json"`,
+never a fixed name in `/tmp`. `/tmp` is shared by every account on the Mac, so
+another one can create `/tmp/draft.json` first — as a symlink the export would
+follow into one of the user's files, or as a file it can rewrite after
+validation. The runtime home is the user's own directory and nobody else can
+create anything in it.
+
 0. If the user wants to *modify* the default pet rather than replace it,
    start from a snapshot of it instead of a blank grid. Rebuild first — a
    binary older than this feature ignores the flag, and the redirect would
    truncate the target to zero bytes before the command hangs:
    ```
    bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build
-   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --export > /tmp/draft.json
+   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --export > "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/draft.json"
    ```
    The snapshot is a faithful copy: the built-in is itself a manifest, so the
    export carries everything it has — all eight sequences at five frames each —
@@ -197,7 +204,7 @@ Rules the loader enforces:
    and reads as dirt.
 3. Validate the draft **before** installing:
    ```
-   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --validate /path/to/draft.json
+   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --validate "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/draft.json"
    ```
    Errors name the exact mood/row/character; an unknown flag prints usage and
    exits 2. If the command instead hangs with no output and a second pet
@@ -218,13 +225,16 @@ Rules the loader enforces:
    if [ -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" ] && [ ! -L "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" ]; then
      mv "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets/previous-$(date +%s).json"
    fi
-   mv /path/to/draft.json "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets/<slug>.json"
+   mv "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/draft.json" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pets/<slug>.json"
    ln -sf pets/<slug>.json "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/pet.json"
    ```
-   (If a security guard in your environment blocks `mv` into the home
-   directory, plain `cp` is fine — the app re-reads on the next mtime
-   change, so a torn read self-heals within half a second.) Drawing a second
-   pet adds to the library instead of replacing the first.
+   (If a command guard in your own tooling refuses `mv` itself, `cp` of the
+   draft you just wrote is fine — the app re-reads on the next mtime change,
+   so a torn read self-heals within half a second. Never use `cp` to get past
+   an error from the operating system, such as `Operation not permitted` or
+   `Permission denied`: that error means the file is not the draft this
+   workflow wrote.) Drawing a second pet adds to the library instead of
+   replacing the first.
 5. The pet transforms within a second. Tell the user to look at their screen,
    then iterate on feedback — recolor, resize, fix the face — by editing a
    draft and re-installing it the same way.
