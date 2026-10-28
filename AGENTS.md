@@ -186,6 +186,20 @@ is the publish. Branch protection, admins included, lets `main` take it only
 through a PR whose `release-gate`, `harnesses` and `mutation-gate` are green, so
 a stray comma reds the release PR before it reaches anyone.
 
+A tag and a GitHub release publish nothing. Every release from 1.0.0 still gets
+both, cut after the release PR merges, on that PR's merge commit: the first
+`main` commit that carries the version, never the bump commit inside the PR.
+
+```bash
+git tag -a vX.Y.Z <merge sha> -m "perchling X.Y.Z"
+git push origin refs/tags/vX.Y.Z   # literal refspec: dcg blocks refs built by $(...)
+gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file <notes>
+```
+
+The notes are the release PR's user-facing bullets, one line per PR, then
+`**Full changelog:** https://github.com/zexion7873/perchling/compare/vPREV...vX.Y.Z`.
+No assets: an install reads git, so an asset has no reader.
+
 ## The built-in's art
 
 **It has no generator, and only one thing checks it.** `plugin/examples/husky.json` is

@@ -37,8 +37,9 @@ Every harness takes a `PERCHLING_*` override for this, and
 `tools/run-mutation-gate.sh` runs the whole argument as one command.
 
 **A release is one line.** `plugin/.claude-plugin/plugin.json`'s version is the only
-thing that reaches an install. Tags play no part, and this repo *is* the
-marketplace, so the version landing on `main` is the publish.
+thing that reaches an install. This repo *is* the marketplace, so the version
+landing on `main` is the publish. The tag and GitHub release that follow are
+records, and publish nothing.
 
 ## Working on it
 
