@@ -8,7 +8,9 @@ ports, has no analytics, and sends nothing anywhere.
 - **Hook payloads** that Claude Code hands its hook scripts on stdin. Perchling
   keeps the session id, the project directory, the tool a waiting session is
   blocked on, and a short snippet (below) of the prompt you typed or of
-  Claude's final reply. Nothing else from the payload is kept.
+  Claude's final reply. When a turn ends it also checks the type of each
+  background task still running (a subagent, a workflow), to tell a finished
+  turn from one still working. Nothing else from the payload is kept.
 - **The Claude Code CLI's session registry** at
   `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/*.json`, for the session id, the
   process id and the session's name, which label the rows in the pet's menu.

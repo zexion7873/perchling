@@ -177,6 +177,31 @@ alone cleans up, exactly once.
   `cmd_down` still removes them at `SessionEnd` so nothing leaks, a live
   session re-announces itself on its next hook after `enable`, and one too
   stale to do that is one the staleness window would have retired anyway.
+- **A `Stop` whose turn handed work to background agents writes running, not
+  done.** Captured 2026-11-02 on CLI 2.1.311 with a fake Messages API and a
+  fresh config: a `Stop` fired while a backgrounded Agent ran carries
+  `"background_tasks":[{…"type":"subagent","status":"running"…}]`, one with
+  only a backgrounded Bash carries `"type":"shell"`, and the next `Stop` after
+  either finishes carries `[]`. `state.sh` slices `background_tasks` up to
+  `session_crons` with builtins and promotes on an ALLOWLIST — `subagent`,
+  `workflow`, `teammate`, `cloud session` — because 2.1.311 also emits
+  machinery labels (dream, auto-mode scan, memory import) that a denylist
+  would let swallow done for good, and a shell alone stays done: a
+  backgrounded command is not the session working. Only `done` is promoted,
+  so a `StopFailure`'s error stays visible behind its agents. The reply stays
+  the caption, and the odometer's `turn` stays keyed on `$1`, so a promoted
+  `Stop` never counts as a prompt. Escaped text cannot match the patterns —
+  every quote inside a JSON string carries a backslash — and a reply long
+  enough to push the key past `dd`'s 64KB read degrades to done, which is
+  the behaviour before this existed. Rejected: a `session_crons` rule (a
+  recurring cron is not work in flight) and `UserPromptSubmit`'s `source`
+  (declared by the schema, absent from both 2.1.311 payload builders).
+
+  **The global `state` file is written from that decided mood, never `$1`,
+  and still before the session file.** `foldMoods` folds it as an input of
+  its own, so a `done` left there shows for its leash beside a row saying
+  running. The tty path has no payload and keeps writing its argument.
+  `run-state-checks.sh` pins every half of this, each beside its mutant.
 - **Whether the machine can build is a different question from whether the pet
   can run, and four separate ways of conflating them are all silent.** Every
   one of these was found by measurement after looking correct; the
