@@ -153,11 +153,12 @@ and what the alternative lost to.
 - **The session registry is the one foreign file perchling reads, and the top
   of a tray row's name.** `<config>/sessions/<pid>.json` carries a session's id
   and the CLI's own name for it — the name → project directory → sid-prefix
-  chain starts here. In the desktop app that name IS the sidebar title:
+  chain starts here, and its status corrects a mood no hook will (next
+  bullet). In the desktop app that name IS the sidebar title:
   measured 2026-10-08, all nine live sessions present in both stores carried
   byte-identical strings. Unmeasured: how long a rename takes to reach the
   registry, and whether older CLIs sync it at all. It is undocumented, so
-  `registryNames` treats every failure as a missing entry: a moved format, an
+  `registryEntries` treats every failure as a missing field: a moved format, an
   older CLI and a background job that never had a name are indistinguishable
   from outside and all three are correctly answered by falling back. **A name's
   absence is normal, not a fault** — the CLI writes one only for interactive
@@ -180,6 +181,35 @@ and what the alternative lost to.
   querying conversation summaries. Reading them bought a title the registry
   above already carries. Opt-in lost too: the reader would still ship for a
   reviewer to find, behind a setting nobody would turn on.
+- **The registry's status corrects a mood no hook will, and only that.**
+  Measured 2026-11-02 on CLI 2.1.311 in the desktop app: approving a
+  permission fires no hook until the tool batch ends, so a 90s command showed
+  waiting for all 90s while the registry said `busy` 45s newer than the
+  session file; Esc fires no `Stop`, so a row said running for up to its 900s
+  TTL while the registry said `idle` 17s newer. `reconcile` lets the registry
+  win only for running and waiting rows, only from an entry whose pid
+  provably runs (an unknown pid still labels a row, it never overrules one),
+  and only when `statusUpdatedAt` is more than `sameEvent` (2s) newer than
+  the file — a hook and the registry stamp one event milliseconds apart, in
+  either order. Done and error are never overruled: the CLI goes idle within
+  milliseconds of the `Stop` that announced them. A running row the registry
+  calls `busy` is exempt from the 900s decay, so a long build is not idle.
+  The merge happens inside `liveSessions` and nowhere else, so the registry
+  never creates a row. `detail` and `state` are never read: they hold
+  background sessions' summaries, which the directory policy forbids
+  querying.
+
+  The fold had to learn the same thing, or the fix stops at the tray.
+  `state.sh` writes the global `state` file beside every session write, so
+  that file is a row's echo, and counting it put a corrected row's old mood
+  back on the face for the file's 300s leash — an approved permission's
+  waiting outlived the registry's busy by the whole tool. `foldMoods`
+  therefore leaves the state file off the face when it is no more than
+  `sameEvent` newer than some live row, and keeps it in `current`, so a row
+  ending under its echo rings no fresh banner. Merging in `liveSessions`
+  alone lost to this on the probe's own numbers. All of it is pinned in
+  `tools/session-harness.swift` with the probe stamps as fixtures, each rule
+  beside its mutant.
 - **A caption arrives still JSON-escaped.** `state.sh` captures the string
   body with a `sed`, so a two-line prompt reaches the file as the literal
   characters backslash and n. `cleanCaption` is the only unescaper, and
@@ -223,7 +253,8 @@ and what the alternative lost to.
   The guarantee binds the live SESSIONS and stops there: the fold also takes
   the global `state` file, which has no row behind it and which `cmd_down`
   never clears, so a session ending on `waiting` can hold the face for up to
-  that file's 300s leash while the caption reports the top live row. A harness
+  that file's 300s leash while the caption reports the top live row — unless
+  a live row wrote after it, which makes it that row's echo (above). A harness
   that recomputes the face from `liveSessions` alone shares the blind spot and
   will assert the gap away — take the fold's own inputs, or assert against a
   literal. That fold is `foldMoods`, a free function: it was inside
