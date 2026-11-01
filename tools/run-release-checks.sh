@@ -17,15 +17,15 @@
 #     sed 's/"version": "1\./"version": "0./' plugin/.claude-plugin/plugin.json > /tmp/back.json
 #     PERCHLING_PLUGIN_JSON=/tmp/back.json bash tools/run-release-checks.sh
 # The recipe anchors on the version line's SHAPE, not on today's number: a
-# worked example that silently stops matching prints "12 passed, 0 failed" and
+# worked example that silently stops matching prints "13 passed, 0 failed" and
 # becomes a demonstration that the check does nothing.
 #
 # A mutant going red proves the GATE noticed, not which line noticed — a
 # cascade where one broken fact reds four assertions looks identical to four
 # independent checks. So each pinned line was also ESCAPE-tested: amputate that
 # single assertion from a copy of this script under tools/, re-run the same
-# mutant, and require the copy to pass. Ten of the twelve lines are pinned that
-# way; the two `parses as JSON` lines are deliberately not, for the reason given
+# mutant, and require the copy to pass. Eleven of the thirteen lines are
+# pinned that way; the two `parses as JSON` lines are deliberately not, for the reason given
 # beside them.
 #
 # An unusable baseline is an ERROR: it exits 1 WITHOUT printing a FAIL line,
@@ -399,6 +399,34 @@ if [ -z "$bare" ]; then
   ok "skills brace the plugin root" "${#skills[@]} SKILL.md"
 else
   no "skills brace the plugin root" "${bare# }"
+fi
+
+# --- the waiting matcher names every type that blocks on a human -------------
+# Compared whole, never as a regex: a type left off the list never reaches the pet.
+want="permission_prompt agent_needs_input worker_permission_prompt elicitation_dialog elicitation_url_dialog quota_auto_resume_stale quota_auto_resume_disabled"
+detail=$(python3 - "$HOOKS" $want <<'PYW'
+import json, sys
+hooks, want = sys.argv[1], sys.argv[2:]
+try:
+    doc = json.load(open(hooks, encoding="utf-8"))
+except Exception as e:
+    print("no readable hooks.json: %s" % e)
+    sys.exit(1)
+named = set()
+for entry in doc.get("hooks", {}).get("Notification", []):
+    if any('state.sh" waiting' in h.get("command", "") for h in entry.get("hooks", [])):
+        named.update(t.strip() for t in entry.get("matcher", "").split("|"))
+missing = [t for t in want if t not in named]
+if missing:
+    print("missing " + ", ".join(missing))
+    sys.exit(1)
+print("%d types" % len(want))
+PYW
+)
+if [ $? -eq 0 ]; then
+  ok "the waiting matcher names every type" "$detail"
+else
+  no "the waiting matcher names every type" "$detail"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
