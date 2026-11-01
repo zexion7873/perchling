@@ -697,6 +697,17 @@ check("error is never lowered",
       reconciled("error", 1793562200.0, cli("idle", 1793562230.0))?.mood, Mood.error)
 check("an unknown status changes nothing",
       reconciled("running", 1793562200.0, cli("compacting", 1793562230.0))?.mood, Mood.running)
+check("a wait no hook reported raises waiting",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0, waitingFor: "permission prompt"))?.mood,
+      Mood.waiting)
+check("its age counts from the CLI's stamp, not the last hook",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0, waitingFor: "permission prompt"))?.stamp,
+      Date(timeIntervalSince1970: 1793562350.0))
+check("an open dialog never raises",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0, waitingFor: "dialog open"))?.mood,
+      Mood.running)
+check("waiting with no waitingFor never raises",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0))?.mood, Mood.running)
 check("busy exempts running from the 900s decay",
       reconciled("running", 1793562200.0, cli("busy", 1793562195.0), age: 1000)?.mood, Mood.running)
 check("without the CLI's word the clock still decays it",

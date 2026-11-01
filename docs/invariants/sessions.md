@@ -194,6 +194,14 @@ and what the alternative lost to.
   either order. Done and error are never overruled: the CLI goes idle within
   milliseconds of the `Stop` that announced them. A running row the registry
   calls `busy` is exempt from the 900s decay, so a long build is not idle.
+  It raises as well as lowers, on narrower terms: a running row goes to
+  waiting only when the entry says `waiting` AND names what it waits for
+  (`waitingFor` — `permission prompt` and `input needed` are the values
+  measured), and never for `dialog open`, a dialog the user opened and is
+  already looking at. Whichever way it moves, the row takes the registry's
+  stamp, so a raised wait's age counts from the CLI's word, not the last
+  hook. The lowering arms shipped first because they fix every host, while
+  the raise mostly duplicates `PermissionRequest`.
   The merge happens inside `liveSessions` and nowhere else, so the registry
   never creates a row. `detail` and `state` are never read: they hold
   background sessions' summaries, which the directory policy forbids

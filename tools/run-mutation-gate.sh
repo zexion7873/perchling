@@ -429,6 +429,18 @@ gate registry-unknown-pid-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT t
   '        if true {
             e.status'
 
+# A dialog the user opened (a picker, a settings panel) shouts "waiting for you"
+# at the person who is already looking at it.
+gate dialog-open-raises plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    case "waiting" where e.waitingFor.map({ $0 != "dialog open" }) ?? false: return (.waiting, at)' \
+  '    case "waiting" where e.waitingFor != nil: return (.waiting, at)'
+
+# The raise switched off: dialog-open-raises stays green against it, so the arm
+# that exists to fire needs its own red.
+gate raise-never-fires plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    case "waiting" where e.waitingFor.map({ $0 != "dialog open" }) ?? false: return (.waiting, at)' \
+  '    case "waiting" where false: return (.waiting, at)'
+
 # A long build decays to idle at 900s while the CLI still says busy.
 gate busy-still-decays plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   'mood: !busy && now.timeIntervalSince(at) > ttl ? .idle : mood,' \

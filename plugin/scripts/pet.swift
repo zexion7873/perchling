@@ -1630,6 +1630,8 @@ func reconcile(_ mood: Mood, stamp: Date, _ e: RegistryEntry?) -> (Mood, Date) {
     switch status {
     case "busy": return (.running, at)
     case "idle": return (.idle, at)
+    // A dialog the user opened is not Claude waiting on them.
+    case "waiting" where e.waitingFor.map({ $0 != "dialog open" }) ?? false: return (.waiting, at)
     default: return (mood, stamp)
     }
 }
