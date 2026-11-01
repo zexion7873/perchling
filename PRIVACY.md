@@ -13,7 +13,11 @@ ports, has no analytics, and sends nothing anywhere.
   turn from one still working. Nothing else from the payload is kept.
 - **The Claude Code CLI's session registry** at
   `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/*.json`, for the session id, the
-  process id and the session's name, which label the rows in the pet's menu.
+  process id and the session's name, which label the rows in the pet's menu,
+  and the session's status (`status`, `statusUpdatedAt`, `waitingFor`), which
+  corrects the pet's mood when Claude Code fires no hook — after you approve
+  a permission or interrupt a turn. The summaries those files also hold
+  (`detail`, `state`) are not used.
 - **Your pet manifests**, the pixel art the pet draws.
 
 It does not read conversation transcripts, conversation history or summaries,

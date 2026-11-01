@@ -60,7 +60,7 @@ do {
     writeFile(dir, "s1", "running\n/Users/x/Project/perchling\nhello")
     writeFile(dir, "s2", "idle")
     writeFile(dir, "s3", "waiting\n/p/x\n\nBash")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: ["s1": "named"])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, registry: ["s1": RegistryEntry(name: "named")])
         .sorted { $0.sid < $1.sid }
     check("liveSessions reads every file", rows.count, 3)
     check("liveSessions reads line 2", rows[0].cwd, "/Users/x/Project/perchling")
@@ -73,14 +73,14 @@ do {
     check("the three-line form has no tool", rows[0].tool, nil)
     check("the four-line form has no odometer", rows[2].turns, nil)
     check("a dead owner drops the row",
-          liveSessions(dir, now: Date(), alive: { _ in false }, names: [:]).count, 0)
+          liveSessions(dir, now: Date(), alive: { _ in false }, registry: [:]).count, 0)
     // The stamp IS the file's mtime, pinned by setting one and reading it back
     // through the row — the age suffix upstream is only as honest as this.
     let blocked = Date(timeIntervalSinceReferenceDate:
                        (Date().timeIntervalSinceReferenceDate - 720).rounded())
     try! FileManager.default.setAttributes([.modificationDate: blocked],
                                            ofItemAtPath: dir.appendingPathComponent("s1").path)
-    let stamped = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
+    let stamped = liveSessions(dir, now: Date(), alive: { _ in true }, registry: [:])
         .first { $0.sid == "s1" }
     check("the row carries the file's own mtime", stamped?.stamp, blocked)
 }
@@ -93,7 +93,7 @@ do {
     writeFile(dir, "t2", "running\n/p/x\nhello\n\n12abc")
     writeFile(dir, "t3", "running\n/p/x\nhello\n\n0")
     writeFile(dir, "t4", "running\n/p/x\nhello\n\n+5")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, registry: [:])
         .sorted { $0.sid < $1.sid }
     check("liveSessions reads line 5", rows[0].turns, 7)
     check("a non-digit odometer degrades to none", rows[1].turns, nil)
@@ -221,7 +221,7 @@ do {
           "running")
 }
 
-// MARK: - registryNames
+// MARK: - registryEntries
 
 func regFile(_ dir: URL, _ pid: Int, _ sid: String, _ name: String?, extra: String = "") {
     let nameKey = name.map { ",\"name\":\"\($0)\"" } ?? ""
@@ -240,17 +240,18 @@ do {
     writeFile(dir, "107.json", "{\"pid\":107,\"name\":\"orphan\"}")   // no sessionId
     writeFile(dir, "notes.txt", "ignored")
 
-    let m = registryNames(dir, alive: { _ in true })
-    check("a named session is read", m["s1"], "my session")
-    check("a nameless session has no entry", m["s2"], nil)
-    check("an empty name is absent", m["s3"], nil)
-    check("control characters are stripped", m["s4"], "linebreak")
-    check("a long name is capped", m["s5"]?.count, 64)
-    // s1, s4 and s5 survive; s2, s3, the unparseable file, the one with no
-    // sessionId and the .txt do not.
-    check("bad JSON is skipped, not fatal", m.count, 3)
+    let m = registryEntries(dir, alive: { _ in true })
+    check("a named session is read", m["s1"]?.name, "my session")
+    check("a nameless session has no name", m["s2"]?.name, nil)
+    check("but is still an entry, for its status", m["s2"] != nil, true)
+    check("an empty name is absent", m["s3"]?.name, nil)
+    check("control characters are stripped", m["s4"]?.name, "linebreak")
+    check("a long name is capped", m["s5"]?.name?.count, 64)
+    // s1 to s5 survive, nameless ones included; the unparseable file, the one
+    // with no sessionId and the .txt do not.
+    check("bad JSON is skipped, not fatal", m.count, 5)
     check("a dead pid drops its entry",
-          registryNames(dir, alive: { _ in false }).count, 0)
+          registryEntries(dir, alive: { _ in false }).count, 0)
 }
 
 do {
@@ -264,28 +265,44 @@ do {
     // hands back.
     let d1 = tempDir("registry-dup-a")
     regFile(d1, 201, "same", "older"); Thread.sleep(forTimeInterval: 0.02); regFile(d1, 202, "same", "newer")
-    check("dup A: the newer wins", registryNames(d1, alive: { _ in true })["same"], "newer")
+    check("dup A: the newer wins", registryEntries(d1, alive: { _ in true })["same"]?.name, "newer")
     let d2 = tempDir("registry-dup-b")
     regFile(d2, 202, "same", "older"); Thread.sleep(forTimeInterval: 0.02); regFile(d2, 201, "same", "newer")
-    check("dup B: the newer wins", registryNames(d2, alive: { _ in true })["same"], "newer")
+    check("dup B: the newer wins", registryEntries(d2, alive: { _ in true })["same"]?.name, "newer")
 }
 
 do {
     let dir = tempDir("registry-nopid")
     writeFile(dir, "301.json", "{\"sessionId\":\"s9\",\"name\":\"unknown pid\"}")
     check("a missing pid is unknown, never dead",
-          registryNames(dir, alive: { _ in false })["s9"], "unknown pid")
+          registryEntries(dir, alive: { _ in false })["s9"]?.name, "unknown pid")
     // pid_t is Int32 on Darwin; a JSON integer wider than that must not trap
     // pid_t's failable-less initializer — it has to fall into the same
     // "unknown" bucket a missing pid does.
     regFile(dir, 99999999999999, "s10", "huge pid")
     check("an out-of-range pid is unknown, never dead",
-          registryNames(dir, alive: { _ in false })["s10"], "huge pid")
+          registryEntries(dir, alive: { _ in false })["s10"]?.name, "huge pid")
 }
 
 check("a missing registry is an empty map, not a crash",
-      registryNames(URL(fileURLWithPath: "/nonexistent/perchling-harness"),
+      registryEntries(URL(fileURLWithPath: "/nonexistent/perchling-harness"),
                     alive: { _ in true }).count, 0)
+
+do {
+    let dir = tempDir("registry-status")
+    writeFile(dir, "401.json", "{\"pid\":401,\"sessionId\":\"a\",\"status\":\"busy\",\"statusUpdatedAt\":1793562590853,\"waitingFor\":\"permission prompt\"}")
+    writeFile(dir, "402.json", "{\"pid\":402,\"sessionId\":\"b\",\"name\":\"kept\",\"status\":7,\"statusUpdatedAt\":\"soon\"}")
+    writeFile(dir, "403.json", "{\"sessionId\":\"c\",\"name\":\"no pid\",\"status\":\"idle\",\"statusUpdatedAt\":1793562590853}")
+    let m = registryEntries(dir, alive: { _ in true })
+    check("status is read", m["a"]?.status, "busy")
+    check("statusUpdatedAt is epoch milliseconds", m["a"]?.statusAt, Date(timeIntervalSince1970: 1793562590.853))
+    check("waitingFor is read", m["a"]?.waitingFor, "permission prompt")
+    check("a mistyped status is unknown", m["b"]?.status, nil)
+    check("a mistyped stamp is unknown", m["b"]?.statusAt, nil)
+    check("and takes no other field down with it", m["b"]?.name, "kept")
+    check("an unknown pid still labels a row", m["c"]?.name, "no pid")
+    check("but its status is never trusted", m["c"]?.status, nil)
+}
 
 // MARK: - the three-layer chain
 
@@ -372,7 +389,7 @@ do {
     bytes.append(contentsOf: [0xE4, 0xB8])   // lead byte + one of two continuations
     try! Data(bytes).write(to: dir.appendingPathComponent("s1"))
     writeFile(dir, "s2", "waiting\n/Users/x/Project/perchling\nfine")
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, registry: [:])
     let s1 = rows.first { $0.sid == "s1" }
     check("a caption cut mid-codepoint keeps its mood", s1?.mood, .running)
     check("a caption cut mid-codepoint keeps its cwd", s1?.cwd, "/Users/x/Project/perchling")
@@ -400,7 +417,7 @@ check("a bare backslash at the end survives", cleanCaption(#"trailing \"#), #"tr
 do {
     let dir = tempDir("caption-escapes")
     writeFile(dir, "s1", #"running"# + "\n/Users/x/p\n" + #"fix the \"bug\"\nthen ship"#)
-    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, names: [:])
+    let rows = liveSessions(dir, now: Date(), alive: { _ in true }, registry: [:])
     check("a session caption reaches the bubble unescaped",
           rows.first?.say, #"fix the "bug" then ship"#)
 }
@@ -557,7 +574,7 @@ do {
 // setting mtimes by hand, where sub-second landings answer differently per run.
 func agedRows(_ dir: URL, _ age: TimeInterval) -> [SessionRow] {
     liveSessions(dir, now: Date().addingTimeInterval(age), alive: { _ in true },
-                 names: [:])
+                 registry: [:])
 }
 
 do {
@@ -617,7 +634,8 @@ do {
     // than recomputed from the rows: the state file has no row behind it and
     // nothing clears it at SessionEnd, so it can hold the face while the rows —
     // and therefore the bubble's caption — report a different session entirely.
-    let live = [row("s1", .running)]
+    // The row wrote BEFORE the ghost: a row written after it would make the state file its echo.
+    let live = [row("s1", .running, stamp: t0.addingTimeInterval(-60))]
     let f = foldMoods(state: (.waiting, t0), live: live, now: t0, last: [:])
     check("the state file outranks a live session it has no row for", f.display, Mood.waiting)
     check("while the top row is still that live session", menuRows(live).first?.sid, "s1")
@@ -639,6 +657,89 @@ do {
     check("every input lands in current, the state file included",
           Set(foldMoods(state: (.idle, t0), live: [row("s1", .done)], now: t0,
                         last: [:]).current.keys), Set(["state", "s1"]))
+}
+
+// MARK: - the CLI's word against a hook-written mood
+//
+// Stamps are the 2026-11-02 probes on CLI 2.1.311: the file's mtime, then the registry's statusUpdatedAt.
+
+func cli(_ status: String, _ at: Double, waitingFor: String? = nil) -> RegistryEntry {
+    RegistryEntry(status: status, statusAt: Date(timeIntervalSince1970: at), waitingFor: waitingFor)
+}
+
+func reconciled(_ fileMood: String, _ fileAt: Double, _ e: RegistryEntry?,
+                age: TimeInterval = 60) -> SessionRow? {
+    let dir = tempDir("reconcile")
+    writeFile(dir, "s", fileMood + "\n")
+    let at = Date(timeIntervalSince1970: fileAt)
+    try! FileManager.default.setAttributes([.modificationDate: at],
+                                           ofItemAtPath: dir.appendingPathComponent("s").path)
+    return liveSessions(dir, now: at.addingTimeInterval(age), alive: { _ in true },
+                        registry: e.map { ["s": $0] } ?? [:]).first
+}
+
+check("an approved permission reads running (probe a)",
+      reconciled("waiting", 1793562545.66, cli("busy", 1793562590.853))?.mood, Mood.running)
+check("an Esc'd turn reads idle (probe b)",
+      reconciled("running", 1793562356.506, cli("idle", 1793562373.544))?.mood, Mood.idle)
+check("an Esc after a held dialog reads idle (probe c)",
+      reconciled("waiting", 1793562724.775, cli("idle", 1793562800.297))?.mood, Mood.idle)
+check("the registry's stamp becomes the row's",
+      reconciled("waiting", 1793562545.66, cli("busy", 1793562590.853))?.stamp,
+      Date(timeIntervalSince1970: 1793562590.853))
+check("an older stamp is ignored",
+      reconciled("waiting", 1793562545.66, cli("idle", 1793562515.0))?.mood, Mood.waiting)
+check("a stamp inside the same-event window is ignored",
+      reconciled("waiting", 1793562545.66, cli("idle", 1793562547.0))?.mood, Mood.waiting)
+check("done is never lowered",
+      reconciled("done", 1793562200.0, cli("idle", 1793562230.0))?.mood, Mood.done)
+check("error is never lowered",
+      reconciled("error", 1793562200.0, cli("idle", 1793562230.0))?.mood, Mood.error)
+check("an unknown status changes nothing",
+      reconciled("running", 1793562200.0, cli("compacting", 1793562230.0))?.mood, Mood.running)
+check("a wait no hook reported raises waiting",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0, waitingFor: "permission prompt"))?.mood,
+      Mood.waiting)
+check("its age counts from the CLI's stamp, not the last hook",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0, waitingFor: "permission prompt"))?.stamp,
+      Date(timeIntervalSince1970: 1793562350.0))
+check("an open dialog never raises",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0, waitingFor: "dialog open"))?.mood,
+      Mood.running)
+check("waiting with no waitingFor never raises",
+      reconciled("running", 1793562337.064, cli("waiting", 1793562350.0))?.mood, Mood.running)
+check("busy exempts running from the 900s decay",
+      reconciled("running", 1793562200.0, cli("busy", 1793562195.0), age: 1000)?.mood, Mood.running)
+check("without the CLI's word the clock still decays it",
+      reconciled("running", 1793562200.0, nil, age: 1000)?.mood, Mood.idle)
+
+do {
+    // Positive control first: the same fixture DOES lower when its pid runs.
+    let dir = tempDir("registry-dead")
+    writeFile(dir, "501.json", "{\"pid\":501,\"sessionId\":\"s\",\"status\":\"idle\",\"statusUpdatedAt\":1793562373544}")
+    let file = tempDir("registry-dead-file")
+    writeFile(file, "s", "running\n")
+    let at = Date(timeIntervalSince1970: 1793562356.506)
+    try! FileManager.default.setAttributes([.modificationDate: at],
+                                           ofItemAtPath: file.appendingPathComponent("s").path)
+    func mood(_ pidRuns: Bool) -> Mood? {
+        liveSessions(file, now: at.addingTimeInterval(60), alive: { _ in true },
+                     registry: registryEntries(dir, alive: { _ in pidRuns })).first?.mood
+    }
+    check("a live pid's idle lowers the row", mood(true), Mood.idle)
+    check("a dead pid's word is never taken", mood(false), Mood.running)
+}
+
+do {
+    // Probe (a) end to end: the state file still holds the waiting the blocking hook wrote.
+    let blocked = Date(timeIntervalSince1970: 1793562545.66)
+    let live = [reconciled("waiting", 1793562545.66, cli("busy", 1793562590.853))!]
+    check("an approved permission leaves the face, echo and all",
+          foldMoods(state: (.waiting, blocked.addingTimeInterval(-0.03)), live: live,
+                    now: blocked.addingTimeInterval(100), last: [:]).display, Mood.running)
+    let p1 = foldMoods(state: (.done, t0), live: [row("s1", .done, stamp: t0)], now: t0, last: [:])
+    let p2 = foldMoods(state: (.done, t0), live: [], now: t0.addingTimeInterval(1), last: p1.current)
+    check("a row ending under its echo rings nothing new", p2.entered, Set<Mood>())
 }
 
 // MARK: - awayNudge
