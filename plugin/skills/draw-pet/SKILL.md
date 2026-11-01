@@ -169,7 +169,7 @@ create anything in it.
    binary older than this feature ignores the flag, and the redirect would
    truncate the target to zero bytes before the command hangs:
    ```
-   bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/pet.sh" build
    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --export > "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/draft.json"
    ```
    The snapshot is a faithful copy: the built-in is itself a manifest, so the
@@ -210,7 +210,7 @@ create anything in it.
    exits 2. If the command instead hangs with no output and a second pet
    appears on screen, the installed binary predates this feature and is
    ignoring the flag: interrupt it, run
-   `bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build`, and retry.
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/pet.sh" build`, and retry.
 4. Install atomically — the app watches mtime, and a partial write would
    flash the fallback pet. `<slug>` is the manifest's `name` lowercased, with
    letters and digits of any script, `-` and `_` kept and everything else
@@ -256,14 +256,14 @@ like. Two sources, and which one you want depends on the question:
   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling/bin/perchling" --validate
   ```
 
-  Point it at a path for any other manifest: `--validate examples/otter.json`.
+  Point it at a path for any other manifest: `--validate "${CLAUDE_PLUGIN_ROOT}/examples/otter.json"`.
 
 - **`perchling --export`** — the built-in pet as a manifest, 460KB. This is the
   snapshot for a REMIX, not a way to read the format: it is the only thing that
   hands back every row, and the only reason to print it is that you are about to
   edit those rows.
 
-- **`$CLAUDE_PLUGIN_ROOT/examples/*.json`** — list the directory for what
+- **`${CLAUDE_PLUGIN_ROOT}/examples/*.json`** — list the directory for what
   ships. Animals on scale-1 grids with a fractional `scale` bringing each to a
   ~90-point creature height, each declaring all eight sequences off five frames
   apiece. One of them is also the built-in, which is why it has no row of its
@@ -282,7 +282,7 @@ like. Two sources, and which one you want depends on the question:
   the lines first, then read a window of a few dozen lines around one:
 
   ```bash
-  grep -n -E '"(name|scale|palette|steps|mirror|plays)"' "$CLAUDE_PLUGIN_ROOT/examples/otter.json"
+  grep -n -E '"(name|scale|palette|steps|mirror|plays)"' "${CLAUDE_PLUGIN_ROOT}/examples/otter.json"
   ```
 
   `name` and `scale` open the file; each `"steps"` line opens one sequence's

@@ -542,6 +542,11 @@ gate hook-path-renamed plugin/hooks/hooks.json PERCHLING_HOOKS_JSON tools/run-re
   '/scripts/state.sh' \
   '/scripts/state-renamed.sh'
 
+# Unbraced, the skill's build fallback reaches the shell as `/scripts/pet.sh`.
+gate skill-root-unbraced plugin/skills/draw-pet/SKILL.md PERCHLING_SKILL_MD tools/run-release-checks.sh \
+  'bash "${CLAUDE_PLUGIN_ROOT}/scripts/pet.sh" build' \
+  'bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build'
+
 echo "---"
 echo "$pass mutants caught, $fail escaped"
 [ "$fail" = 0 ]
