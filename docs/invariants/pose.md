@@ -30,12 +30,10 @@ and what the alternative lost to.
   deleted overlays. A manifest can express every one of them, so the question is
   only ever what the shipped pet declares.
 
-  - **hover, done, idle and error** are sequences on the husky. `error`'s is a
-    slump rather than a tear, and it separates from `idle`'s breath by DIRECTION
-    rather than amplitude (idle stretches up, error squashes down), so telling
-    them apart does not depend on noticing how far either moved. `hover`'s is
-    the exact inverse of `tap`: a poke compresses, a surprise recoils. Why a
-    deformation and not a drawn startle is under the hover bullet below.
+  - **hover, done, idle and error** are sequences on the husky, each drawn
+    frame by frame rather than deformed from one pose: `error` is X eyes with
+    the paws pressed to the face, `idle` a seated breath with a blink, and
+    `hover` a head-turn with one paw raised.
   - **gaze and blink are gone, and a RULE removes them rather than an art
     budget.** A mood loop takes the eye box; `waiting` and `idle` are the only
     moods that ever carried either (`idle` the gaze alone, as its proximity
@@ -81,10 +79,10 @@ and what the alternative lost to.
   its five-frame `jumping` row, so a one-frame version is the wrong shape.
   Synthesising one by opening the declared eye box was also built and removed —
   it keeps the pose's own lids and merely widens them, which is a squint, not a
-  start. **The built-in declares one now**, and it sidesteps both objections
-  without answering either: a squash/stretch deformation is at least two frames
-  by construction, so "a one-frame version is the wrong shape" never applies,
-  and it never touches the eyes, so it cannot come out a squint.
+  start. **The built-in declares one now**, and it meets both objections: five
+  drawn frames of a head-turn, so it is not a one-frame pose, and its eyes are
+  drawn into each frame rather than shifted inside a box, so it cannot come out
+  a squint.
 - **A sequence is either a reaction or a resting state, and the difference is
   when it stops.** `hover`, `drag` and `tap` arrive and get out of the way; the
   five mood names loop for as long as the pet is in that mood and restart when

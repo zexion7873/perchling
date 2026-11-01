@@ -17,14 +17,14 @@
 #     sed 's/"version": "1\./"version": "0./' plugin/.claude-plugin/plugin.json > /tmp/back.json
 #     PERCHLING_PLUGIN_JSON=/tmp/back.json bash tools/run-release-checks.sh
 # The recipe anchors on the version line's SHAPE, not on today's number: a
-# worked example that silently stops matching prints "11 passed, 0 failed" and
+# worked example that silently stops matching prints "12 passed, 0 failed" and
 # becomes a demonstration that the check does nothing.
 #
 # A mutant going red proves the GATE noticed, not which line noticed — a
 # cascade where one broken fact reds four assertions looks identical to four
 # independent checks. So each pinned line was also ESCAPE-tested: amputate that
 # single assertion from a copy of this script under tools/, re-run the same
-# mutant, and require the copy to pass. Nine of the eleven lines are pinned that
+# mutant, and require the copy to pass. Ten of the twelve lines are pinned that
 # way; the two `parses as JSON` lines are deliberately not, for the reason given
 # beside them.
 #
@@ -380,6 +380,25 @@ PYH
   else
     no "hooks.json's scripts are all present" "$detail"
   fi
+fi
+
+# --- skills spell the plugin root the way the CLI fills it in ----------------
+# Only the braced form is filled in; `$CLAUDE_PLUGIN_ROOT/x` runs `/x` in Bash.
+skills=("$ROOT"/plugin/skills/*/SKILL.md)
+[ -n "${PERCHLING_SKILL_MD:-}" ] && skills=("$PERCHLING_SKILL_MD")
+bare=""
+for f in "${skills[@]}"; do
+  if [ ! -r "$f" ]; then
+    bare="$bare ${f#"$ROOT"/}:unreadable"
+  else
+    lines=$(grep -nE '\$CLAUDE_PLUGIN_ROOT([^A-Za-z0-9_]|$)' "$f" | cut -d: -f1 | paste -sd, -)
+    [ -z "$lines" ] || bare="$bare ${f#"$ROOT"/}:$lines"
+  fi
+done
+if [ -z "$bare" ]; then
+  ok "skills brace the plugin root" "${#skills[@]} SKILL.md"
+else
+  no "skills brace the plugin root" "${bare# }"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

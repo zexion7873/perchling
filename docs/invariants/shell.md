@@ -59,14 +59,19 @@ alone cleans up, exactly once.
   that it does not depend on knowing which tools block. The `PreToolUse` matcher
   covers the affordances that block on a human WITHOUT entering the permission
   flow at all — asking a question, presenting a plan — which no permission event
-  can see. The `Notification` event matches a regex over the notification type
-  (`permission_prompt` also catches `worker_permission_prompt`).
-  **In the Claude Code desktop app the third one never fires, and the reason is
-  structural rather than a bug.** The app launches the CLI with
+  can see. The `Notification` matcher is an exact list of notification types —
+  a matcher made only of letters, digits, `_ - , |` and spaces is compared
+  whole, never as a regex — so `permission_prompt` does not catch
+  `worker_permission_prompt`.
+  **In the Claude Code desktop app the third one did not fire, measured
+  2026-08-05.** The app launches the CLI with
   `--permission-mode auto --permission-prompt-tool stdio`, so a decision leaves
-  as a control-protocol `can_use_tool` request and the app draws its own dialog;
-  Claude Code's own notification path is never reached. Measured with one prompt
-  and a forced `permissions.ask` rule, varying only the host:
+  as a control-protocol `can_use_tool` request and the app draws its own dialog,
+  and Claude Code's own notification path was not reached. CLI 2.1.233's
+  changelog fixes exactly this ("Notification hooks not firing for permission
+  prompts when running under Claude Desktop or VS Code"), and nothing here has
+  re-measured it since. That measurement, one prompt and a forced
+  `permissions.ask` rule, varying only the host:
 
   | host / path | fires at the permission decision |
   |---|---|
