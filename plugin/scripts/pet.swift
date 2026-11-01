@@ -1450,7 +1450,7 @@ struct SessionRow {
     let mood: Mood      // effective: already decayed to idle past its own TTL
     let say: String?    // line 3: this session's caption; nil on the shorter forms
     let name: String?   // the host CLI's own name for it; nil when it has none
-    let stamp: Date     // the file's mtime: when this session last wrote a hook
+    let stamp: Date     // when the mood was last reported: the file's mtime, or the registry's stamp when that won
     let tool: String?   // line 4: what a waiting session is blocked on; nil otherwise
     let turns: Int?     // line 5: prompts this session has answered; nil below one
 }
@@ -1460,7 +1460,7 @@ struct SessionRow {
 // about who is live or what they are doing. `alive` is injected because a
 // harness has no pids to point at.
 func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
-                  names: [String: String]) -> [SessionRow] {
+                  registry: [String: RegistryEntry]) -> [SessionRow] {
     let fm = FileManager.default
     let cutoff = now.addingTimeInterval(-3600)
     let items = (try? fm.contentsOfDirectory(at: dir,
@@ -1485,7 +1485,7 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
         // writing the same line 3 back. One replacement character in a teaser
         // that already ends mid-sentence is the cheaper failure by a mile.
         let raw = (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } ?? ""
-        let mood = Mood.parse(raw)
+        let (mood, at) = reconcile(Mood.parse(raw), stamp: stamp, registry[sid])
         let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
         let cwd = lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let say = lines.count > 2 ? cleanCaption(String(lines[2])) : ""
@@ -1499,12 +1499,14 @@ func liveSessions(_ dir: URL, now: Date, alive: (String) -> Bool,
         let turns = turnsRaw.isEmpty || !turnsRaw.allSatisfy({ $0.isASCII && $0.isNumber })
             ? nil : Int(turnsRaw).flatMap { $0 > 0 ? $0 : nil }
         let ttl = moodTTL[mood] ?? 0
+        // A CLI that says busy outranks the clock: a twenty-minute build is not an idle session.
+        let busy = mood == .running && registry[sid]?.status == "busy"
         out.append(SessionRow(sid: sid,
                               cwd: cwd.isEmpty ? nil : cwd,
-                              mood: now.timeIntervalSince(stamp) > ttl ? .idle : mood,
+                              mood: !busy && now.timeIntervalSince(at) > ttl ? .idle : mood,
                               say: say.isEmpty ? nil : say,
-                              name: names[sid],
-                              stamp: stamp,
+                              name: registry[sid]?.name,
+                              stamp: at,
                               tool: tool.isEmpty ? nil : tool,
                               turns: turns))
     }
@@ -1556,12 +1558,8 @@ func stripControls(_ s: String) -> String {
     String(s.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
 }
 
-// The host CLI's own session registry: one JSON file per live session, keyed by
-// pid, carrying the session id it belongs to and the name the app shows for it.
-// Undocumented and not ours, so every failure here is a missing entry rather
-// than an error — an older CLI, a format that moved, and a background job that
-// legitimately has no name are the same thing from the outside, and all three
-// are correctly answered by falling back to the project directory.
+// The host CLI's session registry, one JSON file per live session keyed by pid. Undocumented and
+// not ours: a missing or mistyped field is unknown, never an error (docs/invariants/sessions.md).
 //
 // `nameSource` is deliberately not read. It distinguishes a name derived from
 // the cwd from one a rename set, but which of those a session carries depends
@@ -1571,21 +1569,27 @@ func stripControls(_ s: String) -> String {
 //
 // `alive` is injected for the same reason `liveSessions` injects it: a harness
 // has no pids to point at.
-func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
+//
+// `detail` and `state` are never read: they carry background sessions' summaries.
+struct RegistryEntry {
+    var name: String? = nil
+    var status: String? = nil       // "busy", "idle", "waiting"; only from a pid that provably runs
+    var statusAt: Date? = nil       // statusUpdatedAt, epoch milliseconds on disk
+    var waitingFor: String? = nil
+}
+
+func registryEntries(_ dir: URL, alive: (pid_t) -> Bool) -> [String: RegistryEntry] {
     let fm = FileManager.default
     let items = (try? fm.contentsOfDirectory(at: dir,
                                              includingPropertiesForKeys: [.contentModificationDateKey],
                                              options: [.skipsHiddenFiles])) ?? []
-    var out: [String: String] = [:]
+    var out: [String: RegistryEntry] = [:]
     var stamps: [String: Date] = [:]
     for url in items where url.pathExtension == "json" {
         // Parenthesised for readability, not semantics.
         guard let data = try? Data(contentsOf: url),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let sid = obj["sessionId"] as? String,
-              let raw = obj["name"] as? String else { continue }
-        let name = cleanName(raw)
-        if name.isEmpty { continue }
+              let sid = obj["sessionId"] as? String else { continue }
         // A missing pid is unknown, never dead — the same rule ownerAlive
         // follows for a session with no owner file. Dead pids are dropped here,
         // so everything that survives is live and mtime alone breaks a tie.
@@ -1594,14 +1598,42 @@ func registryNames(_ dir: URL, alive: (pid_t) -> Bool) -> [String: String] {
         // version — has to go through the failable initializer or it takes
         // the whole overlay down on data this function already treats as a
         // trust boundary. Out of range is unknown, exactly like absent.
-        if let pidNum = obj["pid"] as? Int, let pid = Int32(exactly: pidNum), !alive(pid_t(pid)) { continue }
+        let pid = (obj["pid"] as? Int).flatMap { Int32(exactly: $0) }
+        if let pid, !alive(pid_t(pid)) { continue }
         let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate ?? .distantPast
         if let prev = stamps[sid], prev > stamp { continue }
         stamps[sid] = stamp
-        out[sid] = name
+        var e = RegistryEntry()
+        if let raw = obj["name"] as? String, case let n = cleanName(raw), !n.isEmpty { e.name = n }
+        // Unknown is good enough to label a row, never to overrule its mood.
+        if pid != nil {
+            e.status = obj["status"] as? String
+            e.statusAt = (obj["statusUpdatedAt"] as? Double)
+                .flatMap { $0.isFinite ? Date(timeIntervalSince1970: $0 / 1000) : nil }
+            e.waitingFor = obj["waitingFor"] as? String
+        }
+        out[sid] = e
     }
     return out
+}
+
+// One event stamped by two writers lands within milliseconds; a gap under this is not news.
+let sameEvent: TimeInterval = 2
+
+// The CLI's word against a hook-written mood. No hook fires on an approved permission or
+// an Esc, so only running and waiting can be stale; done and error are never overruled.
+func reconcile(_ mood: Mood, stamp: Date, _ e: RegistryEntry?) -> (Mood, Date) {
+    guard mood == .running || mood == .waiting,
+          let e, let status = e.status, let at = e.statusAt,
+          at.timeIntervalSince(stamp) > sameEvent else { return (mood, stamp) }
+    switch status {
+    case "busy": return (.running, at)
+    case "idle": return (.idle, at)
+    // A dialog the user opened is not Claude waiting on them.
+    case "waiting" where e.waitingFor.map({ $0 != "dialog open" }) ?? false: return (.waiting, at)
+    default: return (mood, stamp)
+    }
 }
 
 // A session's identity, most specific first: the name the CLI keeps for it,
@@ -1783,12 +1815,16 @@ func foldMoods(state: (mood: Mood, stamp: Date)?, live: [SessionRow],
                now: Date, last: [String: Mood])
      -> (display: Mood, entered: Set<Mood>, current: [String: Mood]) {
     var inputs: [(String, Mood)] = []
+    var echo = false
     if let s = state {
         // The state file has no owner to clean it up on session end, so it
         // gets a short leash: enough for manual puppeteering, too short to
         // haunt the fold as a dead session's ghost. `min`, so a mood whose own
         // TTL is already shorter than the leash keeps the shorter one.
         let ttl = min(moodTTL[s.mood] ?? 0, 300)
+        // state.sh writes this beside a session's own file, so one no newer than a live row is
+        // that row's echo, and the row (which the registry may have corrected) speaks for it.
+        echo = live.contains { s.stamp.timeIntervalSince($0.stamp) <= sameEvent }
         inputs.append(("state", now.timeIntervalSince(s.stamp) > ttl ? .idle : s.mood))
     }
     inputs.append(contentsOf: live.map { ($0.sid, $0.mood) })
@@ -1798,7 +1834,8 @@ func foldMoods(state: (mood: Mood, stamp: Date)?, live: [SessionRow],
     var entered: Set<Mood> = []
     for (key, m) in inputs {
         current[key] = m
-        if moodRank[m]! > moodRank[display]! { display = m }
+        // An echo keeps its transitions, so a row ending under it rings nothing new.
+        if !(echo && key == "state"), moodRank[m]! > moodRank[display]! { display = m }
         let prev = last[key] ?? .idle
         if m != prev, m == .waiting || m == .done || m == .error {
             entered.insert(m)
@@ -2594,7 +2631,7 @@ final class Controller: NSObject, NSWindowDelegate {
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
         let live = liveSessions(sessionsURL, now: now, alive: ownerAlive,
-                                names: registryNames(registryURL, alive: alive))
+                                registry: registryEntries(registryURL, alive: alive))
         sessionRows = menuRows(live)
         sessionLabelsBySid = sessionLabels(sessionRows)
 
