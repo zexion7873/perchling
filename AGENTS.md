@@ -138,7 +138,7 @@ bash plugin/scripts/pet.sh stop      # drop refcounts and kill the pet
 bash tools/make-moods-gif.sh   [OUT.gif]  # README hero; NO ARG OVERWRITES docs/moods.gif
 bash tools/make-social-card.sh [OUT.png]  # social preview; NO ARG OVERWRITES docs/social-card.png
 bash tools/make-icon.sh        [OUT.png]  # directory icon; NO ARG OVERWRITES plugin/.claude-plugin/icon.png
-bash tools/run-session-harness.sh  # 156 assertions over the session/tray + pet library
+bash tools/run-session-harness.sh  # 184 assertions over the session/tray + pet library
 bash tools/run-manifest-checks.sh  # manifest parser: steps, tap, eyes, inkTop, key asymmetry
 bash tools/run-pose-harness.sh     # sequence precedence, the pinned pose, and mirror consent
 bash tools/run-hooks-check.sh      # hooks.json declares no event this CLI rejects
@@ -167,7 +167,7 @@ exactly the defect it names and shown to FAIL. That is the only reason to
 believe any of them, and the escape test described beside them is what makes a
 red mutant mean ONE line noticed rather than four cascading.
 
-`tools/run-mutation-gate.sh` runs that argument as one command: sixty-nine
+`tools/run-mutation-gate.sh` runs that argument as one command: seventy-seven
 mutants generated from HEAD — never a committed copy, which drifts silently —
 each asserted to red the harness it is named after. A new harness assertion
 needs a matching case there, and a new `tools/run-*.sh` is picked up by CI's

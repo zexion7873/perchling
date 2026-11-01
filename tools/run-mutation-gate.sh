@@ -403,6 +403,55 @@ gate caption-borrowed plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-ses
   '            top.say ?? "")' \
   '            top.say ?? rows.lazy.compactMap { $0.say }.first ?? "")'
 
+# The registry overruling done and error: a finished turn's news is wiped the
+# moment the CLI goes idle, a few milliseconds after the Stop that announced it.
+gate registry-lowers-done plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    guard mood == .running || mood == .waiting,
+          let e, let status = e.status' \
+  '    guard let e, let status = e.status'
+
+# Any stamp wins, older or simultaneous: the CLI's previous word overrules the
+# hook that just superseded it.
+gate registry-older-stamp-wins plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '          at.timeIntervalSince(stamp) > sameEvent else { return (mood, stamp) }' \
+  '          true else { return (mood, stamp) }'
+
+# A dead pid's entry kept: the registry file a crashed CLI left behind decides
+# the mood of whoever reuses the session id.
+gate registry-dead-pid-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if let pid, !alive(pid_t(pid)) { continue }' \
+  '        if let pid, !alive(pid_t(pid)) { _ = pid }'
+
+# A status with no pid behind it trusted: nothing can show the writer is alive.
+gate registry-unknown-pid-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if pid != nil {
+            e.status' \
+  '        if true {
+            e.status'
+
+# A dialog the user opened (a picker, a settings panel) shouts "waiting for you"
+# at the person who is already looking at it.
+gate dialog-open-raises plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    case "waiting" where e.waitingFor.map({ $0 != "dialog open" }) ?? false: return (.waiting, at)' \
+  '    case "waiting" where e.waitingFor != nil: return (.waiting, at)'
+
+# The raise switched off: dialog-open-raises stays green against it, so the arm
+# that exists to fire needs its own red.
+gate raise-never-fires plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    case "waiting" where e.waitingFor.map({ $0 != "dialog open" }) ?? false: return (.waiting, at)' \
+  '    case "waiting" where false: return (.waiting, at)'
+
+# A long build decays to idle at 900s while the CLI still says busy.
+gate busy-still-decays plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'mood: !busy && now.timeIntervalSince(at) > ttl ? .idle : mood,' \
+  'mood: now.timeIntervalSince(at) > ttl ? .idle : mood,'
+
+# The state file counted as news when it only echoes a row: an approved
+# permission keeps the face at waiting for the whole tool, registry or not.
+gate state-echo-counted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        echo = live.contains { s.stamp.timeIntervalSince($0.stamp) <= sameEvent }' \
+  '        echo = false'
+
 gate mirror-without-consent plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   'flipped: s.mirror && dragFacingLeft)' \
   'flipped: dragFacingLeft)'
