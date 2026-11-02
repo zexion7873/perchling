@@ -110,7 +110,12 @@ and what the alternative lost to.
   (`A-Za-z0-9_-`) — a hostile token degrades to no detail, never a repaired
   one. Writing a session file re-stamps
   liveness; never `touch` one, because that resurrects a stale mood with a
-  full TTL. The `manual` entry is a bridge for launches with no session behind
+  full TTL. `SessionStart` writes idle for the same reason, except a
+  `"source":"compact"` start over a file younger than an hour: auto-compaction
+  fires it mid-turn, and the idle 1.22.0 wrote there stopped the pose while
+  the CLI worked. The hour is the prune's own line — left unwritten, an older
+  file is pruned in the same `cmd_up`, and the owner just recorded with it.
+  The `manual` entry is a bridge for launches with no session behind
   them, retired by the first real session or by the last `SessionEnd` — it is
   not a session, must not outlive them, and must not appear in the tray.
   Hook payloads do carry `cwd`: observed on seven event types so far —
@@ -194,6 +199,12 @@ and what the alternative lost to.
   either order. Done and error are never overruled: the CLI goes idle within
   milliseconds of the `Stop` that announced them. A running row the registry
   calls `busy` is exempt from the 900s decay, so a long build is not idle.
+  Only the process that wrote the entry is trusted: one whose `procStart`
+  (the CLI's own `LC_ALL=C TZ=UTC ps -o lstart=`) disagrees with the pid's
+  start time is a reused pid and is dropped like a dead one, and either side
+  unreadable is unknown, never another process. The CLI also counts a paused
+  workflow as busy, and after an Esc nothing on disk tells that from a long
+  tool, so such a row reads running until the session file's one-hour cutoff.
   It raises as well as lowers, on narrower terms: a running row goes to
   waiting only when the entry says `waiting` AND names what it waits for
   (`waitingFor` — `permission prompt` and `input needed` are the values
@@ -214,10 +225,14 @@ and what the alternative lost to.
   waiting outlived the registry's busy by the whole tool. `foldMoods`
   therefore leaves the state file off the face when it is no more than
   `sameEvent` newer than some live row, and keeps it in `current`, so a row
-  ending under its echo rings no fresh banner. Merging in `liveSessions`
-  alone lost to this on the probe's own numbers. All of it is pinned in
-  `tools/session-harness.swift` with the probe stamps as fixtures, each rule
-  beside its mutant.
+  ending under its echo rings no fresh banner. Nor does the state file ring
+  for a mood some live row already holds — that row rang for it, and a wait
+  the registry raised a poll before the Notification hook wrote it rang
+  twice. Testing for an echo is not enough there: a poll can land between
+  `state.sh`'s two writes, while the row still carries the registry's older
+  stamp. Merging in `liveSessions` alone lost to this on the probe's own
+  numbers. All of it is pinned in `tools/session-harness.swift` with the
+  probe stamps as fixtures.
 - **A caption arrives still JSON-escaped.** `state.sh` captures the string
   body with a `sed`, so a two-line prompt reaches the file as the literal
   characters backslash and n. `cleanCaption` is the only unescaper, and

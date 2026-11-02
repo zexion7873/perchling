@@ -134,6 +134,26 @@ gate up-home-left-open plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-ch
   'chmod 700 "$ROOT" 2>/dev/null' \
   ':'
 
+# Auto-compaction mid-turn writes idle over running, and the pose stops while the CLI works.
+gate compaction-resets-mood plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if :; then'
+
+# Every start with a payload keeps the old mood: a resumed session wakes on a stale waiting.
+gate start-keeps-mood plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if [ -z "$src" ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then'
+
+# A compaction keeps an hour-old file unwritten: the prune in the same call deletes it and its owner.
+gate compaction-ignores-age plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if [ "$src" != compact ] || [ ! -e "$SESSIONS/$sid" ]; then'
+
+# A compaction for a session with no file writes none, and the owner loop retires the owner just written.
+gate compaction-skips-unwritten plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if [ "$src" != compact ]; then'
+
 # A hook killed mid-write keeps its caption on disk in a temp nothing reads,
 # for good.
 gate orphan-temp-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
@@ -498,6 +518,63 @@ gate busy-still-decays plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-se
 gate state-echo-counted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '        echo = live.contains { s.stamp.timeIntervalSince($0.stamp) <= sameEvent }' \
   '        echo = false'
+
+# The echo rings: a wait the registry raised rings again when the Notification hook writes it 6s later.
+gate echo-rings-twice plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if !heard, m != prev, m == .waiting' \
+  '        if m != prev, m == .waiting'
+
+# Rows deduped too: a second session's permission prompt rings nothing while the first still waits.
+gate rows-heard-too plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        let heard = key == "state" && live.contains { $0.mood == m }' \
+  '        let heard = live.contains { $0.mood == m && $0.sid != key }'
+
+# The state file never rings: a puppeteered wait with no row behind it goes silent.
+gate state-never-rings plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if !heard, m != prev, m == .waiting' \
+  '        if key != "state", m != prev, m == .waiting'
+
+# A crashed CLI's pid reused: its last busy holds a dead session's running row past the decay.
+gate pid-reuse-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '           lstartUTC(t) != want { continue }' \
+  '           false { continue }'
+
+# Every record with a procStart dropped: the CLI's word is never taken again.
+gate procstart-always-differs plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '           lstartUTC(t) != want { continue }' \
+  '           true { continue }'
+
+# An unreadable start time read as another process: one failed sysctl drops a live session's word.
+gate unread-start-is-dead plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'let t = started(pid_t(pid)),
+           lstartUTC(t) != want' \
+  'case let t = started(pid_t(pid)),
+           t.map(lstartUTC) != want'
+
+# A record from before procStart read as another process: an older CLI's sessions lose their word.
+gate no-procstart-is-dead plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'let want = obj["procStart"] as? String,' \
+  'case let want = obj["procStart"] as? String ?? "",'
+
+# The day unpadded: every start on the 1st to the 9th mismatches, and a live CLI is dropped.
+gate lstart-day-unpadded plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'String(format: "%2d %02d' \
+  'String(format: "%d %02d'
+
+# The day always space-led: every start on the 10th to the 31st mismatches.
+gate lstart-day-double-spaced plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'String(format: "%2d %02d' \
+  'String(format: " %d %02d'
+
+# A missing pid answers a start time of zero instead of none.
+gate no-process-has-start plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }' \
+  '    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return nil }'
+
+# The kernel's start time misread: every live CLI looks like a reused pid.
+gate start-time-misread plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    return info.kp_proc.p_starttime.tv_sec' \
+  '    return info.kp_proc.p_starttime.tv_sec + 1'
 
 gate mirror-without-consent plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   'flipped: s.mirror && dragFacingLeft)' \

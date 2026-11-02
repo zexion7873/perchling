@@ -37,7 +37,8 @@ under `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`. That registry is written by
 another program, so content arriving from it is parsed as untrusted input. A
 name only ever reaches a label, in the menu or the speech bubble. The status
 fields are only compared against fixed values or read as a time (a wait's
-age), and can change a session's mood and post a notification banner. What it keeps, and for how long, is in
+age), and can change a session's mood and post a notification banner.
+`procStart` is only compared against the process's own start time. What it keeps, and for how long, is in
 [PRIVACY.md](PRIVACY.md).
 
 ### In scope
