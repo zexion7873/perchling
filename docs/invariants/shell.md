@@ -221,7 +221,8 @@ alone cleans up, exactly once.
   and still before the session file.** `foldMoods` folds it as an input of
   its own, so a `done` left there shows for its leash beside a row saying
   running. The tty path has no payload and keeps writing its argument.
-  `run-state-checks.sh` pins every half of this, each beside its mutant.
+  `run-state-checks.sh` pins the decided mood, with a mutant, and the tty
+  path's argument, without one; nothing pins the write order.
 - **Whether the machine can build is a different question from whether the pet
   can run, and four separate ways of conflating them are all silent.** Every
   one of these was found by measurement after looking correct; the
