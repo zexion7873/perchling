@@ -265,10 +265,12 @@ cmd_up() {
   chmod 700 "$ROOT" 2>/dev/null
   sid="${1:-}"
   cwd=""
+  src=""
   if [ -z "$sid" ]; then
     read_payload
     sid="$(payload_sid)"
     cwd="$(payload_field cwd)"
+    src="$(payload_field source)"
   fi
   [ -n "$sid" ] || sid="manual"
   # Write a fresh neutral mood, never bare-touch: the file's content is the
@@ -278,11 +280,15 @@ cmd_up() {
   # unlabelled row — which for a resumed session sitting idle lasts as long as
   # it sits. cmd_up called with an explicit sid (manual, enable, wake) has no
   # payload and writes the one-line form, which stays valid forever.
-  if [ -n "$cwd" ]; then
-    printf 'idle\n%s' "$cwd" > "$ROOT/.up.$$" 2>/dev/null
-  else
-    printf idle > "$ROOT/.up.$$" 2>/dev/null
-  fi && mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
+  # Auto-compaction fires SessionStart mid-turn: an idle written then stops the pose while the CLI works.
+  # Kept only while the prune below would keep it — unwritten, an hour-old file is pruned with its owner.
+  if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then
+    if [ -n "$cwd" ]; then
+      printf 'idle\n%s' "$cwd" > "$ROOT/.up.$$" 2>/dev/null
+    else
+      printf idle > "$ROOT/.up.$$" 2>/dev/null
+    fi && mv -f "$ROOT/.up.$$" "$SESSIONS/$sid" 2>/dev/null
+  fi
   # "manual" is a bridge for launches with no session behind them (enable,
   # wake, an unparseable payload). A real session supersedes it, and nothing
   # else ever deletes it — left alone it holds an idle pet up for the whole

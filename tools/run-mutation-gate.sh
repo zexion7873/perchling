@@ -134,6 +134,26 @@ gate up-home-left-open plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-ch
   'chmod 700 "$ROOT" 2>/dev/null' \
   ':'
 
+# Auto-compaction mid-turn writes idle over running, and the pose stops while the CLI works.
+gate compaction-resets-mood plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if :; then'
+
+# Every start with a payload keeps the old mood: a resumed session wakes on a stale waiting.
+gate start-keeps-mood plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if [ -z "$src" ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then'
+
+# A compaction keeps an hour-old file unwritten: the prune in the same call deletes it and its owner.
+gate compaction-ignores-age plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if [ "$src" != compact ] || [ ! -e "$SESSIONS/$sid" ]; then'
+
+# A compaction for a session with no file writes none, and the owner loop retires the owner just written.
+gate compaction-skips-unwritten plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  'if [ "$src" != compact ] || [ -z "$(find "$SESSIONS/$sid" -mmin -60 2>/dev/null)" ]; then' \
+  'if [ "$src" != compact ]; then'
+
 # A hook killed mid-write keeps its caption on disk in a temp nothing reads,
 # for good.
 gate orphan-temp-kept plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \

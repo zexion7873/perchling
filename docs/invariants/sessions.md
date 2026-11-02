@@ -110,7 +110,12 @@ and what the alternative lost to.
   (`A-Za-z0-9_-`) — a hostile token degrades to no detail, never a repaired
   one. Writing a session file re-stamps
   liveness; never `touch` one, because that resurrects a stale mood with a
-  full TTL. The `manual` entry is a bridge for launches with no session behind
+  full TTL. `SessionStart` writes idle for the same reason, except a
+  `"source":"compact"` start over a file younger than an hour: auto-compaction
+  fires it mid-turn, and the idle 1.22.0 wrote there stopped the pose while
+  the CLI worked. The hour is the prune's own line — left unwritten, an older
+  file is pruned in the same `cmd_up`, and the owner just recorded with it.
+  The `manual` entry is a bridge for launches with no session behind
   them, retired by the first real session or by the last `SessionEnd` — it is
   not a session, must not outlive them, and must not appear in the tray.
   Hook payloads do carry `cwd`: observed on seven event types so far —

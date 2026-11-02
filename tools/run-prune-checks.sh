@@ -99,5 +99,30 @@ mode=$(stat -f '%Lp' "$W/cfg/perchling" 2>/dev/null)
   && ok "a fresh session temp survives" \
   || no "a fresh session temp survives" "cmd_up raced a live write"
 
+# Auto-compaction fires SessionStart in the middle of a turn that is still working.
+printf 'running\n/x\nmid-turn' > "$S/compacted"
+printf 'waiting\n/x\nstale' > "$S/resumed"
+printf 'done\n/x\nan hour ago' > "$S/away"
+touch -t 202608190100 "$S/away"
+up() {
+  printf '{"session_id":"%s","source":"%s","cwd":"/x"}' "$1" "$2" \
+    | CLAUDE_CONFIG_DIR="$W/cfg" bash "$W/scripts/pet.sh" up >/dev/null 2>&1
+}
+# `away` goes first: any other call's prune would delete it before its own start could.
+up away compact; up compacted compact; up resumed resume; up unwritten compact
+[ "$(sed -n 1p "$S/compacted")" = running ] \
+  && ok "a compaction keeps the mood" \
+  || no "a compaction keeps the mood" "got '$(sed -n 1p "$S/compacted")'"
+[ "$(sed -n 1p "$S/resumed")" = idle ] \
+  && ok "a resume still resets it" \
+  || no "a resume still resets it" "got '$(sed -n 1p "$S/resumed")'"
+# Unwritten, the prune in the same call deletes an hour-old file and the owner just recorded.
+[ "$(sed -n 1p "$S/away" 2>/dev/null)" = idle ] && [ -e "$O/away" ] \
+  && ok "an hour-old compaction resets, not pruned" \
+  || no "an hour-old compaction resets, not pruned" "got '$(sed -n 1p "$S/away" 2>/dev/null)'"
+[ "$(sed -n 1p "$S/unwritten" 2>/dev/null)" = idle ] \
+  && ok "a compaction with no file writes one" \
+  || no "a compaction with no file writes one" "missing"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
