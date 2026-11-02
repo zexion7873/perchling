@@ -519,6 +519,48 @@ gate state-echo-counted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-s
   '        echo = live.contains { s.stamp.timeIntervalSince($0.stamp) <= sameEvent }' \
   '        echo = false'
 
+# A crashed CLI's pid reused: its last busy holds a dead session's running row past the decay.
+gate pid-reuse-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '           lstartUTC(t) != want { continue }' \
+  '           false { continue }'
+
+# Every record with a procStart dropped: the CLI's word is never taken again.
+gate procstart-always-differs plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '           lstartUTC(t) != want { continue }' \
+  '           true { continue }'
+
+# An unreadable start time read as another process: one failed sysctl drops a live session's word.
+gate unread-start-is-dead plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'let t = started(pid_t(pid)),
+           lstartUTC(t) != want' \
+  'case let t = started(pid_t(pid)),
+           t.map(lstartUTC) != want'
+
+# A record from before procStart read as another process: an older CLI's sessions lose their word.
+gate no-procstart-is-dead plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'let want = obj["procStart"] as? String,' \
+  'case let want = obj["procStart"] as? String ?? "",'
+
+# The day unpadded: every start on the 1st to the 9th mismatches, and a live CLI is dropped.
+gate lstart-day-unpadded plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'String(format: "%2d %02d' \
+  'String(format: "%d %02d'
+
+# The day always space-led: every start on the 10th to the 31st mismatches.
+gate lstart-day-double-spaced plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  'String(format: "%2d %02d' \
+  'String(format: " %d %02d'
+
+# A missing pid answers a start time of zero instead of none.
+gate no-process-has-start plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }' \
+  '    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return nil }'
+
+# The kernel's start time misread: every live CLI looks like a reused pid.
+gate start-time-misread plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    return info.kp_proc.p_starttime.tv_sec' \
+  '    return info.kp_proc.p_starttime.tv_sec + 1'
+
 gate mirror-without-consent plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-pose-harness.sh \
   'flipped: s.mirror && dragFacingLeft)' \
   'flipped: dragFacingLeft)'

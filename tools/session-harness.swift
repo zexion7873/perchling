@@ -240,7 +240,7 @@ do {
     writeFile(dir, "107.json", "{\"pid\":107,\"name\":\"orphan\"}")   // no sessionId
     writeFile(dir, "notes.txt", "ignored")
 
-    let m = registryEntries(dir, alive: { _ in true })
+    let m = registryEntries(dir, alive: { _ in true }, started: { _ in nil })
     check("a named session is read", m["s1"]?.name, "my session")
     check("a nameless session has no name", m["s2"]?.name, nil)
     check("but is still an entry, for its status", m["s2"] != nil, true)
@@ -251,7 +251,7 @@ do {
     // with no sessionId and the .txt do not.
     check("bad JSON is skipped, not fatal", m.count, 5)
     check("a dead pid drops its entry",
-          registryEntries(dir, alive: { _ in false }).count, 0)
+          registryEntries(dir, alive: { _ in false }, started: { _ in nil }).count, 0)
 }
 
 do {
@@ -265,35 +265,63 @@ do {
     // hands back.
     let d1 = tempDir("registry-dup-a")
     regFile(d1, 201, "same", "older"); Thread.sleep(forTimeInterval: 0.02); regFile(d1, 202, "same", "newer")
-    check("dup A: the newer wins", registryEntries(d1, alive: { _ in true })["same"]?.name, "newer")
+    check("dup A: the newer wins", registryEntries(d1, alive: { _ in true }, started: { _ in nil })["same"]?.name, "newer")
     let d2 = tempDir("registry-dup-b")
     regFile(d2, 202, "same", "older"); Thread.sleep(forTimeInterval: 0.02); regFile(d2, 201, "same", "newer")
-    check("dup B: the newer wins", registryEntries(d2, alive: { _ in true })["same"]?.name, "newer")
+    check("dup B: the newer wins", registryEntries(d2, alive: { _ in true }, started: { _ in nil })["same"]?.name, "newer")
 }
 
 do {
     let dir = tempDir("registry-nopid")
     writeFile(dir, "301.json", "{\"sessionId\":\"s9\",\"name\":\"unknown pid\"}")
     check("a missing pid is unknown, never dead",
-          registryEntries(dir, alive: { _ in false })["s9"]?.name, "unknown pid")
+          registryEntries(dir, alive: { _ in false }, started: { _ in nil })["s9"]?.name, "unknown pid")
     // pid_t is Int32 on Darwin; a JSON integer wider than that must not trap
     // pid_t's failable-less initializer — it has to fall into the same
     // "unknown" bucket a missing pid does.
     regFile(dir, 99999999999999, "s10", "huge pid")
     check("an out-of-range pid is unknown, never dead",
-          registryEntries(dir, alive: { _ in false })["s10"]?.name, "huge pid")
+          registryEntries(dir, alive: { _ in false }, started: { _ in nil })["s10"]?.name, "huge pid")
 }
 
 check("a missing registry is an empty map, not a crash",
       registryEntries(URL(fileURLWithPath: "/nonexistent/perchling-harness"),
-                    alive: { _ in true }).count, 0)
+                    alive: { _ in true }, started: { _ in nil }).count, 0)
+
+do {
+    // procStart values and epochs are a live 2.1.311 registry's, the epochs from Python's calendar.timegm.
+    check("a start time prints the way ps prints it", lstartUTC(1793617774), "Mon Nov  2 11:09:34 2026")
+    check("a two-digit day too", lstartUTC(1793387175), "Fri Oct 30 19:06:15 2026")
+    // The same command the CLI runs, against this very process.
+    let ps = Process(), out = Pipe()
+    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+    ps.arguments = ["-o", "lstart=", "-p", String(getpid())]
+    ps.environment = ["LC_ALL": "C", "TZ": "UTC"]
+    ps.standardOutput = out
+    try! ps.run(); ps.waitUntilExit()
+    check("this process's start reads as the CLI reads it",
+          processStart(getpid()).map(lstartUTC),
+          String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+              .trimmingCharacters(in: .whitespacesAndNewlines))
+    check("a pid with no process has no start", processStart(99999), nil)
+    let dir = tempDir("registry-reused")
+    writeFile(dir, "501.json", "{\"pid\":501,\"sessionId\":\"s\",\"procStart\":\"Mon Nov  2 11:09:34 2026\",\"status\":\"busy\"}")
+    writeFile(dir, "502.json", "{\"pid\":502,\"sessionId\":\"t\",\"status\":\"busy\"}")
+    func status(_ sid: String, _ t: time_t?) -> String? {
+        registryEntries(dir, alive: { _ in true }, started: { _ in t })[sid]?.status
+    }
+    check("the process that wrote the record keeps it", status("s", 1793617774), "busy")
+    check("a reused pid is another process", status("s", 1793617775), nil)
+    check("an unreadable start time is unknown, not dead", status("s", nil), "busy")
+    check("a record with no procStart is unknown, not dead", status("t", 1793617775), "busy")
+}
 
 do {
     let dir = tempDir("registry-status")
     writeFile(dir, "401.json", "{\"pid\":401,\"sessionId\":\"a\",\"status\":\"busy\",\"statusUpdatedAt\":1793562590853,\"waitingFor\":\"permission prompt\"}")
     writeFile(dir, "402.json", "{\"pid\":402,\"sessionId\":\"b\",\"name\":\"kept\",\"status\":7,\"statusUpdatedAt\":\"soon\"}")
     writeFile(dir, "403.json", "{\"sessionId\":\"c\",\"name\":\"no pid\",\"status\":\"idle\",\"statusUpdatedAt\":1793562590853}")
-    let m = registryEntries(dir, alive: { _ in true })
+    let m = registryEntries(dir, alive: { _ in true }, started: { _ in nil })
     check("status is read", m["a"]?.status, "busy")
     check("statusUpdatedAt is epoch milliseconds", m["a"]?.statusAt, Date(timeIntervalSince1970: 1793562590.853))
     check("waitingFor is read", m["a"]?.waitingFor, "permission prompt")
@@ -724,7 +752,7 @@ do {
                                            ofItemAtPath: file.appendingPathComponent("s").path)
     func mood(_ pidRuns: Bool) -> Mood? {
         liveSessions(file, now: at.addingTimeInterval(60), alive: { _ in true },
-                     registry: registryEntries(dir, alive: { _ in pidRuns })).first?.mood
+                     registry: registryEntries(dir, alive: { _ in pidRuns }, started: { _ in nil })).first?.mood
     }
     check("a live pid's idle lowers the row", mood(true), Mood.idle)
     check("a dead pid's word is never taken", mood(false), Mood.running)

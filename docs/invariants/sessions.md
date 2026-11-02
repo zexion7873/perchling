@@ -199,6 +199,12 @@ and what the alternative lost to.
   either order. Done and error are never overruled: the CLI goes idle within
   milliseconds of the `Stop` that announced them. A running row the registry
   calls `busy` is exempt from the 900s decay, so a long build is not idle.
+  Only the process that wrote the entry is trusted: one whose `procStart`
+  (the CLI's own `LC_ALL=C TZ=UTC ps -o lstart=`) disagrees with the pid's
+  start time is a reused pid and is dropped like a dead one, and either side
+  unreadable is unknown, never another process. The CLI also counts a paused
+  workflow as busy, and after an Esc nothing on disk tells that from a long
+  tool, so such a row reads running until the session file's one-hour cutoff.
   It raises as well as lowers, on narrower terms: a running row goes to
   waiting only when the entry says `waiting` AND names what it waits for
   (`waitingFor` — `permission prompt` and `input needed` are the values

@@ -1578,7 +1578,28 @@ struct RegistryEntry {
     var waitingFor: String? = nil
 }
 
-func registryEntries(_ dir: URL, alive: (pid_t) -> Bool) -> [String: RegistryEntry] {
+// The CLI's identity for a pid on macOS is `LC_ALL=C TZ=UTC ps -o lstart=`, compared as a string.
+// The names are spelled out because strftime would follow whatever locale the process holds.
+func lstartUTC(_ t: time_t) -> String {
+    var t = t, p = tm()
+    gmtime_r(&t, &p)
+    let day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][Int(p.tm_wday)]
+    let month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Int(p.tm_mon)]
+    return "\(day) \(month) " + String(format: "%2d %02d:%02d:%02d %d", p.tm_mday, p.tm_hour,
+                                         p.tm_min, p.tm_sec, p.tm_year + 1900)
+}
+
+func processStart(_ pid: pid_t) -> time_t? {
+    var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+    guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+    return info.kp_proc.p_starttime.tv_sec
+}
+
+// `started` answers a live pid's start time, nil when it cannot be read.
+func registryEntries(_ dir: URL, alive: (pid_t) -> Bool,
+                     started: (pid_t) -> time_t?) -> [String: RegistryEntry] {
     let fm = FileManager.default
     let items = (try? fm.contentsOfDirectory(at: dir,
                                              includingPropertiesForKeys: [.contentModificationDateKey],
@@ -1600,6 +1621,10 @@ func registryEntries(_ dir: URL, alive: (pid_t) -> Bool) -> [String: RegistryEnt
         // trust boundary. Out of range is unknown, exactly like absent.
         let pid = (obj["pid"] as? Int).flatMap { Int32(exactly: $0) }
         if let pid, !alive(pid_t(pid)) { continue }
+        // A crashed CLI's pid handed to a new process: its last busy would hold a row past the decay.
+        // Either side unknown is unknown, never another process.
+        if let pid, let want = obj["procStart"] as? String, let t = started(pid_t(pid)),
+           lstartUTC(t) != want { continue }
         let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate ?? .distantPast
         if let prev = stamps[sid], prev > stamp { continue }
@@ -2631,7 +2656,7 @@ final class Controller: NSObject, NSWindowDelegate {
         // One read, two consumers. `manual` stays in the fold — it is the
         // refcount that holds an idle pet up — and is dropped from the rows.
         let live = liveSessions(sessionsURL, now: now, alive: ownerAlive,
-                                registry: registryEntries(registryURL, alive: alive))
+                                registry: registryEntries(registryURL, alive: alive, started: processStart))
         sessionRows = menuRows(live)
         sessionLabelsBySid = sessionLabels(sessionRows)
 
