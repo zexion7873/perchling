@@ -228,6 +228,58 @@ printf '%s' "{\"session_id\":\"abc-123\",\"transcript_path\":\"$decoy\",\"cwd\":
   && ok "a turn with no reply keeps the caption" \
   || no "a turn with no reply keeps the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
 
+# --- a turn that hands work to background agents is not done ---
+# Entry shapes captured from real 2.1.311 Stop payloads (fake API, fresh config).
+agent='{"id":"afc6ff2cbf661d1d8","type":"subagent","status":"running","description":"probe agent","agent_type":"general-purpose"}'
+shell='{"id":"bt3r3f3fp","type":"shell","status":"running","description":"probe sleep","command":"sleep 40"}'
+h=$(fire bg-agent done "$(stop 'handed it off' "$agent")")
+[ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = running ] \
+  && ok "a background agent keeps it running" \
+  || no "a background agent keeps it running" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+[ "$(cat "$h/perchling/state" 2>/dev/null)" = running ] \
+  && ok "and so does the global state file" \
+  || no "and so does the global state file" "got '$(cat "$h/perchling/state")'"
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "handed it off" ] \
+  && ok "the reply is still the caption" \
+  || no "the reply is still the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+for t in workflow teammate 'cloud session'; do
+  # Built outside the $(…): bash 3.2 brace-expands a quoted {…,…} nested in one.
+  entry="{\"id\":\"x1\",\"type\":\"$t\",\"status\":\"running\",\"description\":\"d\"}"
+  h=$(fire "bg-$t" done "$(stop 'r' "$entry")")
+  [ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = running ] \
+    && ok "a background $t keeps it running" \
+    || no "a background $t keeps it running" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+done
+h=$(fire bg-shell done "$(stop 'r' "$shell")")
+[ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = done ] \
+  && ok "a background shell alone is done" \
+  || no "a background shell alone is done" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+# The CLI's own machinery is not the user's work, and an allowlist is what keeps a new label out.
+h=$(fire bg-dream done "$(stop 'r' '{"id":"m1","type":"dream","status":"running","description":"d"}')")
+[ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = done ] \
+  && ok "a machinery label is done" \
+  || no "a machinery label is done" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+h=$(fire bg-crons done "$(stop 'r' "$shell" | sed 's/"session_crons":\[\]/"session_crons":[{"id":"c1","type":"subagent"}]/')")
+[ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = done ] \
+  && ok "nothing past session_crons counts" \
+  || no "nothing past session_crons counts" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+h=$(fire bg-error error "$(stop 'API Error: 500' "$agent" | sed 's/"hook_event_name":"Stop"/"hook_event_name":"StopFailure"/')")
+[ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = error ] \
+  && ok "an error stays an error" \
+  || no "an error stays an error" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+# A rewritten Stop is still the end of a turn, not a typed prompt.
+h=$(fire bg-odo running '{"session_id":"abc-123","cwd":"/x","prompt":"first"}')
+stop 'handed it off' "$agent" | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" done >/dev/null 2>&1
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
+  && ok "a rewritten Stop never counts" \
+  || no "a rewritten Stop never counts" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+# The tty path has no payload and keeps writing its argument.
+home="$W/tty"; mkdir -p "$home"
+CLAUDE_CONFIG_DIR="$home" script -q /dev/null bash "$STATE_SH" waiting > /dev/null 2>&1 < /dev/null
+[ "$(cat "$home/perchling/state" 2>/dev/null)" = waiting ] \
+  && ok "the tty path writes its argument" \
+  || no "the tty path writes its argument" "got '$(cat "$home/perchling/state" 2>/dev/null)'"
+
 # --- the odometer: line 5 counts HUMAN prompts and nothing else ---
 # A turn is a typed prompt: only UserPromptSubmit carries "prompt", and the
 # machinery filter blanks the harness's fake ones. Everything else — tool

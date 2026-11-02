@@ -68,9 +68,9 @@ seconds on first launch, and again after every plugin update.
 
 |   | State | Trigger | What you see |
 |:-:|-------|---------|--------------|
-| 👁️ | **running** | you submit a prompt, tools execute | hunches over a laptop and works |
+| 👁️ | **running** | you submit a prompt, tools execute, background agents are still working | hunches over a laptop and works |
 | 👀 | **waiting** | permission prompt, a question for you, a plan to approve | stops and stares straight at you, wide-eyed, twitching |
-| 🎉 | **done** | turn or agent completed | sits up grinning, ears perked |
+| 🎉 | **done** | turn or agent completed, no background agent still working | sits up grinning, ears perked |
 | 😢 | **error** | an API failure ended the turn | droops, a red cross through each eye |
 | 💤 | **idle** | nothing happening | sits and breathes, tail curled |
 

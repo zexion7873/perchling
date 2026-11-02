@@ -26,7 +26,7 @@ d="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/perchling"
 # Owner-only: line 3 of a session file quotes the user's prompt or Claude's reply.
 umask 077
 [ -d "$d" ] || mkdir -p "$d"
-printf '%s' "${1:-idle}" > "$d/.state.$$" 2>/dev/null && mv -f "$d/.state.$$" "$d/state" 2>/dev/null
+mood="${1:-idle}"
 if [ ! -t 0 ]; then
   # Hook payload arrives as one JSON blob on stdin. The harness keeps the pipe
   # open after writing, so never read until EOF — dd does exactly one read().
@@ -129,6 +129,18 @@ if [ ! -t 0 ]; then
         [ -n "$reply" ] && snippet="$reply" ;;
     esac
   fi
+  # Background agents keep the session working; a shell or the CLI's own machinery does not.
+  if [ "$mood" = done ]; then
+    case "$payload" in
+      *'"background_tasks":['*)
+        bg=${payload#*'"background_tasks":['}; bg=${bg%%'"session_crons"'*}
+        case "$bg" in
+          *'"type":"subagent"'*|*'"type":"workflow"'*|*'"type":"teammate"'*|*'"type":"cloud session"'*) mood=running ;;
+        esac ;;
+    esac
+  fi
+  # From the decided mood, never $1: foldMoods folds this file as an input of its own.
+  printf '%s' "$mood" > "$d/.state.$$" 2>/dev/null && mv -f "$d/.state.$$" "$d/state" 2>/dev/null
   # Written LAST, because line 3 is the caption and the caption is not known
   # until the `done` branch above has had its chance to replace the prompt with
   # the reply.
@@ -178,8 +190,10 @@ if [ ! -t 0 ]; then
     # are. Always five lines, empty ones included — `Mood.parse` reads line
     # one and the reader maps an empty line to nil, so the shorter forms
     # `pet.sh` writes stay valid.
-    printf '%s\n%s\n%s\n%s\n%s' "${1:-idle}" "$cwd" "$snippet" "$tool" "$turns" > "$d/.sess.$$" 2>/dev/null &&
+    printf '%s\n%s\n%s\n%s\n%s' "$mood" "$cwd" "$snippet" "$tool" "$turns" > "$d/.sess.$$" 2>/dev/null &&
       mv -f "$d/.sess.$$" "$d/sessions/$sid" 2>/dev/null
   fi
+else
+  printf '%s' "$mood" > "$d/.state.$$" 2>/dev/null && mv -f "$d/.state.$$" "$d/state" 2>/dev/null
 fi
 exit 0
