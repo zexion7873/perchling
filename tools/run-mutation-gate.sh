@@ -280,6 +280,42 @@ gate reply-takes-last-match plugin/scripts/state.sh PERCHLING_STATE_SH tools/run
   "        reply=\${payload#*'\"last_assistant_message\"'}" \
   "        reply=\${payload##*'\"last_assistant_message\"'}"
 
+# background_tasks ignored: a turn that handed its work to agents shouts done
+# while they are still working.
+gate background-tasks-ignored plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "*'\"type\":\"cloud session\"'*) mood=running ;;" \
+  "*'\"type\":\"cloud session\"'*) : ;;"
+
+# The global state file written from \$1: foldMoods folds it, so the face still
+# says done for its leash while the row says running.
+gate state-file-from-arg plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "  printf '%s' \"\$mood\" > \"\$d/.state.\$\$\"" \
+  "  printf '%s' \"\${1:-idle}\" > \"\$d/.state.\$\$\""
+
+# A denylist: every label the CLI adds later (dream, memory import) silently
+# swallows done.
+gate background-denylist plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "*'\"type\":\"subagent\"'*|*'\"type\":\"workflow\"'*|*'\"type\":\"teammate\"'*|*'\"type\":\"cloud session\"'*) mood=running ;;" \
+  "*'\"type\":\"shell\"'*) ;; *'\"type\":'*) mood=running ;;"
+
+# The odometer keyed on the rewritten mood: every Stop with an agent running
+# counts as a typed prompt.
+gate turn-keyed-on-mood plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '    [ "${1:-}" = running ] && [ -n "$snippet" ] && turn=1' \
+  '    [ "$mood" = running ] && [ -n "$snippet" ] && turn=1'
+
+# A failed turn hidden behind its agents: StopFailure's error read as running.
+gate error-promoted plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '  if [ "$mood" = done ]; then
+    case "$payload" in' \
+  '  if [ "$mood" = done ] || [ "$mood" = error ]; then
+    case "$payload" in'
+
+# The slice left open: a key serialised after session_crons decides the mood.
+gate background-slice-unbounded plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "; bg=\${bg%%'\"session_crons\"'*}" \
+  ''
+
 # A refresh that never runs is the pre-record behaviour restored for every
 # pet: picked copies frozen at pick time while the shipped art moves on —
 # the exact user report (#103) this loop exists to close.
