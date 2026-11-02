@@ -200,10 +200,11 @@ alone cleans up, exactly once.
   and `workflow` — because 2.1.311 also emits machinery labels (dream,
   auto-mode scan, memory import) that a denylist would let swallow done for
   good, and a shell alone stays done: a backgrounded command is not the
-  session working. `teammate` and `cloud session` are left out on
-  measurement: 2.1.311 keeps an agent-team teammate at `"status":"running"`
-  after it goes idle (only its `isIdle` flips), and a long-running cloud
-  session at running for its whole life. The payload carries neither flag,
+  session working. `teammate` and `cloud session` are left out. Measured on
+  an interactive 2.1.311 with agent teams on: an agent-team teammate stays
+  at `"status":"running"` after it goes idle (only its `isIdle` flips). Read
+  from the binary, not measured: a cloud session the CLI marks long-running
+  stays at running for its whole life. The payload carries neither flag,
   and the CLI's own delegated-work test excludes both. Promoting them held
   every lead `Stop` at running while a team existed, so done never showed.
   Only `done` is promoted, so a `StopFailure`'s error stays visible behind
