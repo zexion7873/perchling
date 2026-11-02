@@ -196,13 +196,19 @@ alone cleans up, exactly once.
   `"background_tasks":[{…"type":"subagent","status":"running"…}]`, one with
   only a backgrounded Bash carries `"type":"shell"`, and the next `Stop` after
   either finishes carries `[]`. `state.sh` slices `background_tasks` up to
-  `session_crons` with builtins and promotes on an ALLOWLIST — `subagent`,
-  `workflow`, `teammate`, `cloud session` — because 2.1.311 also emits
-  machinery labels (dream, auto-mode scan, memory import) that a denylist
-  would let swallow done for good, and a shell alone stays done: a
-  backgrounded command is not the session working. Only `done` is promoted,
-  so a `StopFailure`'s error stays visible behind its agents. The reply stays
-  the caption, and the odometer's `turn` stays keyed on `$1`, so a promoted
+  `session_crons` with builtins and promotes on an ALLOWLIST — `subagent`
+  and `workflow` — because 2.1.311 also emits machinery labels (dream,
+  auto-mode scan, memory import) that a denylist would let swallow done for
+  good, and a shell alone stays done: a backgrounded command is not the
+  session working. `teammate` and `cloud session` are left out on
+  measurement: 2.1.311 keeps an agent-team teammate at `"status":"running"`
+  after it goes idle (only its `isIdle` flips), and a long-running cloud
+  session at running for its whole life. The payload carries neither flag,
+  and the CLI's own delegated-work test excludes both. Promoting them held
+  every lead `Stop` at running while a team existed, so done never showed.
+  Only `done` is promoted, so a `StopFailure`'s error stays visible behind
+  its agents. The reply stays the caption, and the odometer's `turn` stays
+  keyed on `$1`, so a promoted
   `Stop` never counts as a prompt. Escaped text cannot match the patterns —
   every quote inside a JSON string carries a backslash — and a reply long
   enough to push the key past `dd`'s 64KB read degrades to done, which is
