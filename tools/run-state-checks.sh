@@ -242,13 +242,20 @@ h=$(fire bg-agent done "$(stop 'handed it off' "$agent")")
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "handed it off" ] \
   && ok "the reply is still the caption" \
   || no "the reply is still the caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
-for t in workflow teammate 'cloud session'; do
-  # Built outside the $(…): bash 3.2 brace-expands a quoted {…,…} nested in one.
+# Built outside the $(…): bash 3.2 brace-expands a quoted {…,…} nested in one.
+entry='{"id":"x1","type":"workflow","status":"running","description":"d","name":"w"}'
+h=$(fire bg-workflow done "$(stop 'r' "$entry")")
+[ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = running ] \
+  && ok "a background workflow keeps it running" \
+  || no "a background workflow keeps it running" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+# 2.1.311 leaves an idle teammate and a long-running cloud session at "running"
+# and sends no flag that says so; the CLI's own registry calls both idle.
+for t in teammate 'cloud session'; do
   entry="{\"id\":\"x1\",\"type\":\"$t\",\"status\":\"running\",\"description\":\"d\"}"
   h=$(fire "bg-$t" done "$(stop 'r' "$entry")")
-  [ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = running ] \
-    && ok "a background $t keeps it running" \
-    || no "a background $t keeps it running" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
+  [ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = done ] \
+    && ok "a $t alone is done" \
+    || no "a $t alone is done" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
 done
 h=$(fire bg-shell done "$(stop 'r' "$shell")")
 [ "$(sed -n 1p "$h/perchling/sessions/abc-123" 2>/dev/null)" = done ] \

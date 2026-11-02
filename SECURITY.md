@@ -34,16 +34,19 @@ It makes no network requests and opens no ports. The hook payload arrives on
 stdin and no path it names is opened. Outside the runtime home it reads one
 thing, locally written and never sent anywhere: the CLI's own session records
 under `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions`. That registry is written by
-another program, so content arriving from it is parsed as untrusted input and
-only ever reaches a menu label. What it keeps, and for how long, is in
+another program, so content arriving from it is parsed as untrusted input. A
+name only ever reaches a label, in the menu or the speech bubble. The status
+fields are only compared against fixed values or read as a time (a wait's
+age), and can change a session's mood and post a notification banner. What it keeps, and for how long, is in
 [PRIVACY.md](PRIVACY.md).
 
 ### In scope
 
 - Anything in a hook script that lets payload content escape its quoting — the
   session id becomes a filename, and a traversal in it was a real bug once.
-- Anything in the session registry above that escapes being a menu
-  label — a name that reaches a shell, a path, or a file operation.
+- Anything in the session registry above that escapes being a label, a
+  comparison or a time — a name or status field that reaches a shell, a
+  path, or a file operation, or a status field's text shown on screen.
 - Anything that writes outside the runtime home, or that follows a link out of
   it.
 - A pet manifest that can do more than render badly. Manifests are a shareable

@@ -129,13 +129,14 @@ if [ ! -t 0 ]; then
         [ -n "$reply" ] && snippet="$reply" ;;
     esac
   fi
-  # Background agents keep the session working; a shell or the CLI's own machinery does not.
+  # Subagents and workflows keep the session working. An idle teammate or a
+  # long-running cloud session still reads "running" here; a shell is not work.
   if [ "$mood" = done ]; then
     case "$payload" in
       *'"background_tasks":['*)
         bg=${payload#*'"background_tasks":['}; bg=${bg%%'"session_crons"'*}
         case "$bg" in
-          *'"type":"subagent"'*|*'"type":"workflow"'*|*'"type":"teammate"'*|*'"type":"cloud session"'*) mood=running ;;
+          *'"type":"subagent"'*|*'"type":"workflow"'*) mood=running ;;
         esac ;;
     esac
   fi

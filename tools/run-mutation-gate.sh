@@ -283,8 +283,8 @@ gate reply-takes-last-match plugin/scripts/state.sh PERCHLING_STATE_SH tools/run
 # background_tasks ignored: a turn that handed its work to agents shouts done
 # while they are still working.
 gate background-tasks-ignored plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
-  "*'\"type\":\"cloud session\"'*) mood=running ;;" \
-  "*'\"type\":\"cloud session\"'*) : ;;"
+  "*'\"type\":\"workflow\"'*) mood=running ;;" \
+  "*'\"type\":\"workflow\"'*) : ;;"
 
 # The global state file written from \$1: foldMoods folds it, so the face still
 # says done for its leash while the row says running.
@@ -295,8 +295,19 @@ gate state-file-from-arg plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-st
 # A denylist: every label the CLI adds later (dream, memory import) silently
 # swallows done.
 gate background-denylist plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
-  "*'\"type\":\"subagent\"'*|*'\"type\":\"workflow\"'*|*'\"type\":\"teammate\"'*|*'\"type\":\"cloud session\"'*) mood=running ;;" \
+  "*'\"type\":\"subagent\"'*|*'\"type\":\"workflow\"'*) mood=running ;;" \
   "*'\"type\":\"shell\"'*) ;; *'\"type\":'*) mood=running ;;"
+
+# An idle agent-team teammate promoted: every lead Stop reads running while the
+# team exists, and done never shows.
+gate teammate-promoted plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "*'\"type\":\"workflow\"'*) mood=running ;;" \
+  "*'\"type\":\"workflow\"'*|*'\"type\":\"teammate\"'*) mood=running ;;"
+
+# A long-running cloud session promoted: the same, for as long as it lives.
+gate cloud-session-promoted plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  "*'\"type\":\"workflow\"'*) mood=running ;;" \
+  "*'\"type\":\"workflow\"'*|*'\"type\":\"cloud session\"'*) mood=running ;;"
 
 # The odometer keyed on the rewritten mood: every Stop with an agent running
 # counts as a typed prompt.
