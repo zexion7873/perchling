@@ -225,10 +225,14 @@ and what the alternative lost to.
   waiting outlived the registry's busy by the whole tool. `foldMoods`
   therefore leaves the state file off the face when it is no more than
   `sameEvent` newer than some live row, and keeps it in `current`, so a row
-  ending under its echo rings no fresh banner. Merging in `liveSessions`
-  alone lost to this on the probe's own numbers. All of it is pinned in
-  `tools/session-harness.swift` with the probe stamps as fixtures, each rule
-  beside its mutant.
+  ending under its echo rings no fresh banner. Nor does the state file ring
+  for a mood some live row already holds — that row rang for it, and a wait
+  the registry raised a poll before the Notification hook wrote it rang
+  twice. Testing for an echo is not enough there: a poll can land between
+  `state.sh`'s two writes, while the row still carries the registry's older
+  stamp. Merging in `liveSessions` alone lost to this on the probe's own
+  numbers. All of it is pinned in `tools/session-harness.swift` with the
+  probe stamps as fixtures.
 - **A caption arrives still JSON-escaped.** `state.sh` captures the string
   body with a `sed`, so a two-line prompt reaches the file as the literal
   characters backslash and n. `cleanCaption` is the only unescaper, and

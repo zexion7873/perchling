@@ -1862,7 +1862,10 @@ func foldMoods(state: (mood: Mood, stamp: Date)?, live: [SessionRow],
         // An echo keeps its transitions, so a row ending under it rings nothing new.
         if !(echo && key == "state"), moodRank[m]! > moodRank[display]! { display = m }
         let prev = last[key] ?? .idle
-        if m != prev, m == .waiting || m == .done || m == .error {
+        // A row already in this mood rang for it. Without this the state file rings a
+        // registry-raised wait again when the Notification hook writes it, echo or not.
+        let heard = key == "state" && live.contains { $0.mood == m }
+        if !heard, m != prev, m == .waiting || m == .done || m == .error {
             entered.insert(m)
         }
     }

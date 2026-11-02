@@ -519,6 +519,21 @@ gate state-echo-counted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-s
   '        echo = live.contains { s.stamp.timeIntervalSince($0.stamp) <= sameEvent }' \
   '        echo = false'
 
+# The echo rings: a wait the registry raised rings again when the Notification hook writes it 6s later.
+gate echo-rings-twice plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if !heard, m != prev, m == .waiting' \
+  '        if m != prev, m == .waiting'
+
+# Rows deduped too: a second session's permission prompt rings nothing while the first still waits.
+gate rows-heard-too plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        let heard = key == "state" && live.contains { $0.mood == m }' \
+  '        let heard = live.contains { $0.mood == m && $0.sid != key }'
+
+# The state file never rings: a puppeteered wait with no row behind it goes silent.
+gate state-never-rings plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '        if !heard, m != prev, m == .waiting' \
+  '        if key != "state", m != prev, m == .waiting'
+
 # A crashed CLI's pid reused: its last busy holds a dead session's running row past the decay.
 gate pid-reuse-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '           lstartUTC(t) != want { continue }' \

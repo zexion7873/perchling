@@ -768,6 +768,21 @@ do {
     let p1 = foldMoods(state: (.done, t0), live: [row("s1", .done, stamp: t0)], now: t0, last: [:])
     let p2 = foldMoods(state: (.done, t0), live: [], now: t0.addingTimeInterval(1), last: p1.current)
     check("a row ending under its echo rings nothing new", p2.entered, Set<Mood>())
+    // The registry raised the row a poll earlier; the Notification hook writes the same wait 6s later.
+    let raised = foldMoods(state: (.waiting, t0), live: [row("s1", .waiting, stamp: t0)], now: t0,
+                           last: ["state": .running, "s1": .waiting])
+    check("a hook echoing a wait the registry raised rings nothing", raised.entered, Set<Mood>())
+    // The poll between state.sh's two mv's: the row still carries the registry's stamp, 6s older.
+    let between = foldMoods(state: (.waiting, t0), live: [row("s1", .waiting, stamp: t0.addingTimeInterval(-6))],
+                            now: t0, last: ["state": .running, "s1": .waiting])
+    check("nor does the poll before its session file lands", between.entered, Set<Mood>())
+    let second = foldMoods(state: (.waiting, t0), live: [row("a", .waiting, stamp: t0.addingTimeInterval(-60)),
+                                                         row("b", .waiting, stamp: t0)],
+                           now: t0, last: ["state": .running, "a": .waiting, "b": .running])
+    check("a second session's wait still rings beside the first", second.entered, Set([Mood.waiting]))
+    let ghost = foldMoods(state: (.waiting, t0), live: [row("s1", .running, stamp: t0.addingTimeInterval(-60))],
+                          now: t0, last: ["state": .running, "s1": .running])
+    check("a state file no row echoes still rings", ghost.entered, Set([Mood.waiting]))
 }
 
 // MARK: - awayNudge
