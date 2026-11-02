@@ -632,6 +632,12 @@ gate skill-root-unbraced plugin/skills/draw-pet/SKILL.md PERCHLING_SKILL_MD tool
   'bash "${CLAUDE_PLUGIN_ROOT}/scripts/pet.sh" build' \
   'bash "$CLAUDE_PLUGIN_ROOT/scripts/pet.sh" build'
 
+# One type dropped from the exact-list matcher: that wait (here a usage-limit
+# resume) never reaches the pet, and nothing else in the repo notices.
+gate waiting-type-dropped plugin/hooks/hooks.json PERCHLING_HOOKS_JSON tools/run-release-checks.sh \
+  '|quota_auto_resume_stale|quota_auto_resume_disabled",' \
+  '|quota_auto_resume_stale",'
+
 echo "---"
 echo "$pass mutants caught, $fail escaped"
 [ "$fail" = 0 ]

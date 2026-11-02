@@ -69,7 +69,7 @@
     ],
     "Notification": [
       {
-        "matcher": "permission_prompt|agent_needs_input",
+        "matcher": "permission_prompt|agent_needs_input|worker_permission_prompt|elicitation_dialog|elicitation_url_dialog|quota_auto_resume_stale|quota_auto_resume_disabled",
         "hooks": [
           {
             "type": "command",

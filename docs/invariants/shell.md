@@ -62,15 +62,28 @@ alone cleans up, exactly once.
   can see. The `Notification` matcher is an exact list of notification types —
   a matcher made only of letters, digits, `_ - , |` and spaces is compared
   whole, never as a regex — so `permission_prompt` does not catch
-  `worker_permission_prompt`.
+  `worker_permission_prompt`. The list therefore names every type that blocks
+  on a human, and `run-release-checks.sh` holds it to all seven: the session's
+  own and a worker's permission prompt (`permission_prompt`,
+  `worker_permission_prompt`), `agent_needs_input`, an MCP server's form or
+  link (`elicitation_dialog`, `elicitation_url_dialog`), and a usage-limit
+  resume the CLI cannot finish alone (`quota_auto_resume_stale`,
+  `quota_auto_resume_disabled`). 2.1.311 emits at least seventeen types, most
+  of them news rather than debts, so a wildcard would turn every one into a
+  wait. The `Elicitation` event key (2.1.76) would see MCP input directly, but
+  a new key is the compatibility decision in the next bullet and waits for a
+  2.1.109 `plugin validate` run.
   **In the Claude Code desktop app the third one did not fire, measured
   2026-08-05.** The app launches the CLI with
   `--permission-mode auto --permission-prompt-tool stdio`, so a decision leaves
   as a control-protocol `can_use_tool` request and the app draws its own dialog,
   and Claude Code's own notification path was not reached. CLI 2.1.233's
   changelog fixes exactly this ("Notification hooks not firing for permission
-  prompts when running under Claude Desktop or VS Code"), and nothing here has
-  re-measured it since. That measurement, one prompt and a forced
+  prompts when running under Claude Desktop or VS Code"), and 2026-11-02 on
+  2.1.311 confirmed it in passing: every permission dialog held open in the
+  desktop app got a second `waiting` write about 6s after `PermissionRequest`'s,
+  which only the `Notification` arm can produce. The table's middle row is that
+  older CLI's. The 2026-08-05 measurement, one prompt and a forced
   `permissions.ask` rule, varying only the host:
 
   | host / path | fires at the permission decision |
