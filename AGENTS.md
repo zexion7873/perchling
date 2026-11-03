@@ -179,7 +179,8 @@ without this repo moving.
 
 CI compiles with a PINNED Xcode 16.4 / Swift 6.1.2, asserted rather than
 inferred. A dev machine's Swift has never been evidence about CI's, and bumping
-means changing the path AND the assertion, in BOTH jobs.
+means changing the path AND the assertion, in BOTH jobs, plus the path in
+`codeql.yml`.
 
 This repo IS the marketplace: the version line in `plugin/.claude-plugin/plugin.json`
 is the publish. Branch protection, admins included, lets `main` take it only

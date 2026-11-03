@@ -70,7 +70,7 @@ jobs:
           printf '%s\n' "$ver"
           case "$ver" in
             *"Apple Swift version 6.1.2"*) ;;
-            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — bump the path AND this assertion, in BOTH jobs"; exit 1 ;;
+            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — bump the path AND this assertion, in BOTH jobs, plus the path in codeql.yml"; exit 1 ;;
           esac
       - name: every harness
         run: |
@@ -158,7 +158,7 @@ jobs:
           printf '%s\n' "$ver"
           case "$ver" in
             *"Apple Swift version 6.1.2"*) ;;
-            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — bump the path AND this assertion, in BOTH jobs"; exit 1 ;;
+            *) echo "::error::Xcode_16.4 no longer yields Swift 6.1.2 — bump the path AND this assertion, in BOTH jobs, plus the path in codeql.yml"; exit 1 ;;
           esac
       - name: every harness goes red against the defect it is named after
         run: bash tools/run-mutation-gate.sh

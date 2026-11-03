@@ -1,0 +1,55 @@
+name: codeql
+
+on:
+  pull_request:
+    paths:
+      - plugin/scripts/pet.swift
+      - .github/workflows/**
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            os: ubuntu-latest
+            build-mode: none
+          # Default setup's autobuild needs an Xcode project or Package.swift; this repo has neither.
+          - language: swift
+            os: macos-15
+            build-mode: manual
+    runs-on: ${{ matrix.os }}
+    # Under the extractor, swiftc takes ~12 min for pet.swift instead of ~10s.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: toolchain
+        if: matrix.language == 'swift'
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: build what ships
+        if: matrix.build-mode == 'manual'
+        run: swiftc -O plugin/scripts/pet.swift -o "$RUNNER_TEMP/perchling"
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
