@@ -266,7 +266,10 @@ gate tool-detail-blanked plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-st
 
 # The prompt read from any event: a tool batch carrying an Agent call's brief
 # in tool_input captions the bubble with it and ticks the odometer, because the
-# greedy sed takes the last "prompt" in the blob wherever it sits.
+# greedy sed takes the last "prompt" in the blob wherever it sits. The same
+# gate is what keeps a session cron's prompt out of the bubble on a Stop whose
+# final message has no text (the reply-absent case); the done branch's own
+# reset used to cover that and was retired as a second guard on one path.
 gate prompt-read-from-any-event plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   '  if [ "$event" = UserPromptSubmit ]; then' \
   '  if true; then'
@@ -297,15 +300,6 @@ gate reply-stops-at-escaped-quote plugin/scripts/state.sh PERCHLING_STATE_SH too
 gate reply-needs-closing-quote plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*).*/\\1/p' \\" \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*)\".*/\\1/p' \\"
-
-# The reset reads as redundant: a Stop payload carries no top-level "prompt".
-# It carries a session cron's, and without the reset a turn whose final
-# message has no text puts the cron's prompt in the bubble.
-gate done-quotes-a-cron plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
-  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
-    snippet=' \
-  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
-    :'
 
 # One extra # takes the LAST key, and the caption goes to whatever embedded
 # object serialised after the CLI's own — the sid's ghost-row bug, in the bubble.

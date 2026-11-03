@@ -132,11 +132,14 @@ if [ ! -t 0 ]; then
   # has to step over escaped quotes, and a plain [^"]* stops at the first one.
   #
   # The key is absent when the final message has no text (thinking only, or
-  # empty), and neither payload carries a top-level "prompt" — so the snippet
-  # the prompt sed found above is a session cron's, and must be dropped before
-  # the carry below can keep the last caption instead.
+  # empty), and a Stop payload's only "prompt" is a session cron's. The event
+  # gate above already leaves the snippet empty here — a Stop is not a
+  # UserPromptSubmit — so the carry below keeps the last caption rather than
+  # quoting the cron. This branch used to reset the snippet itself for that
+  # case, back when the prompt sed ran on every event; with the gate the reset
+  # was a second guard on the same path, and the mutant that removed it
+  # stayed green. run-state-checks.sh's reply-absent case now pins the gate.
   if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
-    snippet=
     case "$payload" in
       *'"last_assistant_message"'*)
         reply=${payload#*'"last_assistant_message"'}

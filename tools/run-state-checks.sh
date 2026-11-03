@@ -246,6 +246,9 @@ h=$(fire reply-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"hook_ev
 # The reply key is absent when the turn's final message has no text, and a
 # Stop payload's only "prompt" is a session cron's: the caption keeps the last
 # one rather than quoting the cron. Shape captured from a real 2.1.273 Stop.
+# What keeps the cron out is the event gate on the prompt sed — a Stop is not
+# a UserPromptSubmit — so this is one of the assertions prompt-read-from-any-event
+# must red.
 h=$(fire reply-absent running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"typed this"}')
 printf '%s' "{\"session_id\":\"abc-123\",\"transcript_path\":\"$decoy\",\"cwd\":\"/x\",\"prompt_id\":\"p1\",\"permission_mode\":\"default\",\"effort\":{\"level\":\"high\"},\"hook_event_name\":\"Stop\",\"stop_hook_active\":false,\"background_tasks\":[],\"session_crons\":[{\"id\":\"c1\",\"schedule\":\"*/5 * * * *\",\"recurring\":true,\"prompt\":\"check the deploy\"}]}" \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" done >/dev/null 2>&1
