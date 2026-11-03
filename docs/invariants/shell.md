@@ -180,6 +180,38 @@ alone cleans up, exactly once.
   harness holds open, so it reads with a single `dd bs=65536 count=1` rather
   than to EOF.
 
+  **Which key wins is a position rule, and it differs by field.** `session_id`,
+  `tool_name`, `hook_event_name` and `last_assistant_message` are first-match
+  prefix-strips: the CLI's own key leads the payload and every embedded object
+  serialises after it. `cwd` keeps the greedy last-match sed because it is a
+  label on a tray row and never resolved. `prompt` is neither: a
+  `UserPromptSubmit` is the only event whose top-level payload carries one, but
+  a `PostToolBatch` can carry an Agent call's brief at `tool_input.prompt`, and
+  the greedy sed took it — the bubble quoted a subagent's instructions and the
+  odometer counted the tool batch as a typed prompt. The snippet is therefore
+  read only when `hook_event_name` is `UserPromptSubmit`, which also spares
+  every tool batch the sed fork. `run-state-checks.sh` pins it with a nested
+  `prompt` on a `PostToolBatch`, and its mutant.
+- **A sid typed as an argument is a filename too.** `pet.sh up <sid>` and
+  `pet.sh down <sid>` take `$1` before they look at the payload, and the value
+  reaches the same `mv -f` and `rm -f` the payload's does. The payload path has
+  had its shape check since the ghost-row bug; the argument path had none, and
+  `pet.sh down '../../x'` removed a file two levels above `sessions/`. Only the
+  user can type that — but `SKILL.md`, `README.md` and `llms-install.md` all tell
+  an agent to run the script, and an agent's arguments come from a conversation.
+  `sid_arg` applies the one alphabet, and rejected means EMPTY, never repaired:
+  `cmd_up` falls through to the payload and then `manual`, `cmd_down` to the
+  payload and then nothing, exactly where an unparseable payload lands.
+  `run-prune-checks.sh` pins both, on the victim's CONTENT, with a mutant.
+- **The `wake` flag is a file, and only a file is consumed.** `pet.sh wake`
+  touches `<root>/wake`; the overlay's poll removes it and un-tucks. The removal
+  is `FileManager.removeItem`, which is recursive, and the poll runs every
+  400 ms for as long as the pet is up — so an existence test alone would wipe a
+  DIRECTORY at that path with everything in it, silently, under `try?`.
+  `consumeWakeFlag` reads the type first and leaves anything that is not a
+  regular file or a link where it was; `run-session-harness.sh` pins it with a
+  directory holding a file, and its mutant.
+
   **It honours `disabled` too, and that is what makes `disable` mean it.**
   `cmd_up` has always read the flag, so a disabled install launched no pet, but
   the hot path kept running a `dd`, five `sed`s and three writes on every

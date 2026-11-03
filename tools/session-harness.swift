@@ -593,6 +593,28 @@ do {
               petsDir(root).appendingPathComponent(".shipped/otter.json").path), false)
 }
 
+// MARK: - the wake flag
+//
+// `pet.sh wake` touches an empty file; the poll consumes it to un-tuck. The
+// consume used to be fileExists + removeItem, and removeItem is recursive: a
+// directory at that path — a stray mkdir, a future script's — went with its
+// contents on the next 400 ms tick. Only a file is a flag.
+
+do {
+    let dir = tempDir("wake")
+    let flag = dir.appendingPathComponent("wake")
+    let fm = FileManager.default
+    check("no flag, nothing consumed", consumeWakeFlag(at: flag), false)
+    writeFile(dir, "wake", "")
+    check("a wake file is consumed", consumeWakeFlag(at: flag), true)
+    check("and is gone", fm.fileExists(atPath: flag.path), false)
+    try! fm.createDirectory(at: flag, withIntermediateDirectories: true)
+    writeFile(flag, "keep", "somebody's file")
+    check("a directory at the flag's path is not a flag", consumeWakeFlag(at: flag), false)
+    check("and keeps what is inside it",
+          fm.fileExists(atPath: flag.appendingPathComponent("keep").path), true)
+}
+
 // MARK: - liveSessions: the TTL decay and the one-hour cutoff
 //
 // Both were unreachable while every fixture was read milliseconds after being

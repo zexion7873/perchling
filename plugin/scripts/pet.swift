@@ -630,6 +630,24 @@ func petSlug(_ name: String) -> String {
     return out.isEmpty ? "pet" : out
 }
 
+// `pet.sh wake` drops an empty FILE at <root>/wake for the poll loop to find;
+// consuming it is what un-tucks a tucked pet. Only a file (or a link, which
+// removeItem unlinks without following) counts as the flag. removeItem is
+// recursive, and the poll runs every 400 ms for as long as the pet is up, so
+// a DIRECTORY somebody left at that path would otherwise be wiped with its
+// contents on the next tick, silently, under `try?` — the one place under the
+// runtime home where a path could be recursively deleted. Anything that is
+// not a flag is left exactly where it was. True only once the flag is gone,
+// so a removal that fails is retried on the next tick rather than un-tucking
+// against a flag still on disk.
+func consumeWakeFlag(at url: URL) -> Bool {
+    let fm = FileManager.default
+    guard let attrs = try? fm.attributesOfItem(atPath: url.path) else { return false }
+    let type = attrs[.type] as? FileAttributeType
+    guard type == .typeRegular || type == .typeSymbolicLink else { return false }
+    return (try? fm.removeItem(at: url)) != nil
+}
+
 // Every install predating the library has a REGULAR FILE at pet.json — that is
 // what draw-pet wrote. Linking over it would destroy a pet the user may have no
 // other copy of, so it becomes the library's first entry instead. A symlink is
@@ -2717,10 +2735,8 @@ final class Controller: NSObject, NSWindowDelegate {
             if clock % 8 == 0 {
                 // Manual un-tuck: a tucked pet has no window to right-click,
                 // so `pet.sh wake` drops a flag file for us to find.
-                let wakeURL = root.appendingPathComponent("wake")
-                if FileManager.default.fileExists(atPath: wakeURL.path) {
-                    try? FileManager.default.removeItem(at: wakeURL)
-                    if tucked { setTucked(false) }
+                if consumeWakeFlag(at: root.appendingPathComponent("wake")), tucked {
+                    setTucked(false)
                 }
                 let (next, entered) = pollMoods()
                 let becameDone = next != view.mood && next == .done

@@ -75,8 +75,22 @@ if [ ! -t 0 ]; then
   # tradeoff holds only because this value is drawn, never resolved: it is a
   # label on a tray row, not a path this script opens.
   cwd=$(printf '%s' "$payload" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  # Which event this is. Every hook payload carries hook_event_name as one of
+  # the CLI's own top-level keys, so the first match is the session's — the
+  # same position rule the sid and tool_name extractions rest on.
+  event=
+  case "$payload" in
+    *'"hook_event_name"'*) event=${payload#*'"hook_event_name"'}; event=${event#*'"'}; event=${event%%'"'*} ;;
+  esac
   # UserPromptSubmit payloads carry the prompt; snippet it for the speech
   # bubble. Stops at the first escaped quote — it's a teaser, not a transcript.
+  # Gated on the EVENT, not on the key being present: the sed below is greedy
+  # and takes the last unescaped "prompt" anywhere in the blob, and a tool
+  # batch's payload can carry one inside tool_input — an Agent call's brief.
+  # Ungated, that brief became the bubble's caption and, because a running
+  # hook with a snippet is a turn, a tick on the odometer. The gate also
+  # spares every PostToolBatch the sed fork, which is most of this script's
+  # hot-path budget.
   # The 300 is BYTES and will land mid-codepoint on CJK about two times in
   # three. `cut -c1-300` is not the fix: hooks run with LANG, LC_ALL and
   # LC_CTYPE all unset, and measured under that C locale `cut -c` counts bytes
@@ -88,7 +102,10 @@ if [ ! -t 0 ]; then
   # from the other side: under a UTF-8 locale this sed refuses invalid bytes
   # with `illegal byte sequence`, and this script must never write to a hook's
   # stderr. Losing the snippet there is already handled — line 3 is re-read.
-  snippet=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | head -c 300 | sed 's/\\*$//' 2>/dev/null)
+  snippet=
+  if [ "$event" = UserPromptSubmit ]; then
+    snippet=$(printf '%s' "$payload" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | head -c 300 | sed 's/\\*$//' 2>/dev/null)
+  fi
   # Not every UserPromptSubmit is a person typing. The harness re-enters the
   # session with its own machinery — a finished background task, a reminder, a
   # slash command's stdout — through the same event, so the bubble was showing
@@ -147,10 +164,11 @@ if [ ! -t 0 ]; then
   # the reply.
   if [ -n "$sid" ]; then
     mkdir -p "$d/sessions" 2>/dev/null
-    # A turn is a HUMAN prompt. Only UserPromptSubmit carries "prompt", so a
-    # tool batch's running write reaches here with an empty snippet, and the
-    # machinery filter above has already blanked the harness's fake prompts —
-    # task notifications, slash commands. Decided BEFORE the carry below,
+    # A turn is a HUMAN prompt. The snippet is read only from a
+    # UserPromptSubmit, so a tool batch's running write reaches here with an
+    # empty one whatever its payload carries, and the machinery filter above
+    # has already blanked the harness's fake prompts — task notifications,
+    # slash commands. Decided BEFORE the carry below,
     # which would make every captionless hook on a captioned session look
     # like a turn.
     turn=

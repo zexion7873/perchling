@@ -99,6 +99,34 @@ mode=$(stat -f '%Lp' "$W/cfg/perchling" 2>/dev/null)
   && ok "a fresh session temp survives" \
   || no "a fresh session temp survives" "cmd_up raced a live write"
 
+# --- a sid typed as an argument is a filename too ---
+# `up` and `down` take their sid from $1 before they look at the payload, and
+# that value reaches the same `mv -f` and `rm -f` the payload's does. The
+# payload path has had a shape check since the ghost-row bug; the argument
+# path had none, so `pet.sh down '../../x'` removed a file two levels above
+# sessions/. SKILL.md and README.md tell an agent to run this script, and an
+# agent's arguments come from a conversation. The victim sits where
+# sessions/../.. resolves, and the assertion is on its CONTENT, for the reason
+# run-state-checks.sh gives: an empty sessions/ is what a successful traversal
+# leaves behind. stdin is /dev/null, not the harness's: a rejected argument
+# falls back to the payload, and dd on an inherited pipe would wait on it.
+printf 'PRECIOUS\n' > "$W/cfg/victim"
+CLAUDE_CONFIG_DIR="$W/cfg" bash "$W/scripts/pet.sh" down '../../victim' </dev/null >/dev/null 2>&1
+[ "$(cat "$W/cfg/victim" 2>/dev/null)" = PRECIOUS ] \
+  && ok "down with a traversing sid removes nothing" \
+  || no "down with a traversing sid removes nothing" "victim now: '$(cat "$W/cfg/victim" 2>/dev/null)'"
+CLAUDE_CONFIG_DIR="$W/cfg" bash "$W/scripts/pet.sh" up '../../planted' </dev/null >/dev/null 2>&1
+sleep 0.4
+[ ! -e "$W/cfg/planted" ] \
+  && ok "up with a traversing sid writes nothing there" \
+  || no "up with a traversing sid writes nothing there" "wrote $W/cfg/planted"
+# Rejected means empty, and an empty sid with no payload is the manual bridge —
+# the same place an unparseable payload lands, never a repaired name.
+[ -e "$S/manual" ] \
+  && ok "and lands on the manual bridge" \
+  || no "and lands on the manual bridge" "sessions/: $(ls -A "$S" | tr '\n' ' ')"
+rm -f "$W/cfg/victim"
+
 # Auto-compaction fires SessionStart in the middle of a turn that is still working.
 printf 'running\n/x\nmid-turn' > "$S/compacted"
 printf 'waiting\n/x\nstale' > "$S/resumed"
