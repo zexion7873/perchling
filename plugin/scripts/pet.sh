@@ -81,6 +81,19 @@ payload_sid() {
   printf '%s' "$sid_raw"
 }
 
+# The same shape rule for a sid that arrived as `pet.sh up <sid>` or
+# `pet.sh down <sid>`. The argument path used to skip it: only the payload was
+# treated as hostile, while the argument reached the very same `mv -f` and
+# `rm -f` — `pet.sh down '../../x'` removed a file two levels above sessions/.
+# Only the user can type that, but SKILL.md, README.md and llms-install.md all
+# tell an AGENT to run this script, and an agent's arguments come from a
+# conversation. Rejected means EMPTY, never repaired: cmd_up then falls back
+# to the payload and from there to `manual`, cmd_down to the payload and from
+# there to removing nothing — the same degradation the payload path has.
+sid_arg() {
+  case "$1" in *[!A-Za-z0-9_-]*) ;; *) printf '%s' "$1" ;; esac
+}
+
 # The outermost process this session hangs off — Claude desktop for a session
 # started there, the terminal app for one started from a shell. Its death is
 # the one end-of-session signal a missing SessionEnd cannot swallow. One ps,
@@ -263,7 +276,7 @@ cmd_up() {
   mkdir -p "$SESSIONS"
   # mkdir -p never tightens a home made before umask 077; 755 here exposes every file below.
   chmod 700 "$ROOT" 2>/dev/null
-  sid="${1:-}"
+  sid="$(sid_arg "${1:-}")"
   cwd=""
   src=""
   if [ -z "$sid" ]; then
@@ -425,7 +438,7 @@ cmd_up() {
 }
 
 cmd_down() {
-  sid="${1:-}"
+  sid="$(sid_arg "${1:-}")"
   if [ -z "$sid" ]; then read_payload; sid="$(payload_sid)"; fi
   [ -n "$sid" ] && rm -f "$SESSIONS/$sid" "$OWNERS/$sid"
   # A bridge left over from an enable/wake that happened while sessions were

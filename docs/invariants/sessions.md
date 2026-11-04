@@ -74,8 +74,11 @@ and what the alternative lost to.
   and the fold ignores; an optional line three is the caption the bubble
   quotes; an optional line four is the tool a `waiting` session is blocked on;
   an optional line five is the turn count — HUMAN prompts only, which costs
-  nothing to define because only `UserPromptSubmit` payloads carry `"prompt"`
-  and the caption's machinery filter has already blanked the fake ones. It is
+  nothing to define because `state.sh` reads `"prompt"` from a
+  `UserPromptSubmit` payload alone (gated on `hook_event_name`, not on the key
+  being present: a `PostToolBatch` can carry an Agent call's `prompt` inside
+  `tool_input`, and the greedy sed took it as the caption and a turn) and the
+  caption's machinery filter has already blanked the fake ones. It is
   carried forward on every rewrite and incremented on typed prompts alone, and
   both ends shape-check it to bare digits — a corrupt count restarts, never
   repairs. The tray row wears it as `· Nt`; the bubble never does, its 34

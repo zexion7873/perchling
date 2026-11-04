@@ -31,7 +31,7 @@ fire() { # fire <case> <mood> <payload>
 }
 
 # --- the ordinary path, so a harness that breaks everything still fails ---
-h=$(fire benign running '{"session_id":"abc-123","cwd":"/Users/x/proj","prompt":"hello there"}')
+h=$(fire benign running '{"session_id":"abc-123","cwd":"/Users/x/proj","hook_event_name":"UserPromptSubmit","prompt":"hello there"}')
 [ -f "$h/perchling/sessions/abc-123" ] \
   && ok "a real session id is written" \
   || no "a real session id is written" "no session file appeared"
@@ -101,7 +101,7 @@ done
 # staleness hour while the real session's row went stale mid-wait, hiding a
 # blocked session's "waiting" — the pet's core job. Delivery is measured, not
 # hypothetical: this repo's own hook captures carry nested ids.
-h=$(fire nested waiting '{"session_id":"real-abc","cwd":"/x","tool_input":{"session_id":"aaaabbbb-1111-2222-3333-ccccddddeeee"},"prompt":"hi"}')
+h=$(fire nested waiting '{"session_id":"real-abc","cwd":"/x","hook_event_name":"UserPromptSubmit","tool_input":{"session_id":"aaaabbbb-1111-2222-3333-ccccddddeeee"},"prompt":"hi"}')
 [ "$(sed -n 1p "$h/perchling/sessions/real-abc" 2>/dev/null)" = waiting ] \
   && ok "the real id gets the refcount" \
   || no "the real id gets the refcount" "sessions/: $(ls "$h/perchling/sessions" 2>/dev/null | tr '\n' ' ')"
@@ -109,16 +109,41 @@ h=$(fire nested waiting '{"session_id":"real-abc","cwd":"/x","tool_input":{"sess
   && ok "the nested ghost gets nothing" \
   || no "the nested ghost gets nothing"
 
+# --- a "prompt" that is not the user's must not become the caption ---
+# The prompt sed is greedy and takes the last unescaped "prompt" key anywhere
+# in the blob, and PostToolBatch runs the same `running` write: a tool batch
+# carrying an Agent call's brief in tool_input put that brief in the bubble and
+# ticked the odometer. The snippet is therefore read only from a
+# UserPromptSubmit, decided by hook_event_name — the CLI's own key, first match
+# — never by whether some "prompt" happens to be present.
+h=$(fire batch-prompt running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"PostToolBatch","tool_input":{"prompt":"NESTED-AGENT-BRIEF"}}')
+[ -z "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" ] \
+  && ok "a tool batch's nested prompt is no caption" \
+  || no "a tool batch's nested prompt is no caption" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+[ -z "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" ] \
+  && ok "and no turn" \
+  || no "and no turn" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+# With a caption already up, the carry keeps the user's own words.
+h=$(fire batch-prompt-carry running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"what I typed"}')
+printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"PostToolBatch","tool_input":{"prompt":"NESTED-AGENT-BRIEF"}}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
+[ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "what I typed" ] \
+  && ok "and the user's caption stays up" \
+  || no "and the user's caption stays up" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
+  && ok "with the count where it was" \
+  || no "with the count where it was" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+
 # --- disable has to reach the hot path ---
 h="$W/disabled"; mkdir -p "$h/perchling"; touch "$h/perchling/disabled"
-printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"hi"}' \
+printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"hi"}' \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
 [ ! -e "$h/perchling/state" ] && [ ! -e "$h/perchling/sessions" ] \
   && ok "disabled writes nothing at all" \
   || no "disabled writes nothing at all" "left $(ls -A "$h/perchling" | tr '\n' ' ')"
 
 # --- a hook with nothing to say must not blank the caption ---
-h=$(fire carry running '{"session_id":"abc-123","cwd":"/x","prompt":"the first thing"}')
+h=$(fire carry running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"the first thing"}')
 printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "the first thing" ] \
@@ -213,7 +238,7 @@ h=$(fire reply-nested done "$(stop "the session's own" '{"id":"t1","last_assista
 # The other moods must NOT take a reply: a running hook offering one keeps the
 # prompt as its caption. Guards the condition against widening — a reply
 # captioned mid-turn is the PREVIOUS turn's, stale while this one is going.
-h=$(fire reply-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"prompt\":\"typed this\",\"last_assistant_message\":\"the last turn's reply\"}")
+h=$(fire reply-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"typed this\",\"last_assistant_message\":\"the last turn's reply\"}")
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "typed this" ] \
   && ok "running never takes the reply" \
   || no "running never takes the reply" "got '$(sed -n 3p "$h/perchling/sessions/abc-123")'"
@@ -221,7 +246,10 @@ h=$(fire reply-hot running "{\"session_id\":\"abc-123\",\"cwd\":\"/x\",\"prompt\
 # The reply key is absent when the turn's final message has no text, and a
 # Stop payload's only "prompt" is a session cron's: the caption keeps the last
 # one rather than quoting the cron. Shape captured from a real 2.1.273 Stop.
-h=$(fire reply-absent running '{"session_id":"abc-123","cwd":"/x","prompt":"typed this"}')
+# What keeps the cron out is the event gate on the prompt sed — a Stop is not
+# a UserPromptSubmit — so this is one of the assertions prompt-read-from-any-event
+# must red.
+h=$(fire reply-absent running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"typed this"}')
 printf '%s' "{\"session_id\":\"abc-123\",\"transcript_path\":\"$decoy\",\"cwd\":\"/x\",\"prompt_id\":\"p1\",\"permission_mode\":\"default\",\"effort\":{\"level\":\"high\"},\"hook_event_name\":\"Stop\",\"stop_hook_active\":false,\"background_tasks\":[],\"session_crons\":[{\"id\":\"c1\",\"schedule\":\"*/5 * * * *\",\"recurring\":true,\"prompt\":\"check the deploy\"}]}" \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" done >/dev/null 2>&1
 [ "$(sed -n 3p "$h/perchling/sessions/abc-123" 2>/dev/null)" = "typed this" ] \
@@ -275,7 +303,7 @@ h=$(fire bg-error error "$(stop 'API Error: 500' "$agent" | sed 's/"hook_event_n
   && ok "an error stays an error" \
   || no "an error stays an error" "got '$(sed -n 1p "$h/perchling/sessions/abc-123")'"
 # A rewritten Stop is still the end of a turn, not a typed prompt.
-h=$(fire bg-odo running '{"session_id":"abc-123","cwd":"/x","prompt":"first"}')
+h=$(fire bg-odo running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"first"}')
 stop 'handed it off' "$agent" | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" done >/dev/null 2>&1
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
   && ok "a rewritten Stop never counts" \
@@ -291,11 +319,11 @@ CLAUDE_CONFIG_DIR="$home" script -q /dev/null bash "$STATE_SH" waiting > /dev/nu
 # A turn is a typed prompt: only UserPromptSubmit carries "prompt", and the
 # machinery filter blanks the harness's fake ones. Everything else — tool
 # batches, waits, the turn's own end — carries the count forward untouched.
-h=$(fire odo running '{"session_id":"abc-123","cwd":"/x","prompt":"first"}')
+h=$(fire odo running '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"first"}')
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
   && ok "a typed prompt counts one" \
   || no "a typed prompt counts one" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
-printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"second"}' \
+printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"second"}' \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
   && ok "a second prompt counts two" \
@@ -305,7 +333,7 @@ printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
   && ok "a tool batch never counts" \
   || no "a tool batch never counts" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
-printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"<task-notification>abc</task-notification>"}' \
+printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"<task-notification>abc</task-notification>"}' \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 2 ] \
   && ok "machinery never counts" \
@@ -319,7 +347,7 @@ printf '%s' '{"session_id":"abc-123","cwd":"/x"}' \
   || no "waits and ends carry the count" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
 # A fifth line that is not digits degrades to a fresh count, never repaired.
 printf 'running\n/x\nhello\n\n12abc' > "$h/perchling/sessions/abc-123"
-printf '%s' '{"session_id":"abc-123","cwd":"/x","prompt":"again"}' \
+printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"again"}' \
   | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running >/dev/null 2>&1
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
   && ok "a corrupt count restarts at one" \
@@ -334,7 +362,7 @@ for os in msys linux-gnu; do
   # A here-string, not a pipe: the gate exits before reading stdin, and under
   # pipefail a writer that loses that race dies of SIGPIPE and turns rc into 141.
   OSTYPE=$os CLAUDE_CONFIG_DIR="$home" bash "$STATE_SH" running \
-    <<< '{"session_id":"abc-123","cwd":"/x","prompt":"hi"}' > "$W/off-$os.out" 2>&1
+    <<< '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"hi"}' > "$W/off-$os.out" 2>&1
   rc=$?
   [ "$rc" -eq 0 ] && [ ! -s "$W/off-$os.out" ] && [ -z "$(ls -A "$home")" ] \
     && ok "off macOS ($os) a hook does nothing" \

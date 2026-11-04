@@ -114,6 +114,12 @@ gate sid-shape-unchecked plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-st
   '  case "$sid" in '"''"'|*[!A-Za-z0-9_-]*) sid= ;; esac' \
   '  :'
 
+# The argument path unchecked: `pet.sh down '../../x'` reaches `rm -f` with the
+# path the caller typed, two levels above sessions/.
+gate sid-arg-unchecked plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  '  case "$1" in *[!A-Za-z0-9_-]*) ;; *) printf '"'"'%s'"'"' "$1" ;; esac' \
+  '  printf '"'"'%s'"'"' "$1"'
+
 gate prune-never-retires plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
   '  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null' \
   '  :'
@@ -258,6 +264,16 @@ gate tool-detail-blanked plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-st
     fi' \
   '    :'
 
+# The prompt read from any event: a tool batch carrying an Agent call's brief
+# in tool_input captions the bubble with it and ticks the odometer, because the
+# greedy sed takes the last "prompt" in the blob wherever it sits. The same
+# gate is what keeps a session cron's prompt out of the bubble on a Stop whose
+# final message has no text (the reply-absent case); the done branch's own
+# reset used to cover that and was retired as a second guard on one path.
+gate prompt-read-from-any-event plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '  if [ "$event" = UserPromptSubmit ]; then' \
+  '  if true; then'
+
 # The odometer counts machinery: drop the snippet guard and every running
 # hook increments — tool batches, task notifications — so the tray reports a
 # session ridden ten times harder than its human ever asked.
@@ -284,15 +300,6 @@ gate reply-stops-at-escaped-quote plugin/scripts/state.sh PERCHLING_STATE_SH too
 gate reply-needs-closing-quote plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*).*/\\1/p' \\" \
   "          | sed -nE '1s/^[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\\\.)*)\".*/\\1/p' \\"
-
-# The reset reads as redundant: a Stop payload carries no top-level "prompt".
-# It carries a session cron's, and without the reset a turn whose final
-# message has no text puts the cron's prompt in the bubble.
-gate done-quotes-a-cron plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
-  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
-    snippet=' \
-  '  if [ "${1:-}" = done ] || [ "${1:-}" = error ]; then
-    :'
 
 # One extra # takes the LAST key, and the caption goes to whatever embedded
 # object serialised after the CLI's own — the sid's ghost-row bug, in the bubble.
@@ -417,6 +424,12 @@ gate scale-report-truncated plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/r
   '            let scaleText = pet.scale == pet.scale.rounded()
                 ? "\(Int(pet.scale))" : "\(pet.scale)"' \
   '            let scaleText = "\(Int(pet.scale))"'
+
+# The flag consumed by existence alone: removeItem is recursive, so a directory
+# at <root>/wake goes with its contents on the next poll tick.
+gate wake-flag-recursive plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    guard type == .typeRegular || type == .typeSymbolicLink else { return false }' \
+  '    _ = type'
 
 gate rescue-swallowed plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
   '    try migrateLoosePet(root: root)' \
