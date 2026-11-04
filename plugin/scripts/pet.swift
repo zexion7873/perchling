@@ -348,14 +348,22 @@ func parseGrid(_ rows: [String], _ pal: [Character: NSColor], _ w: Int,
         // Materialised rather than walked lazily: iterating the utf8 VIEW costs
         // per-element bookkeeping that an array walk does not, and over ten
         // shipped pets that difference is 84ms against 46ms.
+        // Only a row of exactly w bytes can be all-ASCII and w cells wide, and
+        // utf8.count is O(1) on a native string — so a row of any other length
+        // skips the fast path before anything is allocated. The old walk
+        // copied the whole row into an array and one NSColor? per byte and
+        // compared to w only afterwards, which on a row of a few hundred MB
+        // was the allocation, not the rejection.
         var fast = [NSColor?]()
-        fast.reserveCapacity(w)
-        var usable = true
-        for b in Array(row.utf8) {
-            guard b < 128, known[Int(b)] else { usable = false; break }
-            fast.append(table[Int(b)])
+        var usable = row.utf8.count == w
+        if usable {
+            fast.reserveCapacity(w)
+            for b in Array(row.utf8) {
+                guard b < 128, known[Int(b)] else { usable = false; break }
+                fast.append(table[Int(b)])
+            }
         }
-        if usable && fast.count == w { grid.append(fast); continue }
+        if usable { grid.append(fast); continue }
 
         guard row.count == w else { throw PetError("\(label) row \(y): length \(row.count) != \(w)") }
         var line: [NSColor?] = []
@@ -381,7 +389,28 @@ func inkTopOf(_ frames: [[[NSColor?]]]) -> Int? {
     frames.compactMap { $0.firstIndex { $0.contains { $0 != nil } } }.min()
 }
 
+// A manifest is read whole and parsed on the main thread: by --validate, by
+// the Pets menu for every file in pets/ and examples/ on each right-click, and
+// by the poll whenever pet.json's mtime moves. Sharing one JSON file is the
+// documented way to share a pet, so the file is judged before it is opened.
+// Only a regular file: Data(contentsOf:) on a FIFO blocks until a writer
+// turns up, which is forever, and a directory is not a manifest. And only up
+// to this many bytes: the shipped pets are 460–603 KB, so the cap is a margin
+// rather than a budget, and past it the parser would hold the JSON copy plus
+// one NSColor? per row byte before any size rule ran — one oversized file in
+// pets/ beachballed the pet on every right-click, or got it killed for memory.
+let MANIFEST_MAX_BYTES = 8_000_000
+
 func loadCustomPet(_ url: URL) throws -> CustomPet {
+    // Resolved first: pet.json is a link into pets/, and the verdict is about
+    // the file behind it. A missing file has no resource values and falls
+    // through to the read below, which names it the way it always has.
+    if let v = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]) {
+        guard v.isRegularFile == true else { throw PetError("\(url.path) is not a regular file") }
+        if let size = v.fileSize, size > MANIFEST_MAX_BYTES {
+            throw PetError("\(url.path) is \(size) bytes; a manifest is at most \(MANIFEST_MAX_BYTES)")
+        }
+    }
     guard let data = try? Data(contentsOf: url) else { throw PetError("cannot read \(url.path)") }
     return try loadCustomPet(data)
 }
@@ -619,6 +648,10 @@ func petsDir(_ root: URL) -> URL { root.appendingPathComponent("pets") }
 // "貓咪" are left intact rather than stripped to nothing. Everything else,
 // including "/", collapses to a dash, so the result can never come out empty
 // or smuggle in a path separator.
+// Declared above its only reader: a top-level `let` below a function that
+// reads it is initialised after that function can already be called.
+let SLUG_MAX_BYTES = 100
+
 func petSlug(_ name: String) -> String {
     let ok = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
     var out = ""
@@ -626,6 +659,14 @@ func petSlug(_ name: String) -> String {
         out.append(ok.contains(u) ? Character(u) : "-")
     }
     while out.hasPrefix("-") { out.removeFirst() }
+    // Capped in BYTES, on a Character boundary, so the slug plus ".json" and a
+    // "-N" collision suffix stays inside the 255-byte filename limit: a
+    // manifest named with ~250 ASCII or ~85 CJK characters produced a path
+    // moveItem refused with ENAMETOOLONG, every menu pick then ended in a bare
+    // beep, and the user was stuck on the loose pet with nothing saying why.
+    // 100 leaves room for every suffix, and a name that long is a sentence.
+    // Trailing dashes are stripped AFTER the cut, which can expose one.
+    while out.utf8.count > SLUG_MAX_BYTES { out.removeLast() }
     while out.hasSuffix("-") { out.removeLast() }
     return out.isEmpty ? "pet" : out
 }
@@ -728,7 +769,11 @@ func petChoices(root: URL, examples: URL?) -> [PetChoice] {
             catch let e as PetError { problem = e.description }
             catch { problem = error.localizedDescription }
             let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
-            return PetChoice(name: url.deletingPathExtension().lastPathComponent,
+            // The name is a filename the user (or a shared archive) chose, and
+            // it becomes a menu title: a control character in it is stripped
+            // here once, where the row, the built-in filter and the pets/
+            // collision set all read it.
+            return PetChoice(name: stripControls(url.deletingPathExtension().lastPathComponent),
                              url: url, shipped: shipped,
                              active: !shipped && resolved == activePath,
                              problem: problem)
@@ -1337,7 +1382,7 @@ final class PetView: NSView {
             item.target = self
             // Two projects can share a basename; the full path is the only
             // thing that tells them apart, and there is no room for it inline.
-            item.toolTip = r.cwd
+            item.toolTip = r.cwd.map(stripControls)
             menu.addItem(item)
         }
         if !sessions.isEmpty { menu.addItem(.separator()) }
@@ -1354,7 +1399,9 @@ final class PetView: NSView {
         // shape as `(shipped)` one group down. When the art fails to load this
         // reads `placeholder  (built-in)`, which is the most useful thing it
         // could say at that moment.
-        let builtIn = NSMenuItem(title: "\(builtinPet.name)  (built-in)",
+        // cleanName, like --validate: the name is manifest text, and a
+        // manifest is the one file people share.
+        let builtIn = NSMenuItem(title: "\(cleanName(builtinPet.name))  (built-in)",
                                  action: #selector(pickBuiltInAction), keyEquivalent: "")
         builtIn.target = self
         builtIn.state = petIsOnScreen(nil, showingCustom: showingCustom) ? .on : .off
@@ -1369,7 +1416,9 @@ final class PetView: NSView {
                 item.representedObject = c
                 item.state = petIsOnScreen(c, showingCustom: showingCustom) ? .on : .off
                 item.isEnabled = c.problem == nil
-                item.toolTip = c.problem
+                // PetError quotes manifest keys and values; --validate strips
+                // the same text before printing it, for the same reason.
+                item.toolTip = c.problem.map(stripControls)
                 pets.addItem(item)
             }
         }
@@ -1615,6 +1664,36 @@ func processStart(_ pid: pid_t) -> time_t? {
     return info.kp_proc.p_starttime.tv_sec
 }
 
+// One owners/<sid> record, as pet.sh writes it: the owner's pid, and since
+// 1.22.3 its start time on a second line in the CLI's procStart spelling. A
+// one-line record is an older release's and reads as a pid with an unknown
+// start. Only a pid above 1 is a process: pid_t("0") and pid_t("-1") both
+// parse, and kill(0, 0) probes this process group while kill(-1, 0) probes
+// every process the user may signal, so a corrupt record read as either was
+// alive forever and the 30 s idle-quit never fired. pid 1 is launchd, which
+// owns nothing here; session_owner stops one level below it.
+struct OwnerRecord: Equatable {
+    let pid: pid_t
+    let start: String?
+}
+
+func parseOwner(_ raw: String) -> OwnerRecord? {
+    let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    guard let first = lines.first, let pid = pid_t(first), pid > 1 else { return nil }
+    let start = lines.count > 1 && !lines[1].isEmpty ? lines[1] : nil
+    return OwnerRecord(pid: pid, start: start)
+}
+
+// A recorded start that disagrees with the pid's current one is a recycled
+// pid, and the owner behind the record is dead. Either side unknown is
+// unknown, never dead — the registry's rule, one directory over.
+func ownerRecordAlive(_ r: OwnerRecord, alive: (pid_t) -> Bool, started: (pid_t) -> time_t?) -> Bool {
+    guard alive(r.pid) else { return false }
+    if let want = r.start, let t = started(r.pid), lstartUTC(t) != want { return false }
+    return true
+}
+
 // `started` answers a live pid's start time, nil when it cannot be read.
 func registryEntries(_ dir: URL, alive: (pid_t) -> Bool,
                      started: (pid_t) -> time_t?) -> [String: RegistryEntry] {
@@ -1691,7 +1770,10 @@ func sessionName(_ r: SessionRow) -> String {
     // isDirectory:true is a lie the path is never asked to prove — it skips a
     // filesystem stat that would otherwise run on every poll-loop comparator
     // call and block the main-thread Timer if cwd sits on an unresponsive mount.
-    return r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent }
+    // Stripped like a registry name: the cwd is the hook's copy of a directory
+    // the user named, and a folder called with U+202E inside it drew its row
+    // reversed, where a newline would split the title in two.
+    return r.cwd.map { stripControls(URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent) }
         ?? String(r.sid.prefix(8))
 }
 
@@ -2447,6 +2529,9 @@ final class Controller: NSObject, NSWindowDelegate {
                     try useBuiltIn(root: self.root)
                 }
             } catch {
+                // The beep is the only thing the user sees, so the reason goes
+                // somewhere a human can read it: Console, under the process.
+                NSLog("perchling: cannot switch pet: %@", stripControls("\(error)"))
                 NSSound.beep()
                 return
             }
@@ -2694,15 +2779,18 @@ final class Controller: NSObject, NSWindowDelegate {
     // retires it in a single poll. A session with no owner file — one that
     // predates the mechanism, or a process tree pet.sh could not walk — falls
     // back to staleness rather than being declared dead on missing evidence.
-    func ownerPid(_ sid: String) -> pid_t? {
+    func ownerRecord(_ sid: String) -> OwnerRecord? {
         guard let raw = try? String(contentsOf: ownersURL.appendingPathComponent(sid), encoding: .utf8) else { return nil }
-        return pid_t(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        return parseOwner(raw)
     }
 
     func alive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
 
-    // A session with no owner file is unknown, never dead.
-    func ownerAlive(_ sid: String) -> Bool { ownerPid(sid).map(alive) ?? true }
+    // A session with no owner file, or one whose record does not parse, is
+    // unknown, never dead.
+    func ownerAlive(_ sid: String) -> Bool {
+        ownerRecord(sid).map { ownerRecordAlive($0, alive: alive, started: processStart) } ?? true
+    }
 
     // `retired` is the difference between having nothing to report and having
     // nobody left to report it — refcounts orphaned by an owner that died, or
@@ -2712,11 +2800,21 @@ final class Controller: NSObject, NSWindowDelegate {
         let items = (try? fm.contentsOfDirectory(at: sessionsURL,
                                                  includingPropertiesForKeys: [.contentModificationDateKey],
                                                  options: [.skipsHiddenFiles])) ?? []
-        let sessions = items.map { url in
-            (owner: ownerPid(url.lastPathComponent),
-             stamp: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
+        // The fold works in pids; the start time rides beside, keyed by pid,
+        // so the liveness probe below can tell the process that owned a
+        // session from a later one handed its number. A remembered owner
+        // from an earlier poll has no record any more and is probed by pid
+        // alone, which is what it always was.
+        var starts: [pid_t: String] = [:]
+        let sessions = items.map { url -> (owner: pid_t?, stamp: Date?) in
+            let rec = ownerRecord(url.lastPathComponent)
+            if let rec, let s = rec.start { starts[rec.pid] = s }
+            return (owner: rec?.pid,
+                    stamp: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
         }
-        let verdict = sessionLiveness(sessions, lastOwners: lastOwners, now: Date(), alive: alive)
+        let verdict = sessionLiveness(sessions, lastOwners: lastOwners, now: Date()) { pid in
+            ownerRecordAlive(OwnerRecord(pid: pid, start: starts[pid]), alive: alive, started: processStart)
+        }
         lastOwners = verdict.owners
         return (verdict.live, verdict.retired)
     }

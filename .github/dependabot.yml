@@ -1,0 +1,14 @@
+# Keeps the SHA-pinned actions in .github/workflows/ current. Every `uses:`
+# names a commit, not a tag, because this repository IS the marketplace people
+# install from and a moved tag on `push` to main is the supply-chain path left;
+# a pin nobody updates is the other half of that bug, and this is what updates
+# it. Grouped so one PR a week carries every bump, not one PR per action.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

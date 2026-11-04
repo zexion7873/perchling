@@ -204,7 +204,11 @@ if [ ! -t 0 ]; then
     # count, never to a repaired one.
     case "$prev5" in *[!0-9]*) prev5= ;; esac
     turns="$prev5"
-    [ -n "$turn" ] && turns=$((${prev5:-0} + 1))
+    # Base 10 spelt out: bash reads a leading zero as octal, so a line 5 of
+    # `08` — digits, so it passes the shape check — was "value too great for
+    # base", an error on a hook's stderr and a non-zero exit from a script
+    # that promises neither.
+    [ -n "$turn" ] && turns=$((10#${prev5:-0} + 1))
     # Line 1 mood, line 2 cwd, line 3 caption, line 4 the tool a waiting
     # session is blocked on, line 5 the turn count. One write, one file: all
     # five are published by the same atomic mv and removed by the same rm, so

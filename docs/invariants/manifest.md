@@ -50,6 +50,18 @@ and what the alternative lost to.
   anything the pet does that a manifest cannot declare has nowhere to live.
   Git history is the only record of what that engine drew — the manifest is at
   `examples/robot.json` in the 1.12 tree, and nowhere in the working one.
+- **A manifest is judged before it is opened.** `loadCustomPet(URL)` stats the
+  file behind the path first: only a regular file is read — `Data(contentsOf:)`
+  on a FIFO blocks until a writer turns up, which is forever, and the Pets menu
+  parses every `pets/*.json` on the main thread at each right-click — and only
+  up to `MANIFEST_MAX_BYTES` (8 MB; the shipped pets are 460–603 KB). Past the
+  cap the parser held the JSON copy plus one `NSColor?` per row byte before any
+  size rule ran, and one oversized shared file beachballed the pet or got it
+  killed for memory. The row walk has the same shape one level down: the fast
+  path runs only on a row of exactly `w` bytes, so a row of any other length
+  reaches the slow path's `row.count == w` without being copied first. The
+  size cap and the FIFO are pinned in `run-manifest-checks.sh`, each with a
+  mutant; the row walk has no observable to pin and is a comment in the code.
 - **A manifest carries pixels, and the two things it can say about them are
   where the eyes are and which frames animate.** A mood is one grid unless
   `sequences` gives that mood a clock. The doze-and-peek cycle cut between two

@@ -120,6 +120,12 @@ gate sid-arg-unchecked plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-ch
   '  case "$1" in *[!A-Za-z0-9_-]*) ;; *) printf '"'"'%s'"'"' "$1" ;; esac' \
   '  printf '"'"'%s'"'"' "$1"'
 
+# The owner's start time left out: a recycled pid keeps a force-quit session's
+# row up for the whole staleness hour, the bug #166 names.
+gate owner-start-unrecorded plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
+  "    printf '%s\\n%s' \"\$owner\" \"\$started\"" \
+  "    printf '%s' \"\$owner\""
+
 gate prune-never-retires plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-prune-checks.sh \
   '  find "$SESSIONS" -maxdepth 1 -type f -mmin +60 -exec rm -f {} + 2>/dev/null' \
   '  :'
@@ -274,6 +280,12 @@ gate prompt-read-from-any-event plugin/scripts/state.sh PERCHLING_STATE_SH tools
   '  if [ "$event" = UserPromptSubmit ]; then' \
   '  if true; then'
 
+# The count read in bash's default base: a line 5 of `08` is octal, and the
+# hook errors to stderr and exits non-zero.
+gate odometer-reads-octal plugin/scripts/state.sh PERCHLING_STATE_SH tools/run-state-checks.sh \
+  '    [ -n "$turn" ] && turns=$((10#${prev5:-0} + 1))' \
+  '    [ -n "$turn" ] && turns=$((${prev5:-0} + 1))'
+
 # The odometer counts machinery: drop the snippet guard and every running
 # hook increments — tool batches, task notifications — so the tray reports a
 # session ridden ten times harder than its human ever asked.
@@ -424,6 +436,45 @@ gate scale-report-truncated plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/r
   '            let scaleText = pet.scale == pet.scale.rounded()
                 ? "\(Int(pet.scale))" : "\(pet.scale)"' \
   '            let scaleText = "\(Int(pet.scale))"'
+
+# pid 0 and -1 accepted as owners: kill(0, 0) and kill(-1, 0) both succeed,
+# so a corrupt record is alive forever and the idle-quit never fires.
+gate owner-pid-zero-trusted plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    guard let first = lines.first, let pid = pid_t(first), pid > 1 else { return nil }' \
+  '    guard let first = lines.first, let pid = pid_t(first), pid != 1 else { return nil }'
+
+# The recorded start ignored: a recycled pid is the owner it never was.
+gate owner-start-ignored plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    if let want = r.start, let t = started(r.pid), lstartUTC(t) != want { return false }' \
+  '    if let want = r.start, let t = started(r.pid), lstartUTC(t) != want { _ = want }'
+
+# The slug uncapped: a 300-character name makes moveItem fail with
+# ENAMETOOLONG, and every pick ends in a bare beep.
+gate slug-uncapped plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    while out.utf8.count > SLUG_MAX_BYTES { out.removeLast() }' \
+  '    while false { out.removeLast() }'
+
+# A cwd basename drawn raw: a folder named with an escape or a bidi override
+# draws its tray row reversed or split.
+gate cwd-label-raw plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '    return r.cwd.map { stripControls(URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent) }' \
+  '    return r.cwd.map { URL(fileURLWithPath: $0, isDirectory: true).lastPathComponent }'
+
+# A pets/ filename drawn raw in the menu.
+gate pet-row-raw plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-session-harness.sh \
+  '            return PetChoice(name: stripControls(url.deletingPathExtension().lastPathComponent),' \
+  '            return PetChoice(name: url.deletingPathExtension().lastPathComponent,'
+
+# The manifest size cap gone: a multi-hundred-MB pets/*.json is read and
+# parsed whole on the main thread on every right-click.
+gate manifest-size-uncapped plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  '        if let size = v.fileSize, size > MANIFEST_MAX_BYTES {' \
+  '        if let size = v.fileSize, size < 0 {'
+
+# The regular-file check gone: a FIFO at the path blocks the read forever.
+gate manifest-fifo-read plugin/scripts/pet.swift PERCHLING_PET_SWIFT tools/run-manifest-checks.sh \
+  '        guard v.isRegularFile == true else { throw PetError("\(url.path) is not a regular file") }' \
+  '        guard v.isRegularFile != nil else { throw PetError("\(url.path) is not a regular file") }'
 
 # The flag consumed by existence alone: removeItem is recursive, so a directory
 # at <root>/wake goes with its contents on the next poll tick.

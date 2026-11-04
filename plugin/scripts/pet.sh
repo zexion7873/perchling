@@ -313,7 +313,15 @@ cmd_up() {
   mkdir -p "$OWNERS"
   owner="$(session_owner)"
   if [ -n "$owner" ] && [ "$owner" != "$$" ]; then
-    printf '%s' "$owner" > "$ROOT/.own.$$" 2>/dev/null && mv -f "$ROOT/.own.$$" "$OWNERS/$sid" 2>/dev/null
+    # Line 2 is the owner's start time, spelt exactly as the CLI's registry
+    # spells procStart (LC_ALL=C TZ=UTC ps -o lstart=), so the overlay can
+    # tell the process that owned this session from a later one handed its
+    # pid: a pid alone kept a force-quit session's row up for the whole
+    # staleness hour once the number was recycled. An empty line 2 — ps
+    # failing — reads as unknown, never as another process, and so does the
+    # one-line record every release before this one wrote.
+    started="$(LC_ALL=C TZ=UTC ps -o lstart= -p "$owner" 2>/dev/null)"
+    printf '%s\n%s' "$owner" "$started" > "$ROOT/.own.$$" 2>/dev/null && mv -f "$ROOT/.own.$$" "$OWNERS/$sid" 2>/dev/null
   else
     rm -f "$OWNERS/$sid"
   fi

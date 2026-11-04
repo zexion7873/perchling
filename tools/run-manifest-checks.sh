@@ -387,6 +387,40 @@ else
   fail=$((fail+1))
 fi
 
+# --- a manifest is judged before it is opened ---------------------------------
+# Sharing one JSON file is the documented way to share a pet, and the menu
+# parses every pets/*.json on the main thread at each right-click. Two shapes
+# the loader must refuse without reading: a file past the size cap (the parser
+# would hold the JSON copy plus one NSColor? per row byte before any size rule
+# ran), and a FIFO, which Data(contentsOf:) opens and then waits on forever.
+BIG="$SCRATCH/big.json"
+head -c 8000001 /dev/zero > "$BIG"
+check "a manifest past the size cap is refused by size, unread" 1 "$BIG" "at most"
+
+# The FIFO case cannot go through check(): a loader that opens it blocks, and
+# so would the harness. Run it detached, give it two seconds, and treat a
+# process still waiting as the failure it is.
+FIFO="$SCRATCH/pipe.json"
+mkfifo "$FIFO"
+( "$BIN" --validate "$FIFO" > "$SCRATCH/fifo.out" 2>&1; echo $? > "$SCRATCH/fifo.rc" ) &
+fifo_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  kill -0 "$fifo_pid" 2>/dev/null || break
+  sleep 0.1
+done
+if kill -0 "$fifo_pid" 2>/dev/null; then
+  echo "FAIL a FIFO at the path is refused, not read: still waiting on it after 2s"
+  # The loader is blocked inside open(2); the only way out is a writer or a kill.
+  pkill -P "$fifo_pid" 2>/dev/null; kill "$fifo_pid" 2>/dev/null
+  fail=$((fail+1))
+elif [ "$(cat "$SCRATCH/fifo.rc" 2>/dev/null)" = 1 ] && grep -q 'not a regular file' "$SCRATCH/fifo.out"; then
+  pass=$((pass+1))
+else
+  echo "FAIL a FIFO at the path is refused, not read: exit $(cat "$SCRATCH/fifo.rc" 2>/dev/null)"
+  sed 's/^/    /' "$SCRATCH/fifo.out"
+  fail=$((fail+1))
+fi
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

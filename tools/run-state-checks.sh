@@ -352,6 +352,16 @@ printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSub
 [ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 1 ] \
   && ok "a corrupt count restarts at one" \
   || no "a corrupt count restarts at one" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")'"
+# A count with a leading zero is digits, so the shape check passes it — and
+# bash then reads `08` as octal, "value too great for base": an error on a
+# hook's stderr and a non-zero exit from a script that promises neither.
+printf 'running\n/x\nhello\n\n08' > "$h/perchling/sessions/abc-123"
+printf '%s' '{"session_id":"abc-123","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"nine"}' \
+  | CLAUDE_CONFIG_DIR="$h" bash "$STATE_SH" running > "$h/octal.out" 2>&1
+rc=$?
+[ "$(sed -n 5p "$h/perchling/sessions/abc-123" 2>/dev/null)" = 9 ] && [ "$rc" -eq 0 ] && [ ! -s "$h/octal.out" ] \
+  && ok "a leading zero counts in base ten, silently" \
+  || no "a leading zero counts in base ten, silently" "got '$(sed -n 5p "$h/perchling/sessions/abc-123")', exit $rc, said '$(head -1 "$h/octal.out")'"
 
 # --- off macOS ---
 # Every prompt and tool batch fires this on whatever platform the plugin was

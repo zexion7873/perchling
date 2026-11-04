@@ -89,6 +89,16 @@ mode=$(stat -f '%Lp' "$W/cfg/perchling" 2>/dev/null)
 [ -e "$O/fresh" ] \
   && ok "a live session keeps its owner" \
   || no "a live session keeps its owner"
+# The owner record: the pid on line 1 and, since 1.22.3, the owner's start
+# time on line 2 in the CLI's procStart spelling, so the overlay can tell a
+# recycled pid from the process that owned the session. The pid is this
+# harness's own ancestor, so its start time is whatever ps says for it.
+owner1=$(sed -n 1p "$O/newsession" 2>/dev/null); owner2=$(sed -n 2p "$O/newsession" 2>/dev/null)
+case "$owner1" in ''|*[!0-9]*) no "the owner record starts with a pid" "line 1: '$owner1'" ;;
+  *) ok "the owner record starts with a pid" ;; esac
+[ -n "$owner2" ] && [ "$owner2" = "$(LC_ALL=C TZ=UTC ps -o lstart= -p "$owner1" 2>/dev/null)" ] \
+  && ok "and carries the owner's start time" \
+  || no "and carries the owner's start time" "line 2: '$owner2'"
 [ ! -e "$W/cfg/perchling/say" ] \
   && ok "a retired say file is removed" \
   || no "a retired say file is removed" "still there"

@@ -31,7 +31,7 @@ Everything lives under `${CLAUDE_CONFIG_DIR:-~/.claude}/perchling/`:
 | File | Contents |
 |---|---|
 | `sessions/<session id>` | The session's mood, project directory, a snippet of at most 300 bytes of the latest prompt or reply (the speech bubble's text), the tool a waiting session is blocked on, and how many prompts you have sent. Readable only by your user account. |
-| `owners/<session id>` | The process id of the app or terminal the session runs in. |
+| `owners/<session id>` | The process id of the app or terminal the session runs in, and that process's start time. |
 | `state` | The most recent mood word. |
 | `bin/`, `pets/`, `pet.json`, `builtin.json` | The compiled pet, your pet library and the active pet. |
 | `.sess.<number>` | A session file mid-write, renamed into `sessions/` a moment later. |
