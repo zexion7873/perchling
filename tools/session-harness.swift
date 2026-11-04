@@ -666,11 +666,15 @@ do {
     check("a short name is untouched", petSlug("Hand Drawn"), "hand-drawn")
 
     // The failure the cap exists for: a 300-character name used to make
-    // moveItem fail with ENAMETOOLONG, which left every pick beeping.
+    // moveItem fail with ENAMETOOLONG, which left every pick beeping. `try?`,
+    // not `try!`: against the uncapped mutant the rescue THROWS, and a `try!`
+    // turned that into a trap — exit 133, no red line — which the gate
+    // rightly scores as infra death rather than a catch.
     let root = tempDir("library-long-name")
     writeFile(root, "pet.json", petJSON(String(repeating: "x", count: 300)))
-    try! migrateLoosePet(root: root)
     check("a loose pet with a 300-character name is still rescued",
+          (try? migrateLoosePet(root: root)) != nil, true)
+    check("under its capped slug",
           FileManager.default.fileExists(atPath:
               petsDir(root).appendingPathComponent("\(long).json").path), true)
 }
