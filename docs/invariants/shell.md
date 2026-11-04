@@ -50,6 +50,23 @@ deletes THAT caller's fresh lock (reproduced on /bin/bash 3.2, the shell every
 hook runs under). The INT/TERM handlers therefore `exit`, and the EXIT trap
 alone cleans up, exactly once.
 
+**A visibility wait that runs out is recorded, because it is the one path left
+to a second pet and it leaves no other trace.** With the lock and reclaim
+logic cleared (#175: macOS `find -mmin -1` measured as a real under-a-minute
+test), the holder releases the lock in exactly two cases — its child became
+visible to `running()`, or 50 × 0.1 s passed and it did not. The second is
+deliberate (a lock held for a child that may never appear would wedge every
+later start) and is also how `launched=2` happens: the next caller finds the
+lock free and `running()` still false. `launch_once`'s stderr is `/dev/null`
+and the child's exit is nobody's to collect, so the expiry path appends one
+line — epoch, the script's pid, the wait — to `$ROOT/.launch.unseen` (last
+twenty kept, staged and renamed), and only on that path, so a healthy launch
+costs no fork. `pet.sh status` reports the file; `run-launch-race.sh` prints
+it under a `stale-lock-contended` failure so the next one says which path
+produced it, and pins the write with an exiting stub, the one place the
+harness rules allow a child that is never visible — that is the condition
+under test.
+
 ## The invariants
 
 - **Not every wait announces itself, and not every announcement reaches the

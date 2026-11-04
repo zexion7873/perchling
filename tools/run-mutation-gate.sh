@@ -732,6 +732,12 @@ __rn() { pgrep -x -f "$BIN_RE" >/dev/null 2>&1; }'
 # lock is absent, fresh, or empty, and an empty one `rmdir`s fine. The
 # replacement keeps the `2>/dev/null` because the line above ends in `&&` — the
 # mutant has to stay a valid right-hand side, not merely a different string.
+# The expiry unrecorded: a visibility wait that ran out leaves no trace, and
+# the next launched=2 is a guess again (#175).
+gate launch-wait-expiry-unrecorded plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
+  "        printf '%s pid=%s waited=%ss\\n' \"\$(date +%s)\" \"\$\$\" \"\$((waited / 10))\"" \
+  "        :"
+
 gate wedged-lock-never-cleared plugin/scripts/pet.sh PERCHLING_PET_SH tools/run-launch-race.sh \
   '      { rmdir "$lock" 2>/dev/null || mv "$lock" "$ROOT/.launch.wedged.$$" 2>/dev/null; }' \
   '      rmdir "$lock" 2>/dev/null'

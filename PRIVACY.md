@@ -35,6 +35,7 @@ Everything lives under `${CLAUDE_CONFIG_DIR:-~/.claude}/perchling/`:
 | `state` | The most recent mood word. |
 | `bin/`, `pets/`, `pet.json`, `builtin.json` | The compiled pet, your pet library and the active pet. |
 | `.sess.<number>` | A session file mid-write, renamed into `sessions/` a moment later. |
+| `.launch.unseen` | Written only when a launch waited five seconds without the pet becoming visible: the time, the launching script's process id and the wait, last twenty kept. `pet.sh status` reports it. |
 
 The pet window's position and the menu's preferences (mute, chrome theme,
 collapsed bubble) are kept in macOS user defaults under the `perchling`
