@@ -201,10 +201,19 @@ wait_expiry() {
   cp "$SCRATCH/gone" "$home/perchling/bin/perchling"
   touch "$home/perchling/bin/perchling"
   CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up s1 >/dev/null 2>&1
-  sleep 6.5
+  # The wait is 50 x (0.1 s + one pgrep), and a pgrep is not free: ~5 s on
+  # Linux, ~7 s on a macOS runner, where a fixed 6.5 s sleep found the lock
+  # still held and no record yet. So this waits for the RECORD, up to 20 s —
+  # no healthy wait reaches that — and then a beat for the rmdir that follows
+  # it. Against a script that never writes one, the 20 s pass and the
+  # assertion below reads records=0, which is the red it is for.
+  local i=0
+  while [ ! -s "$home/perchling/.launch.unseen" ] && [ "$i" -lt 200 ]; do sleep 0.1; i=$((i + 1)); done
+  sleep 0.5
   local got lines
   got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
-  lines=$(wc -l < "$home/perchling/.launch.unseen" 2>/dev/null | tr -d ' '); lines=${lines:-0}
+  lines=0
+  [ -f "$home/perchling/.launch.unseen" ] && lines=$(wc -l < "$home/perchling/.launch.unseen" | tr -d ' ')
   if [ "$got" -eq 1 ] && [ "$lines" -eq 1 ] && grep -q 'waited=5s' "$home/perchling/.launch.unseen"; then
     printf '  ok   %-26s child exited, one expiry on record\n' "wait-expiry-recorded"; pass=$((pass + 1))
   else
