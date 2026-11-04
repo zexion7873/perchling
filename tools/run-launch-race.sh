@@ -54,6 +54,19 @@ int main(void) {
 }
 C
 cc -O0 -o "$SCRATCH/stub" "$SCRATCH/stub.c" || { echo "cannot compile the stub" >&2; exit 1; }
+# The one stub that EXITS: logs its launch and is gone, so running() never
+# sees it. Only wait_expiry uses it, for the reason given there.
+cat > "$SCRATCH/gone.c" <<'C'
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+int main(void) {
+    const char *log = getenv("STUB_LOG");
+    if (log) { FILE *f = fopen(log, "a"); if (f) { fprintf(f, "launched pid=%d\n", getpid()); fclose(f); } }
+    return 0;
+}
+C
+cc -O0 -o "$SCRATCH/gone" "$SCRATCH/gone.c" || { echo "cannot compile the exiting stub" >&2; exit 1; }
 
 pass=0; fail=0
 # $1 label  $2 callers  $3 stagger seconds  $4 expected launches
@@ -163,10 +176,45 @@ stale_lock_race() {
   wait; sleep 3
   local got; got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
   if [ "$got" -eq 1 ]; then printf '  ok   %-26s 8 callers, one reclaim, launched=1\n' "stale-lock-contended"; pass=$((pass + 1))
-  else printf '  FAIL %-26s launched=%s, want 1\n' "stale-lock-contended" "$got"; fail=$((fail + 1)); fi
+  else
+    printf '  FAIL %-26s launched=%s, want 1\n' "stale-lock-contended" "$got"; fail=$((fail + 1))
+    # Evidence for #175: a second pet with an expiry on record means the first
+    # holder released the lock before its child was visible; none means the
+    # lock logic itself let two through.
+    [ -s "$home/perchling/.launch.unseen" ] \
+      && sed 's/^/         wait expired: /' "$home/perchling/.launch.unseen" \
+      || echo '         no wait expired — the lock let two through'
+  fi
   pkill -x -f "$home/perchling/bin/perchling" 2>/dev/null
 }
 stale_lock_race
+
+# A visibility wait that runs out must leave a record. The stub here is the
+# one place the harness rules allow one that exits at once: a child that is
+# never visible is the condition under test, not a shortcut. The wait is a
+# fixed 50 x 0.1 s, so this case costs five seconds and cannot be made
+# faster without changing what it measures.
+wait_expiry() {
+  local home="$SCRATCH/wait-expiry" log
+  mkdir -p "$home/perchling/bin"
+  log="$home/launches.log"; : > "$log"
+  cp "$SCRATCH/gone" "$home/perchling/bin/perchling"
+  touch "$home/perchling/bin/perchling"
+  CLAUDE_CONFIG_DIR="$home" STUB_LOG="$log" bash "$PET" up s1 >/dev/null 2>&1
+  sleep 6.5
+  local got lines
+  got=$(grep -c launched "$log" 2>/dev/null); got=${got:-0}
+  lines=$(wc -l < "$home/perchling/.launch.unseen" 2>/dev/null | tr -d ' '); lines=${lines:-0}
+  if [ "$got" -eq 1 ] && [ "$lines" -eq 1 ] && grep -q 'waited=5s' "$home/perchling/.launch.unseen"; then
+    printf '  ok   %-26s child exited, one expiry on record\n' "wait-expiry-recorded"; pass=$((pass + 1))
+  else
+    printf '  FAIL %-26s launched=%s, records=%s\n' "wait-expiry-recorded" "$got" "$lines"; fail=$((fail + 1))
+  fi
+  [ ! -e "$home/perchling/.launch.lock" ] \
+    && { printf '  ok   %-26s released after the wait\n' "wait-expiry-unlocks"; pass=$((pass + 1)); } \
+    || { printf '  FAIL %-26s lock still held\n' "wait-expiry-unlocks"; fail=$((fail + 1)); }
+}
+wait_expiry
 
 # `running()` must not be satisfied by the probes themselves. Asserted directly,
 # because every scenario above would also go green on a running() that simply

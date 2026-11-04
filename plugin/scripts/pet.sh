@@ -42,6 +42,10 @@ BIN_RE=$(printf '%s' "$BIN" | sed 's/[][(){}.*+?^$|\\]/\\&/g')
 SESSIONS="$ROOT/sessions"
 OWNERS="$ROOT/owners"
 BUILDLOG="$ROOT/build.log"
+# Where launch_once notes a visibility wait that ran out: the only path left
+# to a second pet once the lock logic was cleared (#175), and one that leaves
+# no other trace. Last 20 expiries, newest last.
+UNSEEN="$ROOT/.launch.unseen"
 
 payload=""
 
@@ -208,6 +212,20 @@ launch_once() {
     PERCHLING_HOME="$ROOT" PERCHLING_EXAMPLES="$EXAMPLES" nohup "$BIN" </dev/null >/dev/null 2>&1 &
     waited=0
     while [ "$waited" -lt 50 ] && ! running; do sleep 0.1; waited=$((waited + 1)); done
+    # The wait ran out with no pet visible. The lock is released all the same
+    # — holding it longer would wedge every later start behind a child that
+    # may never appear — but that release is exactly how a second pet gets
+    # launched: the next caller finds the lock free and running() still
+    # false. Recorded here because nothing else can see it: this function's
+    # stderr is /dev/null and the child's exit is nobody's to collect. One
+    # line per expiry, the last twenty kept, staged and renamed like every
+    # file this script publishes, and only on this path so a healthy launch
+    # costs no fork.
+    if ! running; then
+      { tail -n 19 "$UNSEEN" 2>/dev/null
+        printf '%s pid=%s waited=%ss\n' "$(date +%s)" "$$" "$((waited / 10))"
+      } > "$ROOT/.unseen.$$" 2>/dev/null && mv -f "$ROOT/.unseen.$$" "$UNSEEN" 2>/dev/null
+    fi
   fi
   rmdir "$lock" 2>/dev/null
   trap - EXIT INT TERM
@@ -473,6 +491,11 @@ cmd_status() {
     echo "          full error: $BUILDLOG"
   fi
   echo "process:  $(running && echo running || echo stopped)"
+  # A launch whose child never became visible is the one failure the launch
+  # path cannot report at the time; this is where its record surfaces.
+  if [ -s "$UNSEEN" ]; then
+    echo "launch:   $(wc -l < "$UNSEEN" | tr -d ' ') wait(s) expired with no pet visible — $UNSEEN"
+  fi
   echo "state:    $(cat "$ROOT/state" 2>/dev/null || echo '-')"
   echo "sessions: $(ls -1 "$SESSIONS" 2>/dev/null | wc -l | tr -d ' ')"
   echo "disabled: $([ -e "$ROOT/disabled" ] && echo yes || echo no)"
