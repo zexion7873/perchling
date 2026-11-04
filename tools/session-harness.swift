@@ -615,6 +615,83 @@ do {
           fm.fileExists(atPath: flag.appendingPathComponent("keep").path), true)
 }
 
+// MARK: - the owner record
+//
+// owners/<sid> is a pid and, since 1.22.3, the owner's start time on a second
+// line. The rule that shipped wrong: pid_t("0") and pid_t("-1") both parse,
+// kill(0, 0) and kill(-1, 0) both succeed, and a corrupt record read as
+// either kept a session alive forever. And a pid alone cannot tell the
+// process that owned the session from a later one handed its number.
+
+do {
+    check("a pid is read", parseOwner("4242"), OwnerRecord(pid: 4242, start: nil))
+    check("a trailing newline is not part of it", parseOwner("4242\n")?.pid, 4242)
+    check("the start time rides on line 2",
+          parseOwner("4242\nTue Nov  4 01:00:00 2026\n"),
+          OwnerRecord(pid: 4242, start: "Tue Nov  4 01:00:00 2026"))
+    check("an empty line 2 is an unknown start", parseOwner("4242\n")?.start, nil)
+    check("pid 0 is no owner", parseOwner("0"), nil)
+    check("pid -1 is no owner", parseOwner("-1"), nil)
+    check("pid 1 is no owner", parseOwner("1"), nil)
+    check("garbage is no owner", parseOwner("abc"), nil)
+    check("an empty file is no owner", parseOwner(""), nil)
+
+    let never: (pid_t) -> Bool = { _ in false }
+    let always: (pid_t) -> Bool = { _ in true }
+    let t = time_t(1_762_218_000)   // 2025-11-04 01:00:00 UTC
+    let same = lstartUTC(t)
+    let old = OwnerRecord(pid: 4242, start: nil)
+    let dated = OwnerRecord(pid: 4242, start: same)
+    check("a dead pid is dead", ownerRecordAlive(old, alive: never, started: { _ in t }), false)
+    check("a live pid with no recorded start is alive",
+          ownerRecordAlive(old, alive: always, started: { _ in t }), true)
+    check("a live pid whose start matches is alive",
+          ownerRecordAlive(dated, alive: always, started: { _ in t }), true)
+    check("a recycled pid is dead",
+          ownerRecordAlive(dated, alive: always, started: { _ in t + 60 }), false)
+    check("an unreadable start is unknown, never dead",
+          ownerRecordAlive(dated, alive: always, started: { _ in nil }), true)
+}
+
+// MARK: - the slug's length
+
+do {
+    let long = petSlug(String(repeating: "x", count: 300))
+    check("a long ascii name is cut to the cap", long.utf8.count, SLUG_MAX_BYTES)
+    let cjk = petSlug(String(repeating: "貓", count: 85))
+    check("a long cjk name stays inside the cap in bytes", cjk.utf8.count <= SLUG_MAX_BYTES, true)
+    check("and is cut on a character, never inside one", cjk.utf8.count % 3, 0)
+    check("a dash the cut exposes is stripped",
+          petSlug(String(repeating: "x", count: 99) + "-y").hasSuffix("-"), false)
+    check("a short name is untouched", petSlug("Hand Drawn"), "hand-drawn")
+
+    // The failure the cap exists for: a 300-character name used to make
+    // moveItem fail with ENAMETOOLONG, which left every pick beeping. `try?`,
+    // not `try!`: against the uncapped mutant the rescue THROWS, and a `try!`
+    // turned that into a trap — exit 133, no red line — which the gate
+    // rightly scores as infra death rather than a catch.
+    let root = tempDir("library-long-name")
+    writeFile(root, "pet.json", petJSON(String(repeating: "x", count: 300)))
+    check("a loose pet with a 300-character name is still rescued",
+          (try? migrateLoosePet(root: root)) != nil, true)
+    check("under its capped slug",
+          FileManager.default.fileExists(atPath:
+              petsDir(root).appendingPathComponent("\(long).json").path), true)
+}
+
+// MARK: - control characters in labels
+
+do {
+    check("a cwd basename loses control characters",
+          sessionName(row("abcdef0123456789", .idle, cwd: "/Users/x/Project/ev\u{1b}il")),
+          "evil")
+    let root = tempDir("library-control")
+    try! FileManager.default.createDirectory(at: petsDir(root), withIntermediateDirectories: true)
+    writeFile(petsDir(root), "ev\u{1b}il.json", petJSON("evil"))
+    check("a pets/ filename loses control characters in its row",
+          petChoices(root: root, examples: nil).map(\.name), ["evil"])
+}
+
 // MARK: - liveSessions: the TTL decay and the one-hour cutoff
 //
 // Both were unreachable while every fixture was read milliseconds after being

@@ -297,6 +297,21 @@ and what the alternative lost to.
   survivable. A missing owner file means unknown, never dead: it falls back to
   the one-hour staleness window.
 
+  **The record is a pid and, since 1.22.3, the owner's start time on a second
+  line**, spelt the way the CLI's registry spells `procStart`
+  (`LC_ALL=C TZ=UTC ps -o lstart=`). A pid alone trusted a recycled number: a
+  force-quit's owner pid handed to an unrelated process kept the dead
+  session's row up for the whole staleness hour. `parseOwner` reads the pair,
+  `ownerRecordAlive` applies the registry's rule — a recorded start that
+  disagrees with the pid's current one is dead, either side unknown is
+  unknown — and a one-line record from an older release reads as a pid with
+  an unknown start. Only a pid above 1 is a process: `pid_t("0")` and
+  `pid_t("-1")` both parse, and `kill(0, 0)` probes this process group while
+  `kill(-1, 0)` probes every process the user may signal, so a corrupt record
+  read as either was alive forever and the idle-quit never fired. Both are
+  pinned in `run-session-harness.sh`, the write in `run-prune-checks.sh`,
+  each with a mutant.
+
   **Only `cmd_up` ever writes an owner file, and absence is a normal state with
   two different causes.** `cmd_up` writes the pair at `SessionStart` and
   deliberately writes NO owner when the process tree is unclimbable or resolves
